@@ -25,18 +25,18 @@ func NewClient(servers []string, prefID int) *Client {
 	return &client
 }
 
-func (c *Client) Get(key string) (*operation.CommandResult, error) {
+func (c *Client) Get(key []byte) (*operation.CommandResult, error) {
 	cmdID := atomic.AddInt64(&c.nextCmdID, 1)
 	request := operation.Command{
 		CommandID: cmdID,
 		Key:       key,
-		Value:     "",
+		Value:     []byte(""),
 		Type:      "Get",
 	}
 	return c.sendRequest(request)
 }
 
-func (c *Client) Put(key string, val string) (*operation.CommandResult, error) {
+func (c *Client) Put(key []byte, val []byte) (*operation.CommandResult, error) {
 	cmdID := atomic.AddInt64(&c.nextCmdID, 1)
 	request := operation.Command{
 		CommandID: cmdID,
@@ -47,12 +47,12 @@ func (c *Client) Put(key string, val string) (*operation.CommandResult, error) {
 	return c.sendRequest(request)
 }
 
-func (c *Client) Delete(key string) (*operation.CommandResult, error) {
+func (c *Client) Delete(key []byte) (*operation.CommandResult, error) {
 	cmdID := atomic.AddInt64(&c.nextCmdID, 1)
 	request := operation.Command{
 		CommandID: cmdID,
 		Key:       key,
-		Value:     "",
+		Value:     []byte(""),
 		Type:      "Delete",
 	}
 	return c.sendRequest(request)
@@ -86,8 +86,12 @@ func (c *Client) sendRequest(request operation.Command) (*operation.CommandResul
 	}
 
 	cmdResult := &operation.CommandResult{}
-	decoder := json.NewDecoder(c.conn)
-	err = decoder.Decode(cmdResult)
+	buffer := make([]byte, 1024)
+	n, err := c.conn.Read(buffer)
+	if err != nil {
+		return nil, err
+	}
+	err = json.Unmarshal(buffer[:n], cmdResult)
 	if err != nil && err.Error() != "EOF" {
 		return nil, err
 	}

@@ -21,7 +21,7 @@ func (s *Store) ApplyCommand(cmd operation.Command) operation.CommandResult {
 	result := operation.CommandResult{
 		CommandID:    cmd.CommandID,
 		IsSuccess:    true,
-		Value:        "",
+		Value:        []byte(""),
 		Error:        "",
 	}
 	switch cmd.Type {
@@ -54,22 +54,23 @@ func (s *Store) ApplyCommand(cmd operation.Command) operation.CommandResult {
 	}
 }
 
-func (s *Store) get(key string) (string, error) {
-	if val, ok := s.store.Load(key); ok {
-		return val.(string), nil
+func (s *Store) get(key []byte) ([]byte, error) {
+	if val, ok := s.store.Load(string(key)); ok {
+		return val.([]byte), nil
 	} else {
-		return "", errors.New("item not found")
+		return []byte(""), errors.New("item not found")
 	}
 }
 
-func (s *Store) put(key string, val string) error {
-	s.store.Store(key, val)
+func (s *Store) put(key []byte, val []byte) error {
+	s.store.Store(string(key), val)
 	return nil
 }
 
-func (s *Store) delete(key string) error {
-	if _, ok := s.store.Load(key); ok {
-		s.store.Delete(key)
+func (s *Store) delete(key []byte) error {
+	keyStr := string(key)
+	if _, ok := s.store.Load(keyStr); ok {
+		s.store.Delete(keyStr)
 		return nil
 	} else {
 		return errors.New("item not found")

@@ -36,30 +36,28 @@ func (r *Reactor) listen() {
 }
 
 func (r *Reactor) handleClientRequest(conn net.Conn) {
-	decoder := json.NewDecoder(conn)
 	for {
-		//if err != nil {
-		//	reply := operation.CommandResult{
-		//		IsSuccess: false,
-		//		Value:     "",
-		//		Error:     err.Error(),
-		//	}
-		//	replyByte, err := json.Marshal(reply)
-		//	if err != nil {
-		//		log.Printf("json marshal error: %v", err)
-		//		return
-		//	}
-		//	conn.Write(replyByte)
-		//}
-		cmd := &operation.Command{}
-		err := decoder.Decode(&cmd)
+		buffer := make([]byte, 1024)
+		n, err := conn.Read(buffer)
 		if err != nil {
-			if err.Error() != "EOF" {
-				log.Printf("json decoder error: %v", err)
-				continue
-			} else {
+			reply := operation.CommandResult{
+				IsSuccess: false,
+				Value:     []byte(""),
+				Error:     err.Error(),
+			}
+			replyByte, err := json.Marshal(reply)
+			if err != nil {
+				log.Printf("json marshal error: %v", err)
 				return
 			}
+			conn.Write(replyByte)
+			break
+		}
+		cmd := &operation.Command{}
+		err = json.Unmarshal(buffer[:n], cmd)
+		if err != nil {
+			log.Printf("json unmarshal error onserver: %v", err)
+			continue
 		}
 		go r.px.Start(*cmd, conn)
 	}

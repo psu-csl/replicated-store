@@ -2,14 +2,14 @@ package operation
 
 type Command struct {
 	CommandID int64
-	Key       string
-	Value     string
+	Key       []byte
+	Value     []byte
 	Type      string
 }
 
 type CommandResult struct {
 	CommandID int64
 	IsSuccess bool
-	Value     string
+	Value     []byte
 	Error     string
 }

@@ -64,10 +64,13 @@ func (px *Paxos) startPaxos(cmd operation.Command, socket net.Conn) {
 	cmdResult := px.phase2Accept(cmd)
 
 	// Socket writes back command result
-	encoder := json.NewEncoder(socket)
-	err := encoder.Encode(cmdResult)
+	respByte, err := json.Marshal(cmdResult)
 	if err != nil {
-		log.Printf("json encode error: %v", err)
+		log.Printf("json marshal error on server: %v", err)
+	}
+	_, err = socket.Write(respByte)
+	if err != nil {
+		log.Printf("server write error: %v", err)
 	}
 }
 
