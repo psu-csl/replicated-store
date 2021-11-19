@@ -28,8 +28,7 @@ public class ReplicatorServer extends TCPServer {
             String method = request.getMethod();
             switch (method) {
                 case "GET":
-                    Future<String> f;
-                    f = threadPool.submit(new GetTask(kvStore, "key"));
+                    Future<String> f = threadPool.submit(new GetTask(kvStore, key));
                     String result = f.get();
                     if (result != null) {
                         //
@@ -38,23 +37,16 @@ public class ReplicatorServer extends TCPServer {
                         System.out.println("Couldn't find key ->  " + key);
                     }
                     break;
-                case "PUT":
-                    f = threadPool.submit(new PutTask(kvStore, key, value));
-                    if (f.isDone()) {
-                        // successfully put
-                        System.out.println("PUT " + key + " : " + value);
-                    } else {
-                        System.out.println("Unable to insert (key,value) -> " + key + " " + value);
-                    }
+                case "POST":
+                    f = threadPool.submit(new PostTask(kvStore, key, value));
+                    //System.out.println(f.toString());
+                    // f can be used to further notify or get result from
+                    // PostTask thread
                     break;
                 case "DELETE":
                     f = threadPool.submit(new DeleteTask(kvStore, key));
-                    if (f.isDone()) {
-                        // successfully removed
-                        System.out.println("DELETE " + key);
-                    } else {
-                        System.out.println("Unable to delete key -> " + key);
-                    }
+                    // f can be used to further notify or get result from
+                    // DeleteTask thread
                     break;
                 default:
                     System.err.println("Undefined method! " + method);
