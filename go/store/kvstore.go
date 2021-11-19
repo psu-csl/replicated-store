@@ -3,15 +3,16 @@ package store
 import (
 	"errors"
 	"github.com/psu-csl/replicated-store/go/operation"
+	"sync"
 )
 
 type Store struct {
-	store        map[string]string
+	store        sync.Map
 }
 
 func NewStore() *Store {
 	s := Store{
-		store: make(map[string]string),
+		store: sync.Map{},
 	}
 	return &s
 }
@@ -54,21 +55,21 @@ func (s *Store) ApplyCommand(cmd operation.Command) operation.CommandResult {
 }
 
 func (s *Store) get(key string) (string, error) {
-	if val, ok := s.store[key]; ok {
-		return val, nil
+	if val, ok := s.store.Load(key); ok {
+		return val.(string), nil
 	} else {
 		return "", errors.New("item not found")
 	}
 }
 
 func (s *Store) put(key string, val string) error {
-	s.store[key] = val
+	s.store.Store(key, val)
 	return nil
 }
 
 func (s *Store) delete(key string) error {
-	if _, ok := s.store[key]; ok {
-		delete(s.store, key)
+	if _, ok := s.store.Load(key); ok {
+		s.store.Delete(key)
 		return nil
 	} else {
 		return errors.New("item not found")

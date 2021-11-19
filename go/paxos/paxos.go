@@ -32,7 +32,7 @@ type Paxos struct {
 	peers        []string
 	me           int            // index into peers[]
 
-	log          map[uint64]Log // in-memory log
+	log          sync.Map       // in-memory log
 	slot         uint64         // next available slot
 	nextExecSlot uint64
 
@@ -46,7 +46,7 @@ func NewPaxos(peers []string, me int) *Paxos {
 	px := Paxos{
 		peers:        peers,
 		me:           me,
-		log:          make(map[uint64]Log),
+		log:          sync.Map{},
 		slot:         0,
 		nextExecSlot: 0,
 	}
@@ -101,7 +101,7 @@ func (px *Paxos) Decided(reqArgs *DecidedRequestArgs) error {
 		status:  Decided,
 		command: reqArgs.Value,
 	}
-	px.log[reqArgs.Slot] = entry
+	px.log.Store(reqArgs.Slot, entry)
 	px.mu.Unlock()
 
 	if reqArgs.Sender != px.me {
@@ -119,8 +119,8 @@ func (px *Paxos) execEntry(slot uint64) operation.CommandResult {
 		px.execCond.Wait()
 	}
 
-	entry, _ := px.log[slot]
-	cmdResult := px.store.ApplyCommand(entry.command)
+	entry, _ := px.log.Load(slot)
+	cmdResult := px.store.ApplyCommand(entry.(Log).command)
 
 	px.nextExecSlot = slot
 	px.execCond.Broadcast()
