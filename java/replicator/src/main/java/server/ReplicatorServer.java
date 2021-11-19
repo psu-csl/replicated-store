@@ -1,5 +1,7 @@
 package server;
 
+import org.codehaus.jackson.map.ObjectMapper;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.Socket;
@@ -15,15 +17,19 @@ public class ReplicatorServer extends TCPServer {
             Request request = new Request(in);
             System.out.println(request);
 
-            // TODO :  read key from request
-            String key = null;
-            String value = null;
+            // deserialize the content of request
+            String json = request.getContent();
+            ObjectMapper objectMapper = new ObjectMapper();
+            KVRequest kvRequest = objectMapper.readValue(json, KVRequest.class);
+            String key = kvRequest.getKey();
+            String value = kvRequest.getValue();
 
             //  send requests to paxos to be handled over thread pool
             String method = request.getMethod();
             switch (method) {
                 case "GET":
-                    Future<String> f = threadPool.submit(new GetTask(kvStore, "key"));
+                    Future<String> f;
+                    f = threadPool.submit(new GetTask(kvStore, "key"));
                     String result = f.get();
                     if (result != null) {
                         //
@@ -54,11 +60,7 @@ public class ReplicatorServer extends TCPServer {
                     System.err.println("Undefined method! " + method);
                     break;
             }
-        } catch (IOException e) {
-            e.printStackTrace();
-        } catch (ExecutionException e) {
-            e.printStackTrace();
-        } catch (InterruptedException e) {
+        } catch (IOException | ExecutionException | InterruptedException e) {
             e.printStackTrace();
         }
 
