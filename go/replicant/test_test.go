@@ -1,4 +1,4 @@
-package reactor
+package replicant
 
 import (
 	"github.com/psu-csl/replicated-store/go/operation"
@@ -8,17 +8,17 @@ import (
 )
 import "github.com/stretchr/testify/assert"
 
-var servers []*Reactor
+var servers []*Replicant
 var clients []*Client
 
 func setup(numClients int) {
 	serverAddrs := []string {
-		"localhost:8080",
+		"localhost:8888",
 	}
-	servers = make([]*Reactor, len(serverAddrs))
+	servers = make([]*Replicant, len(serverAddrs))
 	for i, _ := range serverAddrs {
 		servers[i] = NewReactor(serverAddrs, i)
-		servers[i].Run()
+		go servers[i].Run()
 	}
 
 	clients = make([]*Client, numClients)
@@ -43,33 +43,33 @@ func TestBasic (t *testing.T) {
 	defer clear()
 	client := clients[0]
 
-	reply, err := client.Put([]byte("testKey"), []byte("testVal"))
+	reply, err := client.Put("testKey", "testVal")
 	expected := &operation.CommandResult{
 		CommandID: 1,
 		IsSuccess: true,
-		Value:     []byte(""),
+		Value:     "",
 		Error:     "",
 	}
 	if assert.Nil(t, err, "got error on client side: %v", err) {
 		assert.Equalf(t, expected, reply, "PUT result expected %v, but got %v", expected, reply)
 	}
 
-	reply, err = client.Get([]byte("testKey"))
+	reply, err = client.Get("testKey")
 	expected = &operation.CommandResult{
 		CommandID: 2,
 		IsSuccess: true,
-		Value:     []byte("testVal"),
+		Value:     "testVal",
 		Error:     "",
 	}
 	if assert.Nil(t, err, "got error on client side: %v", err) {
 		assert.Equalf(t, expected, reply, "GET result expected %v, but got %v", expected, reply)
 	}
 
-	reply, err = client.Get([]byte("non-exist"))
+	reply, err = client.Get("non-exist")
 	expected = &operation.CommandResult{
 		CommandID: 3,
 		IsSuccess: false,
-		Value:     []byte(""),
+		Value:     "",
 		Error:     "item not found",
 	}
 	if assert.Nil(t, err, "got error on client side: %v", err) {
@@ -77,11 +77,11 @@ func TestBasic (t *testing.T) {
 	}
 
 
-	reply, err = client.Delete([]byte("testKey"))
+	reply, err = client.Delete("testKey")
 	expected = &operation.CommandResult{
 		CommandID: 4,
 		IsSuccess: true,
-		Value:     []byte(""),
+		Value:     "",
 		Error:     "",
 	}
 	if assert.Nil(t, err, "got error on client side: %v", err) {
@@ -98,19 +98,19 @@ func TestMultipleCmd (t *testing.T) {
 
 	numCmds := 20
 	for i := 1; i <= numCmds; i++ {
-		key := []byte(strconv.Itoa(i))
+		key := strconv.Itoa(i)
 		val := key
 		_, err := client.Put(key, val)
 		assert.Nil(t, err, "expect no err during put, but got %v", err)
 	}
 
 	for i := 1; i <= numCmds; i++ {
-		key := []byte(strconv.Itoa(i))
+		key := strconv.Itoa(i)
 		val := key
 		expected := &operation.CommandResult{
 			CommandID: int64(i) + 20,
 			IsSuccess: true,
-			Value:     []byte(val),
+			Value:     val,
 			Error:     "",
 		}
 		reply, err := client.Get(key)
@@ -130,7 +130,7 @@ func TestMultipleClients (t *testing.T) {
 	for i, client := range clients {
 		go func(clientIndex int, client *Client) {
 			for i := 1; i <= numCmds; i++ {
-				key := []byte(strconv.Itoa(clientIndex* 10 + i))
+				key := strconv.Itoa(clientIndex* 10 + i)
 				val := key
 				_, err := client.Put(key, val)
 				assert.Nil(t, err, "expect no err during put, but got %v", err)
@@ -148,7 +148,7 @@ func TestMultipleClients (t *testing.T) {
 
 	numReads := len(clients) * 10
 	for i := 1; i <= numReads; i++ {
-		key := []byte(strconv.Itoa(i))
+		key := strconv.Itoa(i)
 		val := key
 		reply, err := clients[0].Get(key)
 		if assert.Nil(t, err, "got error on client side: %v", err) {

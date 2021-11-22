@@ -2,7 +2,6 @@ package store
 
 import (
 	"errors"
-	"github.com/psu-csl/replicated-store/go/operation"
 	"sync"
 )
 
@@ -17,60 +16,22 @@ func NewStore() *Store {
 	return &s
 }
 
-func (s *Store) ApplyCommand(cmd operation.Command) operation.CommandResult {
-	result := operation.CommandResult{
-		CommandID:    cmd.CommandID,
-		IsSuccess:    true,
-		Value:        []byte(""),
-		Error:        "",
-	}
-	switch cmd.Type {
-	case "Put":
-		err := s.put(cmd.Key, cmd.Value)
-		if err != nil {
-			result.IsSuccess = false
-			result.Error = err.Error()
-		}
-		return result
-	case "Get":
-		val, err := s.get(cmd.Key)
-		result.Value = val
-		if err != nil {
-			result.IsSuccess = false
-			result.Error = err.Error()
-		}
-		return result
-	case "Delete":
-		err := s.delete(cmd.Key)
-		if err != nil {
-			result.IsSuccess = false
-			result.Error = err.Error()
-		}
-		return result
-	default:
-		result.IsSuccess = false
-		result.Error ="command type not found"
-		return result
-	}
-}
-
-func (s *Store) get(key []byte) ([]byte, error) {
-	if val, ok := s.store.Load(string(key)); ok {
-		return val.([]byte), nil
+func (s *Store) Get(key string) (string, error) {
+	if val, ok := s.store.Load(key); ok {
+		return val.(string), nil
 	} else {
-		return []byte(""), errors.New("item not found")
+		return "", errors.New("item not found")
 	}
 }
 
-func (s *Store) put(key []byte, val []byte) error {
-	s.store.Store(string(key), val)
+func (s *Store) Put(key string, val string) error {
+	s.store.Store(key, val)
 	return nil
 }
 
-func (s *Store) delete(key []byte) error {
-	keyStr := string(key)
-	if _, ok := s.store.Load(keyStr); ok {
-		s.store.Delete(keyStr)
+func (s *Store) Del(key string) error {
+	if _, ok := s.store.Load(key); ok {
+		s.store.Delete(key)
 		return nil
 	} else {
 		return errors.New("item not found")

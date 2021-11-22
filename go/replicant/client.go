@@ -1,4 +1,4 @@
-package reactor
+package replicant
 
 import (
 	"encoding/json"
@@ -25,18 +25,18 @@ func NewClient(servers []string, prefID int) *Client {
 	return &client
 }
 
-func (c *Client) Get(key []byte) (*operation.CommandResult, error) {
+func (c *Client) Get(key string) (*operation.CommandResult, error) {
 	cmdID := atomic.AddInt64(&c.nextCmdID, 1)
 	request := operation.Command{
 		CommandID: cmdID,
 		Key:       key,
-		Value:     []byte(""),
+		Value:     "",
 		Type:      "Get",
 	}
 	return c.sendRequest(request)
 }
 
-func (c *Client) Put(key []byte, val []byte) (*operation.CommandResult, error) {
+func (c *Client) Put(key string, val string) (*operation.CommandResult, error) {
 	cmdID := atomic.AddInt64(&c.nextCmdID, 1)
 	request := operation.Command{
 		CommandID: cmdID,
@@ -47,12 +47,12 @@ func (c *Client) Put(key []byte, val []byte) (*operation.CommandResult, error) {
 	return c.sendRequest(request)
 }
 
-func (c *Client) Delete(key []byte) (*operation.CommandResult, error) {
+func (c *Client) Delete(key string) (*operation.CommandResult, error) {
 	cmdID := atomic.AddInt64(&c.nextCmdID, 1)
 	request := operation.Command{
 		CommandID: cmdID,
 		Key:       key,
-		Value:     []byte(""),
+		Value:     "",
 		Type:      "Delete",
 	}
 	return c.sendRequest(request)

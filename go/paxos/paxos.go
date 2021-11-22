@@ -1,12 +1,9 @@
 package paxos
 
 import (
-	"encoding/json"
 	"github.com/psu-csl/replicated-store/go/operation"
-	"log"
 )
 import "github.com/psu-csl/replicated-store/go/store"
-import "net"
 import "sync"
 import "sync/atomic"
 
@@ -42,76 +39,50 @@ type Paxos struct {
 	execCond     *sync.Cond
 }
 
-func NewPaxos(peers []string, me int) *Paxos {
+func NewPaxos(peers []string, me int, store *store.Store) *Paxos {
 	px := Paxos{
 		peers:        peers,
 		me:           me,
 		log:          sync.Map{},
 		slot:         0,
 		nextExecSlot: 0,
+		store: store,
 	}
-	px.store = store.NewStore()
 	px.execCond = sync.NewCond(&px.execLock)
 	return &px
 }
 
-func (px *Paxos) Start(cmd operation.Command, socket net.Conn) {
-	go px.startPaxos(cmd, socket)
-}
-
-func (px *Paxos) startPaxos(cmd operation.Command, socket net.Conn) {
+func (px *Paxos) AgreeAndExecute(cmd operation.Command) *operation.CommandResult {
 	// check leader and may run p1
-	cmdResult := px.phase2Accept(cmd)
+	cmdResult := px.dummyPaxos(cmd)
 
-	// Socket writes back command result
-	respByte, err := json.Marshal(cmdResult)
-	if err != nil {
-		log.Printf("json marshal error on server: %v", err)
-	}
-	_, err = socket.Write(respByte)
-	if err != nil {
-		log.Printf("server write error: %v", err)
-	}
+	return cmdResult
 }
 
-func (px *Paxos) phase2Accept(cmd operation.Command) *operation.CommandResult {
+func (px *Paxos) dummyPaxos(cmd operation.Command) *operation.CommandResult {
 	slot := atomic.AddUint64(&px.slot, 1)
 	// Assume everything runs well, and proceed to commit phase
-	px.sendDecidedReq(slot, cmd)
+	px.commit(slot, cmd)
 	// Execute the command only after the command is committed in its local log
 	cmdResult := px.execEntry(slot)
 	return &cmdResult
 }
 
-// Send Decided request
-func (px *Paxos) sendDecidedReq(slot uint64, v operation.Command) bool {
-	decidedArgs := DecidedRequestArgs {
-		Slot:   slot,
-		Value:  v,
-		Sender: px.me,
-	}
-	// Send commit messages to other nodes
-
-	// Append entry to its own log
-	px.Decided(&decidedArgs)
-	return true
-}
-
 // Hanlder to commit the command in the in-memorty log
-func (px *Paxos) Decided(reqArgs *DecidedRequestArgs) error {
+func (px *Paxos) commit(slot uint64, cmd operation.Command) error {
 	px.mu.Lock()
 	entry := Log{
 		status:  Decided,
-		command: reqArgs.Value,
+		command: cmd,
 	}
-	px.log.Store(reqArgs.Slot, entry)
+	px.log.Store(slot, entry)
 	px.mu.Unlock()
 
-	if reqArgs.Sender != px.me {
-		// Follower nodes receive the command
-		// they should proceed to execute it, but don't need to return the result
-		px.execEntry(reqArgs.Slot)
-	}
+	//if reqArgs.Sender != px.me {
+	//	// Follower nodes receive the command
+	//	// they should proceed to execute it, but don't need to return the result
+	//	px.execEntry(reqArgs.Slot)
+	//}
 	return nil
 }
 
@@ -123,9 +94,39 @@ func (px *Paxos) execEntry(slot uint64) operation.CommandResult {
 	}
 
 	entry, _ := px.log.Load(slot)
-	cmdResult := px.store.ApplyCommand(entry.(Log).command)
+	cmd := entry.(Log).command
+	result := operation.CommandResult{
+		CommandID:    cmd.CommandID,
+		IsSuccess:    true,
+		Value:        "",
+		Error:        "",
+	}
+	switch cmd.Type {
+	case "Put":
+		err := px.store.Put(cmd.Key, cmd.Value)
+		if err != nil {
+			result.IsSuccess = false
+			result.Error = err.Error()
+		}
+	case "Get":
+		val, err := px.store.Get(cmd.Key)
+		result.Value = val
+		if err != nil {
+			result.IsSuccess = false
+			result.Error = err.Error()
+		}
+	case "Delete":
+		err := px.store.Del(cmd.Key)
+		if err != nil {
+			result.IsSuccess = false
+			result.Error = err.Error()
+		}
+	default:
+		result.IsSuccess = false
+		result.Error = "command type not found"
+	}
 
 	px.nextExecSlot = slot
 	px.execCond.Broadcast()
-	return cmdResult
+	return result
 }

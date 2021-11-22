@@ -1,22 +1,26 @@
-package reactor
+package replicant
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"github.com/psu-csl/replicated-store/go/store"
+)
 import "github.com/psu-csl/replicated-store/go/operation"
 import "net"
 import "log"
 import "github.com/psu-csl/replicated-store/go/paxos"
 
-type Reactor struct {
+type Replicant struct {
 	listener   net.Listener
 	me         int
 	px         *paxos.Paxos
 }
 
-func NewReactor(servers []string, me int) *Reactor {
-	reactor := Reactor{}
+func NewReactor(servers []string, me int) *Replicant {
+	reactor := Replicant{}
 	reactor.me = me
-	reactor.px = paxos.NewPaxos(servers, me)
-	listener, err := net.Listen("tcp", servers[me])
+	store := store.NewStore()
+	reactor.px = paxos.NewPaxos(servers, me, store)
+	listener, err := net.Listen("tcp", ":8888")
 	if err != nil {
 		log.Fatalf("listener error: %v", err)
 	}
@@ -24,7 +28,7 @@ func NewReactor(servers []string, me int) *Reactor {
 	return &reactor
 }
 
-func (r *Reactor) listen() {
+func (r *Replicant) Run() {
 	for {
 		conn, err := r.listener.Accept()
 		if err != nil {
@@ -35,14 +39,14 @@ func (r *Reactor) listen() {
 	}
 }
 
-func (r *Reactor) handleClientRequest(conn net.Conn) {
+func (r *Replicant) handleClientRequest(conn net.Conn) {
 	for {
 		buffer := make([]byte, 1024)
 		n, err := conn.Read(buffer)
 		if err != nil {
 			reply := operation.CommandResult{
 				IsSuccess: false,
-				Value:     []byte(""),
+				Value:     "",
 				Error:     err.Error(),
 			}
 			replyByte, err := json.Marshal(reply)
@@ -59,14 +63,21 @@ func (r *Reactor) handleClientRequest(conn net.Conn) {
 			log.Printf("json unmarshal error onserver: %v", err)
 			continue
 		}
-		go r.px.Start(*cmd, conn)
+		go func() {
+			cmdResult := r.px.AgreeAndExecute(*cmd)
+			// Socket writes back command result
+			respByte, err := json.Marshal(cmdResult)
+			if err != nil {
+				log.Printf("json marshal error on server: %v", err)
+			}
+			_, err = conn.Write(respByte)
+			if err != nil {
+				log.Printf("server write error: %v", err)
+			}
+		}()
 	}
 }
 
-func (r *Reactor) Run() {
-	go r.listen()
-}
-
-func (r *Reactor) Close() {
+func (r *Replicant) Close() {
 	r.listener.Close()
 }
