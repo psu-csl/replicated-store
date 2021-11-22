@@ -87,11 +87,11 @@ func (px *Paxos) commit(slot uint64, cmd operation.Command) error {
 }
 
 func (px *Paxos) execEntry(slot uint64) operation.CommandResult {
-	px.execLock.Lock()
-	defer px.execLock.Unlock()
-	for px.nextExecSlot + 1 != slot {
-		px.execCond.Wait()
-	}
+	//px.execLock.Lock()
+	//defer px.execLock.Unlock()
+	//for px.nextExecSlot + 1 != slot {
+	//	px.execCond.Wait()
+	//}
 
 	entry, _ := px.log.Load(slot)
 	cmd := entry.(Log).command
@@ -126,7 +126,7 @@ func (px *Paxos) execEntry(slot uint64) operation.CommandResult {
 		result.Error = "command type not found"
 	}
 
-	px.nextExecSlot = slot
+	//px.nextExecSlot = slot
 	px.execCond.Broadcast()
 	return result
 }
