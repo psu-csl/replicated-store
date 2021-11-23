@@ -1,4 +1,4 @@
-package server;
+package replicant;
 
 public class KVRequest {
     public String value;
