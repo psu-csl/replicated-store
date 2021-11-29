@@ -1,4 +1,5 @@
 mod kvstore;
+mod consensus;
 
 use kvstore::traits::KVStore;
 use kvstore::memstore::MemStore;
