@@ -2,58 +2,49 @@ package replicant
 
 import (
 	"encoding/json"
-	"github.com/psu-csl/replicated-store/go/operation"
+	"github.com/psu-csl/replicated-store/go/command"
 	"net"
-	"sync/atomic"
 	"time"
 )
 
 type Client struct {
-	nextCmdID int64
-	conn      net.Conn
-	servers   []string
-	serverID  int
+	conn     net.Conn
+	servers  []string
+	serverID int
 }
 
 func NewClient(servers []string, prefID int) *Client {
 	client := Client{
-		nextCmdID: 0,
-		servers:   servers,
-		serverID:  prefID,
+		servers:  servers,
+		serverID: prefID,
 	}
 	client.dial()
 	return &client
 }
 
-func (c *Client) Get(key string) (*operation.CommandResult, error) {
-	cmdID := atomic.AddInt64(&c.nextCmdID, 1)
-	request := operation.Command{
-		CommandID: cmdID,
-		Key:       key,
-		Value:     "",
-		Type:      "Get",
+func (c *Client) Get(key string) (*command.CommandResult, error) {
+	request := command.Command{
+		Key:         key,
+		Value:       "",
+		CommandType: "Get",
 	}
 	return c.sendRequest(request)
 }
 
-func (c *Client) Put(key string, val string) (*operation.CommandResult, error) {
-	cmdID := atomic.AddInt64(&c.nextCmdID, 1)
-	request := operation.Command{
-		CommandID: cmdID,
-		Key:       key,
-		Value:     val,
-		Type:      "Put",
+func (c *Client) Put(key string, val string) (*command.CommandResult, error) {
+	request := command.Command{
+		Key:         key,
+		Value:       val,
+		CommandType: "Put",
 	}
 	return c.sendRequest(request)
 }
 
-func (c *Client) Delete(key string) (*operation.CommandResult, error) {
-	cmdID := atomic.AddInt64(&c.nextCmdID, 1)
-	request := operation.Command{
-		CommandID: cmdID,
-		Key:       key,
-		Value:     "",
-		Type:      "Delete",
+func (c *Client) Delete(key string) (*command.CommandResult, error) {
+	request := command.Command{
+		Key:         key,
+		Value:       "",
+		CommandType: "Delete",
 	}
 	return c.sendRequest(request)
 }
@@ -75,7 +66,8 @@ func (c *Client) dial() {
 	}
 }
 
-func (c *Client) sendRequest(request operation.Command) (*operation.CommandResult, error) {
+func (c *Client) sendRequest(request command.Command) (*command.CommandResult,
+	error) {
 	reqByte, err := json.Marshal(request)
 	if err != nil {
 		return nil, err
@@ -85,7 +77,7 @@ func (c *Client) sendRequest(request operation.Command) (*operation.CommandResul
 		return nil, err
 	}
 
-	cmdResult := &operation.CommandResult{}
+	cmdResult := &command.CommandResult{}
 	buffer := make([]byte, 1024)
 	n, err := c.conn.Read(buffer)
 	if err != nil {

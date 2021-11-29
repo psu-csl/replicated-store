@@ -4,15 +4,15 @@ import (
 	"encoding/json"
 	"github.com/psu-csl/replicated-store/go/store"
 )
-import "github.com/psu-csl/replicated-store/go/operation"
+import "github.com/psu-csl/replicated-store/go/command"
 import "net"
 import "log"
 import "github.com/psu-csl/replicated-store/go/paxos"
 
 type Replicant struct {
-	listener   net.Listener
-	me         int
-	px         *paxos.Paxos
+	listener net.Listener
+	me       int
+	px       *paxos.Paxos
 }
 
 func NewReactor(servers []string, me int) *Replicant {
@@ -44,10 +44,9 @@ func (r *Replicant) handleClientRequest(conn net.Conn) {
 		buffer := make([]byte, 1024)
 		n, err := conn.Read(buffer)
 		if err != nil {
-			reply := operation.CommandResult{
+			reply := command.CommandResult{
 				IsSuccess: false,
 				Value:     "",
-				Error:     err.Error(),
 			}
 			replyByte, err := json.Marshal(reply)
 			if err != nil {
@@ -57,7 +56,7 @@ func (r *Replicant) handleClientRequest(conn net.Conn) {
 			conn.Write(replyByte)
 			break
 		}
-		cmd := &operation.Command{}
+		cmd := &command.Command{}
 		err = json.Unmarshal(buffer[:n], cmd)
 		if err != nil {
 			log.Printf("json unmarshal error onserver: %v", err)

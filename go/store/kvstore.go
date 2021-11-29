@@ -6,7 +6,7 @@ import (
 )
 
 type Store struct {
-	store        sync.Map
+	store sync.Map
 }
 
 func NewStore() *Store {
