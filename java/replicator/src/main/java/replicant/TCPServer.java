@@ -1,8 +1,12 @@
-package server;
+package replicant;
+
+import kvstore.KVStore;
+import paxos.DummyPaxos;
 
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.concurrent.ThreadPoolExecutor;
 
 public class TCPServer implements Cloneable, Runnable {
 
@@ -10,11 +14,22 @@ public class TCPServer implements Cloneable, Runnable {
     ServerSocket server = null;
     Socket data = null;
     private boolean done = false;
+    DummyPaxos paxos;
+    ThreadPoolExecutor threadPool = null;
+    // TODO : this concurrent map acts as dummy paxos and kvstore
+    private KVStore kvStore;
 
-    public synchronized void startServer(int port) throws IOException {
+    // TODO : later reply concurrent map by KVStore context
+    public synchronized void startServer(int port, DummyPaxos paxos, KVStore kvStore, ThreadPoolExecutor threadPool/*int port, ConcurrentHashMap<String, String> kvStore*/) throws IOException {
         if (runner == null) {
             server = new ServerSocket(port);
             runner = new Thread(this);
+            // currently, both core and max size are set to tpSize
+            // but can be adjusted to grow and shrink dynamically
+            // from core # -> max # depending on the queue congestion
+            this.threadPool = threadPool; /*n*/
+            this.kvStore = kvStore;
+            this.paxos = paxos;
             runner.start();
         }
     }
