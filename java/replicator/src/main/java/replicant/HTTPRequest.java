@@ -1,4 +1,4 @@
-package server;
+package replicant;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -7,7 +7,7 @@ import java.io.InputStreamReader;
 import java.util.HashMap;
 import java.util.Map;
 
-public class Request {
+public class HTTPRequest {
     private static final String CONTENT_LENGTH_HEADER = "Content-Length";
     private static final String CONTENT_TYPE = "Content-type";
     private final String method;
@@ -17,7 +17,7 @@ public class Request {
     private final Map<String, String> headers = new HashMap<>();
     private final Map<String, String> params = new HashMap<>();
 
-    public Request(InputStream inputStream) throws IOException  {
+    public HTTPRequest(InputStream inputStream) throws IOException {
 
         BufferedReader in = new BufferedReader(new InputStreamReader(
                 inputStream));
@@ -55,8 +55,8 @@ public class Request {
 
             int contentLength = 0;
 
-            if (headers.get(Request.CONTENT_LENGTH_HEADER) != null) {
-                contentLength = Integer.parseInt(headers.get(Request.CONTENT_LENGTH_HEADER));
+            if (headers.get(HTTPRequest.CONTENT_LENGTH_HEADER) != null) {
+                contentLength = Integer.parseInt(headers.get(HTTPRequest.CONTENT_LENGTH_HEADER));
             }
 
 
@@ -66,7 +66,7 @@ public class Request {
 
             this.body = new String(buff);
 
-            System.out.println("----------- httpserver.Request -----------\n" + this + "\n--------------------------------\n");
+            System.out.println("----------- httpserver.HTTPRequest -----------\n" + this + "\n--------------------------------\n");
 
         } catch (IOException e) {
             e.printStackTrace();
