@@ -23,6 +23,7 @@ public class HTTPRequest {
                 inputStream));
         try {
             String requestLine = in.readLine();
+            System.out.println(requestLine);
             if (requestLine == null) {
                 System.err.println("request is null");
                 throw new IOException();

@@ -6,7 +6,7 @@ import paxos.DummyPaxos;
 
 import java.util.concurrent.Callable;
 
-public class Task implements Callable {
+public class Task implements Callable<TCPResponse> {
     Command cmd;
     DummyPaxos paxos;
 
@@ -16,11 +16,12 @@ public class Task implements Callable {
     }
 
     @Override
-    public Response call() throws Exception {
+    public TCPResponse call() throws Exception {
 
         CommandResult commandResult = paxos.agreeAndExecute(cmd);
-
-        // GET
+        TCPResponse response = new TCPResponse(commandResult.isSuccessful(), commandResult.getValue());
+        return response;
+        /* GET
         if (commandResult.getValue() != null && commandResult.isSuccessful()) {
             String content = "{\"value\":" + commandResult.getValue() + "}";
             return new Response(200, "application/json", content);
@@ -30,6 +31,6 @@ public class Task implements Callable {
         }
         return new Response(404, "application/json", "{}");
 
-
+        */
     }
 }
