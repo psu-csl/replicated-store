@@ -17,7 +17,7 @@ func setup(numClients int) {
 	}
 	servers = make([]*Replicant, len(serverAddrs))
 	for i := range serverAddrs {
-		servers[i] = NewReactor(serverAddrs, i)
+		servers[i] = NewReplicant(serverAddrs, i)
 		go servers[i].Run()
 	}
 

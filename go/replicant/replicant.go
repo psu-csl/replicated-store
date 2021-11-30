@@ -15,7 +15,7 @@ type Replicant struct {
 	px       *paxos.Paxos
 }
 
-func NewReactor(servers []string, me int) *Replicant {
+func NewReplicant(servers []string, me int) *Replicant {
 	reactor := Replicant{}
 	reactor.me = me
 	store := store.NewStore()
