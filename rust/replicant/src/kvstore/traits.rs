@@ -2,11 +2,9 @@
 pub trait KVStore {
     fn new() -> Self;
 
-    fn get(&self, key: &String) -> Option<&String>;
+    fn get(&self, key: &str) -> Result<&str, &str>;
 
-    fn put(&mut self, key: String, value: String)
-           -> Result<(), &'static str>;
+    fn put(&mut self, key: String, value: String) -> Result<&str, &str>;
 
-    fn del(&mut self, key: &String)
-           -> Result<(), &'static str>;
+    fn del(&mut self, key: &str) -> Result<&str, &str>;
 }

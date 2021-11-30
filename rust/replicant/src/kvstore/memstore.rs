@@ -12,22 +12,25 @@ impl KVStore for MemStore {
         MemStore { map: HashMap::new() }
     }
 
-    fn get(&self, key: &String) -> Option<&String> {
-        self.map.get(key)
+    fn get(&self, key: &str) -> Result<&str, &str> {
+        match self.map.get(key) {
+            Some(val) => Ok(val),
+            None => Err("not found")
+        }
     }
 
-    fn put(&mut self, key: String, value: String)
-           -> Result<(), &'static str> {
+    fn put(&mut self, key: String, value: String) -> Result<&str, &str> {
         self.map.insert(key, value);
-        // We may need to return non-Ok values for a persistent KVStore.
-        Ok(())
+        // Inserting into HashMap never fails. Inserting into a persistent
+        // key-value store may fail for various reasons, such as full disk, in
+        // which case we may need to return Err values.
+        Ok("ok")
     }
 
-    fn del(&mut self, key: &String)
-           -> Result<(), &'static str> {
+    fn del(&mut self, key: &str) -> Result<&str, &str> {
         match self.map.remove(key) {
-            Some(_) => Ok(()),
-            None => Err("no such value")
+            Some(_) => Ok("ok"),
+            None => Err("not found")
         }
     }
 }
@@ -38,28 +41,28 @@ mod tests {
 
     #[test]
     fn put_get() {
-        let mut store: MemStore = KVStore::new();
+        let mut store = MemStore::new();
         let (key, val) = (String::from("key"), String::from("val"));
-        assert_eq!(store.put(key, val), Ok(()));
+        assert_eq!(store.put(key, val), Ok("ok"));
         let (key, val) = (String::from("key"), String::from("val"));
         assert_eq!(store.get(&key).unwrap(), &val);
     }
 
     #[test]
     fn get_nonexistent() {
-        let store: MemStore = KVStore::new();
+        let store = MemStore::new();
         let key = String::from("key");
-        assert!(store.get(&key).is_none());
+        assert_eq!(store.get(&key), Err("not found"));
     }
 
     #[test]
     fn put_del() {
-        let mut store: MemStore = KVStore::new();
+        let mut store = MemStore::new();
         let (key, val) = (String::from("key"), String::from("val"));
-        assert_eq!(store.put(key, val), Ok(()));
+        assert_eq!(store.put(key, val), Ok("ok"));
         let key = String::from("key");
-        assert_eq!(store.del(&key), Ok(()));
-        assert!(store.get(&key).is_none());
+        assert_eq!(store.del(&key), Ok("ok"));
+        assert!(store.get(&key).is_err());
     }
 
     #[test]

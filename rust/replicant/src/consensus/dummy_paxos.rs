@@ -12,23 +12,11 @@ impl<T: KVStore> Consensus<T> for DummyPaxos<T> {
         DummyPaxos { store }
     }
 
-    fn agree_and_execute(&mut self, cmd: Command) -> String {
+    fn agree_and_execute(&mut self, cmd: Command) -> Result<&str, &str> {
         match cmd {
-            Command::Get(key) =>
-                match self.store.get(&key) {
-                    Some(value) => value.clone(),
-                    None => "not found".to_string()
-                }
-            Command::Put(key, value) =>
-                match self.store.put(key, value) {
-                    Ok(()) => "ok".to_string(),
-                    Err(message) => message.to_string()
-                }
-            Command::Del(key) =>
-                match self.store.del(&key) {
-                    Ok(()) => "ok".to_string(),
-                    Err(message) => message.to_string()
-                }
+            Command::Get(key) => self.store.get(key),
+            Command::Put(key, value) => self.store.put(key, value),
+            Command::Del(key) => self.store.del(key),
         }
     }
 }
@@ -42,27 +30,27 @@ mod tests {
         let mut paxos = DummyPaxos::new(MemStore::new());
 
         // get and del non-existent
-        let cmd = Command::Get("foo".to_string());
-        assert_eq!(paxos.agree_and_execute(cmd), "not found".to_string());
-        let cmd = Command::Del("foo".to_string());
-        assert_eq!(paxos.agree_and_execute(cmd), "no such value".to_string());
+        let cmd = Command::Get("foo");
+        assert_eq!(paxos.agree_and_execute(cmd).err().unwrap(), "not found");
+        let cmd = Command::Del("foo");
+        assert_eq!(paxos.agree_and_execute(cmd).err().unwrap(), "not found");
 
         // put followed by get
         let cmd = Command::Put("foo".to_string(), "bar".to_string());
-        assert_eq!(paxos.agree_and_execute(cmd), "ok".to_string());
-        let cmd = Command::Get("foo".to_string());
-        assert_eq!(paxos.agree_and_execute(cmd), "bar".to_string());
+        assert_eq!(paxos.agree_and_execute(cmd).unwrap(), "ok");
+        let cmd = Command::Get("foo");
+        assert_eq!(paxos.agree_and_execute(cmd).unwrap(), "bar");
 
         // update followed by get
         let cmd = Command::Put("foo".to_string(), "baz".to_string());
-        assert_eq!(paxos.agree_and_execute(cmd), "ok".to_string());
-        let cmd = Command::Get("foo".to_string());
-        assert_eq!(paxos.agree_and_execute(cmd), "baz".to_string());
+        assert_eq!(paxos.agree_and_execute(cmd).unwrap(), "ok");
+        let cmd = Command::Get("foo");
+        assert_eq!(paxos.agree_and_execute(cmd).unwrap(), "baz");
 
         // del followed by get
-        let cmd = Command::Del("foo".to_string());
-        assert_eq!(paxos.agree_and_execute(cmd), "ok".to_string());
-        let cmd = Command::Get("foo".to_string());
-        assert_eq!(paxos.agree_and_execute(cmd), "not found".to_string());
+        let cmd = Command::Del("foo");
+        assert_eq!(paxos.agree_and_execute(cmd).unwrap(), "ok");
+        let cmd = Command::Get("foo");
+        assert_eq!(paxos.agree_and_execute(cmd).err().unwrap(), "not found");
     }
 }
