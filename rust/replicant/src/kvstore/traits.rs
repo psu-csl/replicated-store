@@ -1,6 +1,6 @@
 // The key-value store interface.
 pub trait KVStore {
-    fn new() -> Self;
+    fn new() -> Self where Self: Sized;
 
     fn get(&self, key: &str) -> Result<&str, &str>;
 

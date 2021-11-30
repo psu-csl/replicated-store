@@ -3,12 +3,12 @@ use crate::kvstore::memstore::MemStore;
 use crate::kvstore::command::Command;
 use crate::consensus::traits::Consensus;
 
-pub struct DummyPaxos<T: KVStore> {
-    store: T
+pub struct DummyPaxos {
+    store: Box<dyn KVStore>
 }
 
-impl<T: KVStore> Consensus<T> for DummyPaxos<T> {
-    fn new(store: T) -> Self {
+impl Consensus for DummyPaxos {
+    fn new(store: Box<dyn KVStore>) -> Self {
         DummyPaxos { store }
     }
 
@@ -27,7 +27,8 @@ mod tests {
 
     #[test]
     fn get_put_del() {
-        let mut paxos = DummyPaxos::new(MemStore::new());
+        let store = Box::new(MemStore::new());
+        let mut paxos = DummyPaxos::new(store);
 
         // get and del non-existent
         let cmd = Command::Get("foo");
