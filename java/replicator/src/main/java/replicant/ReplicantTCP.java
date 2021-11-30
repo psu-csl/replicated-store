@@ -13,9 +13,9 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.ThreadPoolExecutor;
 
-public class Replicant extends TCPServer {
+public class ReplicantTCP extends TCPServer {
 
-    public Replicant(int port, DummyPaxos paxos, KVStore kvStore, ThreadPoolExecutor threadPool) {
+    public ReplicantTCP(int port, DummyPaxos paxos, KVStore kvStore, ThreadPoolExecutor threadPool) {
 
         try {
             startServer(port, paxos, kvStore, threadPool);
@@ -31,30 +31,30 @@ public class Replicant extends TCPServer {
             try {
                 InputStream in = data.getInputStream();
                 // create a request object from input stream
-                HTTPRequest request = new HTTPRequest(in);
+                TCPMessage msg = new TCPMessage(in);
                 //System.out.println(request);
 
                 // deserialize the content of request
-                String json = request.getContent();
-                System.out.println("Content : " + json);
+                String json = msg.getContent();
+                //System.out.println("Content : " + json);
                 ObjectMapper objectMapper = new ObjectMapper();
                 KVRequest kvRequest = objectMapper.readValue(json, KVRequest.class);
                 String key = kvRequest.getKey();
                 String value = kvRequest.getValue();
 
                 //  send requests to paxos to be handled over thread pool
-                String method = request.getMethod();
+                String method = kvRequest.getCommandType();
 
-                Command cmd = new Command(kvRequest.getKey(), kvRequest.getValue(), request.getMethod());
+                Command cmd = new Command(kvRequest.getKey(), kvRequest.getValue(), method);
                 Future<TCPResponse> future = threadPool.submit(new Task(cmd, paxos));
                 TCPResponse response = future.get();
                 System.out.println(response);
 
                 PrintWriter out = new PrintWriter(data.getOutputStream());
-                out.print(response.toString());
+                out.print(response);
                 out.flush();
-                out.close();
-                in.close();
+                //  out.close();
+                //  in.close();
 
             } catch (IOException | InterruptedException | ExecutionException e) {
                 e.printStackTrace();

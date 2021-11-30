@@ -16,15 +16,15 @@ public class DummyPaxos {
         boolean isSuccess;
         CommandResult dummyPaxosResult;
         switch (cmdName) {
-            case "GET":
+            case "Get":
                 String value = kvStore.get(cmd.getKey());
                 dummyPaxosResult = new CommandResult(true, value);
                 break;
-            case "PUT":
+            case "Put":
                 isSuccess = kvStore.put(cmd.getKey(), cmd.getValue());
                 dummyPaxosResult = new CommandResult(isSuccess, null);
                 break;
-            case "DEL":
+            case "Del":
                 isSuccess = kvStore.del(cmd.getKey());
                 dummyPaxosResult = new CommandResult(isSuccess, null);
                 break;
