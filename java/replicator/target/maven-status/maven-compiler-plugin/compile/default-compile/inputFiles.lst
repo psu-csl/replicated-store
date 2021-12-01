@@ -1,8 +1,0 @@
-/home/vfj/replicated-store/java/replicator/src/main/java/ReplicatorMain.java
-/home/vfj/replicated-store/java/replicator/src/main/java/server/ReplicatorServer.java
-/home/vfj/replicated-store/java/replicator/src/main/java/server/DeleteTask.java
-/home/vfj/replicated-store/java/replicator/src/main/java/server/KVRequest.java
-/home/vfj/replicated-store/java/replicator/src/main/java/server/TCPServer.java
-/home/vfj/replicated-store/java/replicator/src/main/java/server/GetTask.java
-/home/vfj/replicated-store/java/replicator/src/main/java/server/PostTask.java
-/home/vfj/replicated-store/java/replicator/src/main/java/server/Request.java
