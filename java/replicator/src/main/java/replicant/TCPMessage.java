@@ -13,11 +13,11 @@ public class TCPMessage {
         BufferedReader in = new BufferedReader(new InputStreamReader(
                 inputStream));
         try {
-            //String requestLine = in.readLine();
-            char[] buff = new char[1024];
+            String requestLine = in.readLine();
+            // char[] buff = new char[1024];
 
-            in.read(buff, 0, buff.length);
-            String requestLine = new String(buff);
+            //in.read(buff, 0, buff.length);
+            //String requestLine = new String(buff);
             System.out.println(requestLine);
             if (requestLine == null) {
                 System.err.println("request is null");

@@ -52,6 +52,7 @@ public class ReplicantTCP extends TCPServer {
 
                 PrintWriter out = new PrintWriter(data.getOutputStream());
                 out.print(response);
+                out.print("\n");
                 out.flush();
                 //  out.close();
                 //  in.close();
