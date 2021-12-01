@@ -1,9 +1,11 @@
 package replicant
 
 import (
+	"bufio"
 	"encoding/json"
 	"github.com/psu-csl/replicated-store/go/command"
 	"net"
+	"net/textproto"
 	"time"
 )
 
@@ -11,6 +13,7 @@ type Client struct {
 	conn     net.Conn
 	servers  []string
 	serverID int
+	reader   *textproto.Reader
 }
 
 func NewClient(servers []string, prefID int) *Client {
@@ -62,6 +65,8 @@ func (c *Client) dial() {
 			continue
 		}
 		c.conn = conn
+		reader := bufio.NewReader(conn)
+		c.reader = textproto.NewReader(reader)
 		break
 	}
 }
@@ -69,6 +74,7 @@ func (c *Client) dial() {
 func (c *Client) sendRequest(request command.Command) (*command.CommandResult,
 	error) {
 	reqByte, err := json.Marshal(request)
+	reqByte = append(reqByte, '\n')
 	if err != nil {
 		return nil, err
 	}
@@ -78,12 +84,12 @@ func (c *Client) sendRequest(request command.Command) (*command.CommandResult,
 	}
 
 	cmdResult := &command.CommandResult{}
-	buffer := make([]byte, 1024)
-	n, err := c.conn.Read(buffer)
+	//buffer := make([]byte, 1056)
+	buffer, err := c.reader.ReadLineBytes()
 	if err != nil {
 		return nil, err
 	}
-	err = json.Unmarshal(buffer[:n], cmdResult)
+	err = json.Unmarshal(buffer[:], cmdResult)
 	if err != nil && err.Error() != "EOF" {
 		return nil, err
 	}

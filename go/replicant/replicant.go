@@ -1,8 +1,10 @@
 package replicant
 
 import (
+	"bufio"
 	"encoding/json"
 	"github.com/psu-csl/replicated-store/go/store"
+	"net/textproto"
 )
 import "github.com/psu-csl/replicated-store/go/command"
 import "net"
@@ -40,15 +42,17 @@ func (r *Replicant) Run() {
 }
 
 func (r *Replicant) handleClientRequest(conn net.Conn) {
+	reader := textproto.NewReader(bufio.NewReader((conn)))
 	for {
-		buffer := make([]byte, 1024)
-		n, err := conn.Read(buffer)
+		//buffer := make([]byte, 1056)
+		buffer, err := reader.ReadLineBytes()
 		if err != nil {
 			reply := command.CommandResult{
 				IsSuccess: false,
 				Value:     "",
 			}
 			replyByte, err := json.Marshal(reply)
+			replyByte = append(replyByte, '\n')
 			if err != nil {
 				log.Printf("json marshal error: %v", err)
 				return
@@ -57,7 +61,7 @@ func (r *Replicant) handleClientRequest(conn net.Conn) {
 			break
 		}
 		cmd := &command.Command{}
-		err = json.Unmarshal(buffer[:n], cmd)
+		err = json.Unmarshal(buffer[:], cmd)
 		if err != nil {
 			log.Printf("json unmarshal error onserver: %v", err)
 			continue
@@ -69,6 +73,7 @@ func (r *Replicant) handleClientRequest(conn net.Conn) {
 			if err != nil {
 				log.Printf("json marshal error on server: %v", err)
 			}
+			respByte = append(respByte, '\n')
 			_, err = conn.Write(respByte)
 			if err != nil {
 				log.Printf("server write error: %v", err)
