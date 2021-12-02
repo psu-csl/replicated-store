@@ -17,8 +17,9 @@ run_cmd="~/go-ycsb/bin/go-ycsb run mpaxos -P $workload"
 # call load once
 load_cmd="~/go-ycsb/bin/go-ycsb load mpaxos -P $workload"
 echo "Load : "
-eval $load_cmd |tee /dev/stderr |  awk '/^Run finished, takes /{print $NF}' >  $destfile
+eval $load_cmd |  awk '/^Run finished, takes /{print $NF}' >>  $destfile
 echo "Run : "
 for ((i = 0; i < N; i++)); do  
-    eval $run_cmd |tee /dev/stderr | awk '/^Run finished, takes /{print $NF}' >> $destfile
+    echo $i
+    eval $run_cmd | tee  | awk '/^Run finished, takes /{print $NF}' | tee -a $destfile
 done
