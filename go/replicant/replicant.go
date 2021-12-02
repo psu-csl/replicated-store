@@ -3,13 +3,13 @@ package replicant
 import (
 	"bufio"
 	"encoding/json"
+	"github.com/psu-csl/replicated-store/go/command"
+	"github.com/psu-csl/replicated-store/go/paxos"
 	"github.com/psu-csl/replicated-store/go/store"
+	"log"
+	"net"
 	"net/textproto"
 )
-import "github.com/psu-csl/replicated-store/go/command"
-import "net"
-import "log"
-import "github.com/psu-csl/replicated-store/go/paxos"
 
 type Replicant struct {
 	listener net.Listener
@@ -42,7 +42,7 @@ func (r *Replicant) Run() {
 }
 
 func (r *Replicant) handleClientRequest(conn net.Conn) {
-	reader := textproto.NewReader(bufio.NewReader((conn)))
+	reader := textproto.NewReader(bufio.NewReader(conn))
 	for {
 		//buffer := make([]byte, 1056)
 		buffer, err := reader.ReadLineBytes()
