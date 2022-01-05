@@ -1,4 +1,3 @@
-#include "command.h"
 #include "paxos.h"
 
 bool Paxos::AgreeAndExecute(const Command& command) {
