@@ -1,4 +1,6 @@
+syntax = "proto3";
 import "messages.proto";
+import "google/protobuf/empty.proto";
 
 option optimize_for = SPEED;
 option java_package = "paxos.service";
@@ -6,4 +8,5 @@ option java_package = "paxos.service";
 service Paxos {
   rpc Phase1Election(Propose) returns (Promise);
   rpc Phase2Accept(Accept) returns (Accepted);
+  rpc SendDecidedReq(Decided) returns (google.protobuf.Empty);
 }
