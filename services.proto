@@ -1,9 +1,15 @@
+syntax = "proto3";
+
 import "messages.proto";
 
 option optimize_for = SPEED;
 option java_package = "paxos.service";
+option go_package = "github.com/psu-csl/replicated-store/go/paxos";
+
+package paxos;
 
 service Paxos {
-  rpc Phase1Election(Propose) returns (Promise);
-  rpc Phase2Accept(Accept) returns (Accepted);
+  rpc HanldePhase1Prepare(messages.Propose) returns (messages.Promise);
+  rpc HandlePhase2Accept(messages.Accept) returns (messages.Accepted);
+  rpc HandlePhase3Decided(messages.Decided) returns (messages.Empty);
 }

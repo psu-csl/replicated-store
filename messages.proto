@@ -3,14 +3,9 @@ syntax = "proto3";
 option java_multiple_files = true;
 option optimize_for = SPEED;
 option java_package = "paxos.message";
+option go_package = "github.com/psu-csl/replicated-store/go/message";
 
-message Accepted {
-  bool IsAccepted = 1;
-  uint32 Ballot = 2;
-  uint32 Slot = 3;
-  uint32 Sender = 4;
-  uint32 ActiveLeader = 5;
-}
+package messages;
 
 message Propose {
   uint32 Ballot = 1;
@@ -34,11 +29,20 @@ message Accept {
   uint32 ActiveLeader = 5;
 }
 
+message Accepted {
+  bool IsAccepted = 1;
+  uint32 Ballot = 2;
+  uint32 Slot = 3;
+  uint32 Sender = 4;
+  uint32 ActiveLeader = 5;
+}
+
 message Command {
   string Key = 1;
   string Value = 2;
   string CommandType = 3;
 }
+
 message Decided {
   uint32 Ballot = 1;
   uint32 Slot = 2;
@@ -52,4 +56,7 @@ message Heartbeat {
 message HeartbeatResponse {
   uint32 ServerId = 1;
   uint32 LastExecutedSlot = 2;
+}
+
+message Empty {
 }
