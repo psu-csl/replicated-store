@@ -1,0 +1,9 @@
+import "messages.proto";
+
+option optimize_for = SPEED;
+option java_package = "paxos.service";
+
+service Paxos {
+  rpc Phase1Election(Propose) returns (Promise);
+  rpc Phase2Accept(Accept) returns (Accepted);
+}
