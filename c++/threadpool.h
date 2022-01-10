@@ -11,14 +11,14 @@
 #include "joiner.h"
 #include "tqueue.h"
 
-class thread_pool {
+class ThreadPool {
  private:
   std::atomic_bool done_;
   tqueue<std::function<void()>> wq_;
   std::vector<std::thread> threads_;
   joiner joiner_;
 
-  void worker() {
+  void Worker() {
     while (!done_) {
       std::function<void()> task;
       if (wq_.try_pop(task))
@@ -29,7 +29,7 @@ class thread_pool {
   }
 
  public:
-  thread_pool() : done_(false), joiner_(threads_) {
+  ThreadPool() : done_(false), joiner_(threads_) {
     auto num_threads = std::thread::hardware_concurrency();
     try {
       for (size_t i = 0; i < num_threads; ++i)
@@ -40,12 +40,12 @@ class thread_pool {
     }
   }
 
-  ~thread_pool() {
+  ~ThreadPool() {
     done_ = true;
   }
 
   template<typename Function>
-  void submit(Function f) {
+  void Submit(Function f) {
     wq_.push(std::function<void()>(f));
   }
 };

@@ -6,12 +6,12 @@
 #include <thread>
 #include <vector>
 
-class joiner {
+class Joiner {
   std::vector<std::thread>& threads_;
  public:
   explicit joiner(std::vector<std::thread>& threads)
       : threads_(threads) {}
-  ~joiner() {
+  ~Joiner() {
     for (size_t i = 0; i < threads_.size(); ++i)
       if (threads_[i].joinable())
         threads_[i].join();

@@ -1,7 +1,7 @@
 // Based on the code in ``C++ Concurrency in Action'', 2nd edition.
 
-#ifndef TQUEUE_H_
-#define TQUEUE_H_
+#ifndef QUEUE_H_
+#define QUEUE_H_
 
 #include <queue>
 #include <memory>
@@ -9,36 +9,36 @@
 #include <condition_variable>
 
 template<typename T>
-class tqueue {
+class Queue {
  private:
   mutable std::mutex m;
   std::queue<T> q;
   std::condition_variable c;
 
  public:
-  tqueue() {}
+  Queue() {}
 
-  tqueue(const tqueue& rhs) {
+  Queue(const Queue& rhs) {
     std::scoped_lock g(rhs.m);
     q = rhs.q;
   }
 
-  tqueue& operator=(const tqueue&) = delete;
+  Queue& operator=(const Queue&) = delete;
 
-  void push(T new_value) {
+  void Push(T new_value) {
     std::scoped_lock g(m);
     q.push(new_value);
     c.notify_one();
   }
 
-  void wait_and_pop(T& value) {
+  void WaitAndPop(T& value) {
     std::unique_lock l(m);
     c.wait(l, [this] { return !q.empty(); });
     value = q.front();
     q.pop();
   }
 
-  std::shared_ptr<T> wait_and_pop() {
+  std::shared_ptr<T> WaitAndPop() {
     std::unique_lock l(m);
     q.wait(l, [this] { return !q.empty(); });
     std::shared_ptr<T> r(std::make_shared<T>(q.front()));
@@ -46,7 +46,7 @@ class tqueue {
     return r;
   }
 
-  bool try_pop(T& value) {
+  bool TryPop(T& value) {
     std::scoped_lock l(m);
     if (q.empty())
       return false;
@@ -55,7 +55,7 @@ class tqueue {
     return true;
   }
 
-  std::shared_ptr<T> try_pop() {
+  std::shared_ptr<T> TryPop() {
     std::scoped_lock l(m);
     if (q.empty())
       return std::shared_ptr<T>();
@@ -64,7 +64,7 @@ class tqueue {
     return r;
   }
 
-  bool empty() const {
+  bool Empty() const {
     std::scoped_lock l(m);
     return q.empty();
   }
