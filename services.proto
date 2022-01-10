@@ -4,7 +4,7 @@ import "messages.proto";
 
 option optimize_for = SPEED;
 option java_package = "paxos.service";
-option go_package = "github.com/psu-csl/replicated-store/go/paxos";
+option go_package = "github.com/psu-csl/replicated-store/go/paxoscomm";
 
 package paxos;
 

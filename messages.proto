@@ -7,6 +7,12 @@ option go_package = "github.com/psu-csl/replicated-store/go/message";
 
 package messages;
 
+message Command {
+  string Key = 1;
+  string Value = 2;
+  string CommandType = 3;
+}
+
 message Propose {
   uint32 Ballot = 1;
   uint32 LastDecidedSlot = 2;
@@ -22,11 +28,10 @@ message Promise {
 }
 
 message Accept {
-  bool IsAccepted = 1;
-  uint32 Ballot = 2;
-  uint32 Slot = 3;
-  uint32 Sender = 4;
-  uint32 ActiveLeader = 5;
+  uint32 Ballot = 1;
+  uint32 Slot = 2;
+  uint32 Sender = 3;
+  Command Command = 4;
 }
 
 message Accepted {
@@ -35,12 +40,6 @@ message Accepted {
   uint32 Slot = 3;
   uint32 Sender = 4;
   uint32 ActiveLeader = 5;
-}
-
-message Command {
-  string Key = 1;
-  string Value = 2;
-  string CommandType = 3;
 }
 
 message Decided {
