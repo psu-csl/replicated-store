@@ -1,3 +1,5 @@
+// Based on the code in ``C++ Concurrency in Action'', 2nd edition.
+
 #ifndef THREAD_POOL_H_
 #define THREAD_POOL_H_
 

@@ -1,3 +1,5 @@
+// Based on the code in ``C++ Concurrency in Action'', 2nd edition.
+
 #ifndef JOINER_H_
 #define JOINER_H_
 

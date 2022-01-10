@@ -1,3 +1,5 @@
+// Based on the code in ``C++ Concurrency in Action'', 2nd edition.
+
 #ifndef TQUEUE_H_
 #define TQUEUE_H_
 
