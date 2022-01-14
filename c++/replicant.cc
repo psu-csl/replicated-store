@@ -1,10 +1,10 @@
 #include <iostream>
+#include <optional>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <unistd.h>
 #include <cassert>
 #include <cstring>
-#include <chrono>
 
 #include "replicant.h"
 
@@ -48,17 +48,55 @@ void Replicant::Run() {
 }
 
 void Replicant::HandleClient(int fd) {
-  char buf[1024];
-  int nread, nwrite;
   for (;;) {
-    memset(buf, 0, sizeof(buf));
-    nread = read(fd, buf, 1024);
-    assert(nread >= 0);
-    if (nread == 0)
+    auto cmd = ReadCommand(fd);
+    if (cmd)
+      tp_.Submit([this, fd, cmd = std::move(*cmd)]() { HandleCommand(fd, cmd); });
+    else
       break;
-    nwrite = write(fd, buf, strlen(buf));
-    assert(nwrite == nread);
   }
   int rc = close(fd);
   assert(rc == 0);
+}
+
+std::optional<Command> Replicant::ReadCommand(int fd) {
+  std::string line = ReadLine(fd);
+  if (line.empty())
+    return std::nullopt;
+  if (strncmp(line.c_str(), "get", 3) == 0)
+    return Command {CommandType::kGet, line.substr(4), ""};
+  if (strncmp(line.c_str(), "del", 3) == 0)
+    return Command {CommandType::kDel, line.substr(4), ""};
+
+  assert(strncmp(line.c_str(), "put", 3) == 0);
+  size_t p = line.find(":", 4);
+  return Command {CommandType::kPut, line.substr(4, p-4), line.substr(p+1)};
+}
+
+std::string ReadLine(int fd) {
+  std::string line;
+  for (;;) {
+    char c;
+    ssize_t n = read(fd, &c, 1);
+    if (n == 1) {
+      line.push_back(c);
+      if (c == '\n')
+        break;
+    } else if (n == 0 || (n == -1 && errno != EINTR)) {
+      break;
+    }
+  }
+  return line;
+}
+
+void Replicant::HandleCommand(int fd, Command cmd) {
+  bool is_get = cmd.type == CommandType::kGet;
+  auto r = consensus_->AgreeAndExecute(std::move(cmd));
+  if (r.ok) {
+    write(fd, "ok", sizeof("ok"));
+    if (is_get)
+      write(fd, r.value.c_str(), r.value.size());
+  } else {
+    write(fd, "not-ok", sizeof("not-ok"));
+  }
 }

@@ -6,7 +6,7 @@
 class Consensus {
 public:
   virtual ~Consensus() = default;
-  virtual bool AgreeAndExecute(const Command& command) = 0;
+  virtual Result AgreeAndExecute(Command command) = 0;
 };
 
 #endif
