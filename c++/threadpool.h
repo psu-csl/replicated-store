@@ -9,19 +9,19 @@
 #include <functional>
 
 #include "joiner.h"
-#include "tqueue.h"
+#include "queue.h"
 
 class ThreadPool {
  private:
   std::atomic_bool done_;
-  tqueue<std::function<void()>> wq_;
+  Queue<std::function<void()>> wq_;
   std::vector<std::thread> threads_;
-  joiner joiner_;
+  Joiner joiner_;
 
   void Worker() {
     while (!done_) {
       std::function<void()> task;
-      if (wq_.try_pop(task))
+      if (wq_.TryPop(task))
         task();
       else
         std::this_thread::yield();
@@ -33,7 +33,7 @@ class ThreadPool {
     auto num_threads = std::thread::hardware_concurrency();
     try {
       for (size_t i = 0; i < num_threads; ++i)
-        threads_.push_back(std::thread(&thread_pool::worker, this));
+        threads_.push_back(std::thread(&ThreadPool::Worker, this));
     } catch (...) {
       done_ = true;
       throw;
@@ -46,7 +46,7 @@ class ThreadPool {
 
   template<typename Function>
   void Submit(Function f) {
-    wq_.push(std::function<void()>(f));
+    wq_.Push(std::function<void()>(f));
   }
 };
 

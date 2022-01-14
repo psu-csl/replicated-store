@@ -9,7 +9,7 @@
 class Joiner {
   std::vector<std::thread>& threads_;
  public:
-  explicit joiner(std::vector<std::thread>& threads)
+  explicit Joiner(std::vector<std::thread>& threads)
       : threads_(threads) {}
   ~Joiner() {
     for (size_t i = 0; i < threads_.size(); ++i)
