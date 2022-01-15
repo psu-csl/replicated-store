@@ -73,7 +73,7 @@ std::optional<Command> Replicant::ReadCommand(int fd) {
   return Command {CommandType::kPut, line.substr(4, p-4), line.substr(p+1)};
 }
 
-std::string ReadLine(int fd) {
+std::string Replicant::ReadLine(int fd) {
   std::string line;
   for (;;) {
     char c;
