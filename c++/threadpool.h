@@ -7,6 +7,7 @@
 #include <thread>
 #include <vector>
 #include <functional>
+#include <chrono>
 
 #include "joiner.h"
 #include "queue.h"
@@ -21,10 +22,12 @@ class ThreadPool {
   void Worker() {
     while (!done_) {
       std::function<void()> task;
-      if (wq_.TryPop(task))
+      if (wq_.TryPop(task)) {
         task();
-      else
+      } else {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
         std::this_thread::yield();
+      }
     }
   }
 

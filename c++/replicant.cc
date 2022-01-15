@@ -79,9 +79,9 @@ std::string Replicant::ReadLine(int fd) {
     char c;
     ssize_t n = read(fd, &c, 1);
     if (n == 1) {
-      line.push_back(c);
       if (c == '\n')
         break;
+      line.push_back(c);
     } else if (n == 0 || (n == -1 && errno != EINTR)) {
       break;
     }
@@ -92,11 +92,21 @@ std::string Replicant::ReadLine(int fd) {
 void Replicant::HandleCommand(int fd, Command cmd) {
   bool is_get = cmd.type == CommandType::kGet;
   auto r = consensus_->AgreeAndExecute(std::move(cmd));
+
+  static const std::string success = "success\n";
+  static const std::string failure = "failure\n";
+
+  ssize_t n;
   if (r.ok) {
-    write(fd, "ok", sizeof("ok"));
-    if (is_get)
-      write(fd, r.value.c_str(), r.value.size());
+    n = write(fd, success.c_str(), success.size());
+    assert(n == static_cast<ssize_t>(success.size()));
+    if (is_get) {
+      r.value.push_back('\n');
+      n = write(fd, r.value.c_str(), r.value.size());
+      assert(n == static_cast<ssize_t>(r.value.size()));
+    }
   } else {
-    write(fd, "not-ok", sizeof("not-ok"));
+    n = write(fd, failure.c_str(), failure.size());
+    assert(n == static_cast<ssize_t>(failure.size()));
   }
 }

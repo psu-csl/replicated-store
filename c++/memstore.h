@@ -11,5 +11,5 @@ public:
   bool put(const std::string& key, const std::string& value) override;
   bool del(const std::string& key) override;
 private:
-  std::map<std::string, std::string> map;
+  std::map<std::string, std::string> map_;
 };

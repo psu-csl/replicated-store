@@ -1,17 +1,17 @@
 #include "memstore.h"
 
 std::string* MemStore::get(const std::string& key) {
-  auto it = map.find(key);
-  if (it != map.end())
+  auto it = map_.find(key);
+  if (it != map_.end())
     return &it->second;
   return nullptr;
 }
 
 bool MemStore::put(const std::string& key, const std::string& value) {
-  map[key] = value;
+  map_[key] = value;
   return true;
 }
 
 bool MemStore::del(const std::string& key) {
-  return map.erase(key) != 0;
+  return map_.erase(key) != 0;
 }

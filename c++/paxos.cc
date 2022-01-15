@@ -1,10 +1,10 @@
 #include "paxos.h"
 
-Result Paxos::AgreeAndExecute(Command command) {
+Result Paxos::AgreeAndExecute(Command cmd) {
   Result r;
-  switch (command.type) {
+  switch (cmd.type) {
     case CommandType::kGet: {
-      auto v = store_->get(command.key);
+      auto v = store_->get(cmd.key);
       if (v != nullptr) {
         r.ok = true;
         r.value = *v;
@@ -12,11 +12,11 @@ Result Paxos::AgreeAndExecute(Command command) {
       break;
     }
     case CommandType::kPut: {
-      r.ok = store_->put(command.key, command.value);
+      r.ok = store_->put(cmd.key, cmd.value);
       break;
     }
     case CommandType::kDel: {
-      r.ok = store_->del(command.key);
+      r.ok = store_->del(cmd.key);
       break;
     }
   }
