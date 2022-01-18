@@ -6,7 +6,6 @@
 
 #include "memstore.h"
 #include "paxos.h"
-#include "threadpool.h"
 
 #define CLIENT_PORT 4444
 #define PEER_PORT   7777
