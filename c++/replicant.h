@@ -2,6 +2,7 @@
 #define REPLICANT_H_
 
 #include <optional>
+#include <asio.hpp>
 
 #include "memstore.h"
 #include "paxos.h"
@@ -21,8 +22,8 @@ private:
   std::optional<Command> ReadCommand(int fd);
   std::string ReadLine(int fd);
 
-  ThreadPool tp_;
   std::unique_ptr<Consensus> consensus_;
+  asio::thread_pool tp_;
   int client_fd_;
   bool done_;
 };

@@ -10,6 +10,7 @@
 
 Replicant::Replicant()
     : consensus_(new Paxos(new MemStore())),
+      tp_(4),
       client_fd_(-1),
       done_(false) {
 
@@ -43,7 +44,7 @@ void Replicant::Run() {
   while (!done_) {
     int fd = accept(client_fd_, (struct sockaddr *) &addr, &n);
     assert(fd != -1);
-    tp_.Submit([this, fd]() { HandleClient(fd); });
+    asio::post(tp_, [this, fd]() { HandleClient(fd); });
   }
 }
 
@@ -51,7 +52,7 @@ void Replicant::HandleClient(int fd) {
   for (;;) {
     auto cmd = ReadCommand(fd);
     if (cmd)
-      tp_.Submit([this, fd, cmd = std::move(*cmd)]() { HandleCommand(fd, cmd); });
+      asio::post(tp_, [this, fd, cmd = std::move(*cmd)]() { HandleCommand(fd, cmd); });
     else
       break;
   }
