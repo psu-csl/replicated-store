@@ -34,7 +34,8 @@ Replicant::Replicant()
 }
 
 Replicant::~Replicant() {
-  done_ = false;
+  tp_.join();
+  done_ = true;
 }
 
 void Replicant::Run() {
