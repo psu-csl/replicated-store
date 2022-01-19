@@ -3,7 +3,7 @@
 
 #include <string>
 
-enum class CommandType {kGet, kPut, kDel};
+enum class CommandType { kGet, kPut, kDel };
 
 struct Command {
   CommandType type;

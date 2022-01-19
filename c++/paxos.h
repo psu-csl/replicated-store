@@ -3,15 +3,16 @@
 
 #include <memory>
 
-#include "kvstore.h"
 #include "consensus.h"
+#include "kvstore.h"
 
 class Paxos : public Consensus {
-public:
+ public:
   Paxos(KVStore* store) : store_(store) {}
   ~Paxos() = default;
   Result AgreeAndExecute(Command command) override;
-private:
+
+ private:
   std::unique_ptr<KVStore> store_;
 };
 

@@ -4,7 +4,7 @@
 #include "command.h"
 
 class Consensus {
-public:
+ public:
   virtual ~Consensus() = default;
   virtual Result AgreeAndExecute(Command command) = 0;
 };
