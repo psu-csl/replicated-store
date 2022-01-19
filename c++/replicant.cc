@@ -1,14 +1,15 @@
-#include <iostream>
-#include <optional>
-#include <sys/socket.h>
+#include "replicant.h"
+
 #include <netinet/in.h>
+#include <sys/socket.h>
 #include <unistd.h>
+
+#include <asio.hpp>
 #include <cassert>
 #include <cstring>
+#include <iostream>
 #include <memory>
-#include <asio.hpp>
-
-#include "replicant.h"
+#include <optional>
 
 Replicant::Replicant()
     : consensus_(new Paxos(new MemStore())),
@@ -33,8 +34,9 @@ void Replicant::HandleClient(socket_ptr cli) {
   for (;;) {
     auto cmd = ReadCommand(cli);
     if (cmd)
-      asio::post(tp_, [this, cli, cmd = std::move(*cmd)]
-                      { HandleCommand(cli, std::move(cmd)); });
+      asio::post(tp_, [this, cli, cmd = std::move(*cmd)] {
+        HandleCommand(cli, std::move(cmd));
+      });
     else
       break;
   }
@@ -45,13 +47,13 @@ std::optional<Command> Replicant::ReadCommand(socket_ptr cli) {
   if (line.empty())
     return std::nullopt;
   if (strncmp(line.c_str(), "get", 3) == 0)
-    return Command {CommandType::kGet, line.substr(4), ""};
+    return Command{CommandType::kGet, line.substr(4), ""};
   if (strncmp(line.c_str(), "del", 3) == 0)
-    return Command {CommandType::kDel, line.substr(4), ""};
+    return Command{CommandType::kDel, line.substr(4), ""};
 
   assert(strncmp(line.c_str(), "put", 3) == 0);
   size_t p = line.find(":", 4);
-  return Command {CommandType::kPut, line.substr(4, p-4), line.substr(p+1)};
+  return Command{CommandType::kPut, line.substr(4, p - 4), line.substr(p + 1)};
 }
 
 std::string Replicant::ReadLine(socket_ptr cli) {
