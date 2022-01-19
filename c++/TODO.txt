@@ -1,0 +1,3 @@
+- currently the number of threads in the replicant threadpool is arbitrarily set
+  to 8. either document it or think about what it should be and set it to the
+  proper value.
