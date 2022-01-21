@@ -15,9 +15,11 @@ const int kClientPort = 4444;
 
 Replicant::Replicant()
     : consensus_(new Paxos(new MemStore())),
-      tp_(8),
+      num_threads_(std::thread::hardware_concurrency()),
+      tp_(num_threads_),
       acceptor_(io_, tcp::endpoint(tcp::v4(), kClientPort)) {
   acceptor_.listen(5);
+  assert(num_threads_);
 }
 
 Replicant::~Replicant() {
