@@ -10,8 +10,6 @@
 
 using asio::ip::tcp;
 
-typedef std::shared_ptr<tcp::socket> socket_ptr;
-
 class Replicant {
  public:
   Replicant();
@@ -19,10 +17,10 @@ class Replicant {
   void Run();
 
  private:
-  void HandleClient(socket_ptr cli);
-  void HandleCommand(socket_ptr cli, Command cmd);
-  std::optional<Command> ReadCommand(socket_ptr cli);
-  std::string ReadLine(socket_ptr cli);
+  void HandleClient(tcp::socket cli);
+  void HandleCommand(tcp::socket* cli, Command cmd);
+  std::optional<Command> ReadCommand(tcp::socket* cli);
+  std::string ReadLine(tcp::socket* cli);
 
   std::unique_ptr<Consensus> consensus_;
   asio::thread_pool tp_;

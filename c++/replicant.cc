@@ -26,25 +26,25 @@ Replicant::~Replicant() {
 
 void Replicant::Run() {
   for (;;) {
-    socket_ptr cli(new tcp::socket(io_));
-    acceptor_.accept(*cli);
-    asio::post(tp_, [this, cli] { HandleClient(cli); });
+    tcp::socket cli(io_);
+    acceptor_.accept(cli);
+    std::thread(&Replicant::HandleClient, this, std::move(cli)).detach();
   }
 }
 
-void Replicant::HandleClient(socket_ptr cli) {
+void Replicant::HandleClient(tcp::socket cli) {
   for (;;) {
-    auto cmd = ReadCommand(cli);
+    auto cmd = ReadCommand(&cli);
     if (cmd)
-      asio::post(tp_, [this, cli, cmd = std::move(*cmd)] {
-        HandleCommand(cli, std::move(cmd));
+      asio::post(tp_, [this, &cli, cmd = std::move(*cmd)] {
+        HandleCommand(&cli, std::move(cmd));
       });
     else
       break;
   }
 }
 
-std::optional<Command> Replicant::ReadCommand(socket_ptr cli) {
+std::optional<Command> Replicant::ReadCommand(tcp::socket* cli) {
   std::string line = ReadLine(cli);
   if (line.empty())
     return std::nullopt;
@@ -58,17 +58,17 @@ std::optional<Command> Replicant::ReadCommand(socket_ptr cli) {
   return Command{CommandType::kPut, line.substr(4, p - 4), line.substr(p + 1)};
 }
 
-std::string Replicant::ReadLine(socket_ptr cli) {
+std::string Replicant::ReadLine(tcp::socket* cli) {
   std::string line;
   asio::streambuf request;
   asio::error_code ec;
-  asio::read_until(*cli.get(), request, '\n', ec);
+  asio::read_until(*cli, request, '\n', ec);
   if (ec.value() == 0)
     std::getline(std::istream(&request), line);
   return line;
 }
 
-void Replicant::HandleCommand(socket_ptr cli, Command cmd) {
+void Replicant::HandleCommand(tcp::socket* cli, Command cmd) {
   bool is_get = cmd.type == CommandType::kGet;
   auto r = consensus_->AgreeAndExecute(std::move(cmd));
 
