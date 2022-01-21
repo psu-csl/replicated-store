@@ -11,10 +11,12 @@
 #include <memory>
 #include <optional>
 
+const int kClientPort = 4444;
+
 Replicant::Replicant()
     : consensus_(new Paxos(new MemStore())),
       tp_(8),
-      acceptor_(io_, tcp::endpoint(tcp::v4(), CLIENT_PORT)) {
+      acceptor_(io_, tcp::endpoint(tcp::v4(), kClientPort)) {
   acceptor_.listen(5);
 }
 

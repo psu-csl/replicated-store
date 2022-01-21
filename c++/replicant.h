@@ -8,9 +8,6 @@
 #include "memstore.h"
 #include "paxos.h"
 
-#define CLIENT_PORT 4444
-#define PEER_PORT 7777
-
 using asio::ip::tcp;
 
 typedef std::shared_ptr<tcp::socket> socket_ptr;
