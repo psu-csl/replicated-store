@@ -1,3 +1,5 @@
+- first, do synchronous gRPC.
+
 - handle errors in asio calls -- or at least add assertions.
 
 - currently the number of threads in the replicant threadpool is arbitrarily set
