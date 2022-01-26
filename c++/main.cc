@@ -11,12 +11,13 @@
 using nlohmann::json;
 
 DEFINE_uint32(me, 0, "my index in the peer list in the configuration file");
+DEFINE_string(config, "config.json", "path to the configuration file");
 
 int main(int argc, char* argv[]) {
   google::InitGoogleLogging(argv[0]);
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
-  std::ifstream f("config.json");
+  std::ifstream f(FLAGS_config);
   assert(f);
 
   json config;
