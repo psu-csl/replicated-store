@@ -32,7 +32,6 @@ add_library(grpc_proto
   ${proto_srcs}
   ${proto_hdrs})
 target_link_libraries(grpc_proto
-  ${_REFLECTION}
   ${_GRPC_GRPCPP}
   ${_PROTOBUF_LIBPROTOBUF})
 
@@ -41,6 +40,5 @@ add_compile_options(-Wall -Wextra -pedantic -Werror)
 add_executable(replicant replicant.cc paxos.cc memstore.cc main.cc)
 
 target_link_libraries(replicant
-  ${_REFLECTION}
   ${_GRPC_GRPCPP}
   ${_PROTOBUF_LIBPROTOBUF})
