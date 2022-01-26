@@ -8,6 +8,11 @@
 #include "consensus.h"
 #include "kvstore.h"
 
+#include <grpcpp/grpcpp.h>
+#include "paxosrpc.h"
+
+using grpc::ServerBuilder;
+
 class Paxos : public Consensus {
  public:
   Paxos(KVStore* store);
@@ -21,6 +26,10 @@ class Paxos : public Consensus {
   std::condition_variable cv_;
   std::mutex mu_;
   std::unique_ptr<KVStore> store_;
+
+  // RPC stuff
+  PaxosRPCServiceImpl rpc_server_;
+  ServerBuilder builder_;
 };
 
 #endif
