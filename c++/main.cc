@@ -1,3 +1,4 @@
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <cassert>
 #include <fstream>
@@ -9,19 +10,15 @@
 
 using nlohmann::json;
 
-int main(int, char* argv[]) {
+int main(int argc, char* argv[]) {
   google::InitGoogleLogging(argv[0]);
+  gflags::ParseCommandLineFlags(&argc, &argv, true);
 
   json j;
   std::ifstream f("config.json");
-
-  if (!f) {
-    LOG(INFO) << "failed to open config.json";
-    exit(EXIT_FAILURE);
-  }
+  assert(f);
 
   f >> j;
-  std::cout << j << std::endl;
 
   Replicant replicant;
   replicant.Run();

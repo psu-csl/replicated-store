@@ -26,8 +26,6 @@ add_custom_command(
 # Include generated *.pb.h files
 include_directories("${CMAKE_CURRENT_BINARY_DIR}")
 
-find_package(glog 0.6.0 REQUIRED)
-
 add_library(grpc_proto
   ${grpc_srcs}
   ${grpc_hdrs}
@@ -41,7 +39,11 @@ set(CMAKE_CXX_STANDARD 17)
 add_compile_options(-Wall -Wextra -pedantic -Werror)
 add_executable(replicant replicant.cc paxos.cc paxosrpc.cc memstore.cc main.cc)
 
+find_package(glog 0.6.0 REQUIRED)
+find_package(gflags REQUIRED)
+
 target_link_libraries(replicant
+  gflags
   glog::glog
   grpc_proto
   ${_GRPC_GRPCPP}
