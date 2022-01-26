@@ -4,21 +4,22 @@
 #include <thread>
 #include "json.h"
 
-const std::string kConnectAddress = "127.0.0.1:3333";
-
 Paxos::Paxos(const json& config, KVStore* store)
     : id_(config["me"]),
+      addr_(config["peers"][id_]),
       leader_(false),
-      store_(store),
-      rpc_client_(grpc::CreateChannel(kConnectAddress,
-                                      grpc::InsecureChannelCredentials())) {
-  // Start the heartbeat thread.
+      store_(store) {
+  for (const auto& peer : config["peers"]) {
+    if (peer != addr_) {
+      rpc_clients_.emplace_back(
+          grpc::CreateChannel(peer, grpc::InsecureChannelCredentials()));
+    }
+  }
+
   std::thread(&Paxos::HeartBeat, this).detach();
 
-  // Start RPC server.
-  std::string addr = config["peers"][id_];
-  LOG(INFO) << "Peer " << id_ << " listening for RPC calls at " << addr;
-  builder_.AddListeningPort(addr, grpc::InsecureServerCredentials());
+  LOG(INFO) << "Peer " << id_ << " listening for RPC calls at " << addr_;
+  builder_.AddListeningPort(addr_, grpc::InsecureServerCredentials());
   builder_.RegisterService(&rpc_server_);
   builder_.BuildAndStart();
 }
@@ -47,6 +48,7 @@ Result Paxos::AgreeAndExecute(Command cmd) {
 }
 
 void Paxos::HeartBeat(void) {
+  LOG(INFO) << "Peer " << id_ << " heartbeat thread starting...";
   for (;;) {
     // wait until we become a leader
     {

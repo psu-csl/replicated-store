@@ -25,6 +25,7 @@ class Paxos : public Consensus {
   void HeartBeat(void);
 
   uint32_t id_;
+  std::string addr_;
   bool leader_;
   std::condition_variable cv_;
   std::mutex mu_;
@@ -34,7 +35,7 @@ class Paxos : public Consensus {
   // int min_last_executed_;
 
   // RPC stuff
-  PaxosRPCClient rpc_client_;
+  std::vector<PaxosRPCClient> rpc_clients_;
   PaxosRPCServiceImpl rpc_server_;
   ServerBuilder builder_;
 };
