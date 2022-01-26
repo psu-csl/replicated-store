@@ -2,14 +2,19 @@
 
 #include "paxos.h"
 
-const std::string kServerAddress = "0.0.0.0:3333";
+const std::string kListenAddress = "0.0.0.0:3333";
+const std::string kConnectAddress = "127.0.0.1:3333";
 
-Paxos::Paxos(KVStore* store) : leader_(false), store_(store) {
+Paxos::Paxos(KVStore* store)
+    : leader_(false),
+      store_(store),
+      rpc_client_(grpc::CreateChannel(kConnectAddress,
+                                      grpc::InsecureChannelCredentials())) {
   // Start the heartbeat thread.
   std::thread(&Paxos::HeartBeat, this).detach();
 
   // Start RPC server.
-  builder_.AddListeningPort(kServerAddress, grpc::InsecureServerCredentials());
+  builder_.AddListeningPort(kListenAddress, grpc::InsecureServerCredentials());
   builder_.RegisterService(&rpc_server_);
   builder_.BuildAndStart();
 }

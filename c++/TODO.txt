@@ -1,3 +1,5 @@
+- incorporate glog into the project.
+
 - first, do synchronous gRPC.
 
 - currently, replicant hangs on accept() and we stop the program using C-c. this
