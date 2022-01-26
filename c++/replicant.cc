@@ -1,5 +1,3 @@
-#include "replicant.h"
-
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -11,9 +9,12 @@
 #include <memory>
 #include <optional>
 
+#include "json.h"
+#include "replicant.h"
+
 const int kClientPort = 4444;
 
-Replicant::Replicant()
+Replicant::Replicant(const json& /* config* */)
     : consensus_(new Paxos(new MemStore())),
       num_threads_(std::thread::hardware_concurrency()),
       tp_(num_threads_),

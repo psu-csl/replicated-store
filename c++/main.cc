@@ -10,16 +10,21 @@
 
 using nlohmann::json;
 
+DEFINE_uint32(me, 0, "my index in the peer list in the configuration file");
+
 int main(int argc, char* argv[]) {
   google::InitGoogleLogging(argv[0]);
   gflags::ParseCommandLineFlags(&argc, &argv, true);
 
-  json j;
   std::ifstream f("config.json");
   assert(f);
 
-  f >> j;
+  json config;
+  f >> config;
 
-  Replicant replicant;
+  assert(FLAGS_me < config["peers"].size());
+  config["me"] = FLAGS_me;
+
+  Replicant replicant(config);
   replicant.Run();
 }

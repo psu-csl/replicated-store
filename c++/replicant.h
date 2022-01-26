@@ -5,14 +5,16 @@
 #include <memory>
 #include <optional>
 
+#include "json_fwd.h"
 #include "memstore.h"
 #include "paxos.h"
 
 using asio::ip::tcp;
+using nlohmann::json;
 
 class Replicant {
  public:
-  Replicant();
+  Replicant(const json& config);
   ~Replicant();
   void Run();
 
