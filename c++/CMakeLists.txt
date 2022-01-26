@@ -5,14 +5,14 @@ project(replicant CXX)
 include(cmake/common.cmake)
 
 # Proto file
-get_filename_component(proto "paxos.proto" ABSOLUTE)
+get_filename_component(proto "paxosrpc.proto" ABSOLUTE)
 get_filename_component(proto_path "${proto}" PATH)
 
 # Generated sources
-set(proto_srcs "${CMAKE_CURRENT_BINARY_DIR}/paxos.pb.cc")
-set(proto_hdrs "${CMAKE_CURRENT_BINARY_DIR}/paxos.pb.h")
-set(grpc_srcs "${CMAKE_CURRENT_BINARY_DIR}/paxos.grpc.pb.cc")
-set(grpc_hdrs "${CMAKE_CURRENT_BINARY_DIR}/paxos.grpc.pb.h")
+set(proto_srcs "${CMAKE_CURRENT_BINARY_DIR}/paxosrpc.pb.cc")
+set(proto_hdrs "${CMAKE_CURRENT_BINARY_DIR}/paxosrpc.pb.h")
+set(grpc_srcs "${CMAKE_CURRENT_BINARY_DIR}/paxosrpc.grpc.pb.cc")
+set(grpc_hdrs "${CMAKE_CURRENT_BINARY_DIR}/paxosrpc.grpc.pb.h")
 add_custom_command(
       OUTPUT "${proto_srcs}" "${proto_hdrs}" "${grpc_srcs}" "${grpc_hdrs}"
       COMMAND ${_PROTOBUF_PROTOC}
