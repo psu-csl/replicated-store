@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 project(replicant CXX)
+set(CMAKE_CXX_STANDARD 17)
 
 include(cmake/common.cmake)
 
@@ -35,10 +36,10 @@ target_link_libraries(grpc_proto
   ${_GRPC_GRPCPP}
   ${_PROTOBUF_LIBPROTOBUF})
 
-set(CMAKE_CXX_STANDARD 17)
 add_compile_options(-Wall -Wextra -pedantic -Werror)
-add_executable(replicant replicant.cc paxos.cc memstore.cc main.cc)
+add_executable(replicant replicant.cc paxos.cc paxosrpc.cc memstore.cc main.cc)
 
 target_link_libraries(replicant
+  grpc_proto
   ${_GRPC_GRPCPP}
   ${_PROTOBUF_LIBPROTOBUF})
