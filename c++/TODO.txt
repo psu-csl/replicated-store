@@ -1,4 +1,4 @@
-- incorporate glog into the project.
+- make sure glog and gflags and everything is built with optimizations on
 
 - first, do synchronous gRPC.
 
