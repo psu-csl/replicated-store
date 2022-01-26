@@ -4,6 +4,7 @@
 #include <condition_variable>
 #include <memory>
 #include <mutex>
+#include <vector>
 
 #include "consensus.h"
 #include "kvstore.h"
@@ -26,6 +27,9 @@ class Paxos : public Consensus {
   std::condition_variable cv_;
   std::mutex mu_;
   std::unique_ptr<KVStore> store_;
+
+  // // read/updated by the heartbeat thread only; no need for synchronization.
+  // int min_last_executed_;
 
   // RPC stuff
   PaxosRPCClient rpc_client_;

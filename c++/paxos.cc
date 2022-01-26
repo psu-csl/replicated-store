@@ -56,8 +56,8 @@ void Paxos::HeartBeat(void) {
       // send RPCs
       // compute minLastExecuted from the replies
 
-      // if we stopped being a leader, break out of this loop and go back to
-      // sleep until we become a leader again
+      // check if we stopped being a leader, and if so, break out of this loop
+      // to the outer loop, and go back to sleep until we become a leader again.
       {
         std::lock_guard lock(mu_);
         if (!leader_)
