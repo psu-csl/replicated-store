@@ -1,12 +1,14 @@
-#include <thread>
-
 #include "paxos.h"
 
-const std::string kListenAddress = "0.0.0.0:3333";
+#include <glog/logging.h>
+#include <thread>
+#include "json.h"
+
 const std::string kConnectAddress = "127.0.0.1:3333";
 
-Paxos::Paxos(KVStore* store)
-    : leader_(false),
+Paxos::Paxos(const json& config, KVStore* store)
+    : id_(config["me"]),
+      leader_(false),
       store_(store),
       rpc_client_(grpc::CreateChannel(kConnectAddress,
                                       grpc::InsecureChannelCredentials())) {
@@ -14,7 +16,9 @@ Paxos::Paxos(KVStore* store)
   std::thread(&Paxos::HeartBeat, this).detach();
 
   // Start RPC server.
-  builder_.AddListeningPort(kListenAddress, grpc::InsecureServerCredentials());
+  std::string addr = config["peers"][id_];
+  LOG(INFO) << "Peer " << id_ << " listening for RPC calls at " << addr;
+  builder_.AddListeningPort(addr, grpc::InsecureServerCredentials());
   builder_.RegisterService(&rpc_server_);
   builder_.BuildAndStart();
 }

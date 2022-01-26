@@ -1,24 +1,21 @@
+#include "replicant.h"
+
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
-
 #include <asio.hpp>
 #include <cassert>
 #include <cstring>
 #include <iostream>
 #include <memory>
 #include <optional>
-
 #include "json.h"
-#include "replicant.h"
 
-const int kClientPort = 4444;
-
-Replicant::Replicant(const json& /* config* */)
-    : consensus_(new Paxos(new MemStore())),
+Replicant::Replicant(const json& config)
+    : consensus_(new Paxos(config, new MemStore())),
       num_threads_(std::thread::hardware_concurrency()),
       tp_(num_threads_),
-      acceptor_(io_, tcp::endpoint(tcp::v4(), kClientPort)) {
+      acceptor_(io_, tcp::endpoint(tcp::v4(), config["client_port"])) {
   acceptor_.listen(5);
   assert(num_threads_);
 }
