@@ -5,12 +5,11 @@
 #include "json.h"
 
 Paxos::Paxos(const json& config, KVStore* store)
-    : id_(config["me"]),
-      addr_(config["peers"][id_]),
-      leader_(false),
-      store_(store) {
+    : id_(config["me"]), leader_(false), store_(store) {
+  std::string me = config["peers"][id_];
+
   for (const auto& peer : config["peers"]) {
-    if (peer != addr_) {
+    if (peer != me) {
       rpc_clients_.emplace_back(
           grpc::CreateChannel(peer, grpc::InsecureChannelCredentials()));
     }
@@ -18,8 +17,8 @@ Paxos::Paxos(const json& config, KVStore* store)
 
   std::thread(&Paxos::HeartBeat, this).detach();
 
-  LOG(INFO) << "Peer " << id_ << " listening for RPC calls at " << addr_;
-  builder_.AddListeningPort(addr_, grpc::InsecureServerCredentials());
+  LOG(INFO) << "Peer " << id_ << " listening for RPC calls at " << me;
+  builder_.AddListeningPort(me, grpc::InsecureServerCredentials());
   builder_.RegisterService(&rpc_server_);
   builder_.BuildAndStart();
 }
