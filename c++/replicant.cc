@@ -16,7 +16,7 @@ Replicant::Replicant(const json& config)
       tp_(std::thread::hardware_concurrency()),
       acceptor_(io_, tcp::endpoint(tcp::v4(), config["client_port"])) {
   acceptor_.listen(5);
-  assert(num_threads_);
+  assert(std::thread::hardware_concurrency());
 }
 
 Replicant::~Replicant() {
