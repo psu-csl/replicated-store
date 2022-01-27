@@ -5,7 +5,7 @@
 #include "json.h"
 
 Paxos::Paxos(const json& config, KVStore* store)
-    : id_(config["me"]), leader_(false), store_(store) {
+    : id_(config["me"]), leader_(false), store_(store), rpc_server_(this) {
   std::string me = config["peers"][id_];
 
   for (const auto& peer : config["peers"]) {

@@ -21,17 +21,27 @@ class Paxos : public Consensus {
   ~Paxos() = default;
   Result AgreeAndExecute(Command command) override;
 
+  void set_min_last_executed(uint32_t n) {
+    std::lock_guard lock(mu_);
+    min_last_executed_ = n;
+  }
+
+  uint32_t last_executed() const {
+    std::lock_guard lock(mu_);
+    return last_executed_;
+  }
+
  private:
   void HeartBeat(void);
 
   uint32_t id_;
   bool leader_;
-  std::condition_variable cv_;
-  std::mutex mu_;
-  std::unique_ptr<KVStore> store_;
+  uint32_t last_executed_;
+  uint32_t min_last_executed_;
 
-  // // read/updated by the heartbeat thread only; no need for synchronization.
-  // int min_last_executed_;
+  std::condition_variable cv_;
+  mutable std::mutex mu_;
+  std::unique_ptr<KVStore> store_;
 
   // RPC stuff
   std::vector<PaxosRPCClient> rpc_clients_;

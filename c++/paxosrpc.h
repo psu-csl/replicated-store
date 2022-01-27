@@ -14,10 +14,17 @@ using paxosrpc::HeartbeatReply;
 using paxosrpc::HeartbeatRequest;
 using paxosrpc::PaxosRPC;
 
+class Paxos;
+
 class PaxosRPCServiceImpl : public PaxosRPC::Service {
+ public:
+  explicit PaxosRPCServiceImpl(Paxos* paxos) : paxos_(paxos) {}
+
+ private:
   Status Heartbeat(ServerContext*,
                    const HeartbeatRequest*,
                    HeartbeatReply*) override;
+  Paxos* paxos_;
 };
 
 class PaxosRPCClient {
