@@ -13,8 +13,7 @@
 
 Replicant::Replicant(const json& config)
     : consensus_(new Paxos(config, new MemStore())),
-      num_threads_(std::thread::hardware_concurrency()),
-      tp_(num_threads_),
+      tp_(std::thread::hardware_concurrency()),
       acceptor_(io_, tcp::endpoint(tcp::v4(), config["client_port"])) {
   acceptor_.listen(5);
   assert(num_threads_);

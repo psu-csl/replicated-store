@@ -26,7 +26,6 @@ class Replicant {
 
   std::unique_ptr<Consensus> consensus_;
   asio::io_context io_;
-  unsigned int num_threads_;
   asio::thread_pool tp_;
   tcp::acceptor acceptor_;
 };
