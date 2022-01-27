@@ -1,3 +1,5 @@
+- apply hinnant's methodology to class defs: https://howardhinnant.github.io/classdecl.html
+
 - make sure glog and gflags and everything is built with optimizations on
 
 - first, do synchronous gRPC.
