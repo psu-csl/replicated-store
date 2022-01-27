@@ -1,6 +1,7 @@
 #ifndef PAXOSRPC_H_
 #define PAXOSRPC_H_
 
+#include <glog/logging.h>
 #include <grpcpp/grpcpp.h>
 #include <memory>
 #include "paxosrpc.grpc.pb.h"
@@ -42,7 +43,7 @@ class PaxosRPCClient {
     if (status.ok()) {
       return reply.last_executed();
     }
-    std::cerr << "RPC failed\n";
+    LOG(ERROR) << "Heartbeat RPC to " << context.peer() << " failed";
     return -1;
   };
 
