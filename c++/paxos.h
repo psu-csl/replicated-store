@@ -2,6 +2,8 @@
 #define PAXOS_H_
 
 #include <grpcpp/grpcpp.h>
+#include <asio.hpp>
+#include <chrono>
 #include <condition_variable>
 #include <cstdint>
 #include <memory>
@@ -26,7 +28,12 @@ class Paxos : public Consensus {
     min_last_executed_ = n;
   }
 
-  uint32_t last_executed() const {
+  uint32_t min_last_executed(void) const {
+    std::lock_guard lock(mu_);
+    return min_last_executed_;
+  }
+
+  uint32_t last_executed(void) const {
     std::lock_guard lock(mu_);
     return last_executed_;
   }
@@ -35,13 +42,16 @@ class Paxos : public Consensus {
   void HeartBeat(void);
 
   uint32_t id_;
-  bool leader_;
-  uint32_t last_executed_;
-  uint32_t min_last_executed_;
+  uint32_t majority_;
+  std::chrono::milliseconds heartbeat_pause_;
+  bool leader_ = false;
+  uint32_t last_executed_ = 0;
+  uint32_t min_last_executed_ = 0;
 
   std::condition_variable cv_;
   mutable std::mutex mu_;
   std::unique_ptr<KVStore> store_;
+  asio::thread_pool tp_;
 
   // RPC stuff
   std::vector<PaxosRPCClient> rpc_peers_;

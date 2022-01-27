@@ -1,13 +1,22 @@
 #include "paxos.h"
 
 #include <glog/logging.h>
+#include <chrono>
 #include <thread>
 #include "json.h"
 
 Paxos::Paxos(const json& config, KVStore* store)
-    : id_(config["me"]), leader_(false), store_(store), rpc_server_(this) {
-  std::string me = config["peers"][id_];
+    : id_(config["me"]),
+      majority_(config["peers"].size() - 1),
+      heartbeat_pause_(config["heartbeat_pause"]),
+      store_(store),
+      tp_(std::thread::hardware_concurrency()),
+      rpc_server_(this) {
+  // start the heartbeat thread
+  std::thread(&Paxos::HeartBeat, this).detach();
 
+  // establish client RPC channels to peers
+  std::string me = config["peers"][id_];
   for (const auto& peer : config["peers"]) {
     if (peer != me) {
       rpc_peers_.emplace_back(
@@ -15,8 +24,7 @@ Paxos::Paxos(const json& config, KVStore* store)
     }
   }
 
-  std::thread(&Paxos::HeartBeat, this).detach();
-
+  // start the RPC service
   LOG(INFO) << "Peer " << id_ << " listening for RPC calls at " << me;
   builder_.AddListeningPort(me, grpc::InsecureServerCredentials());
   builder_.RegisterService(&rpc_server_);
@@ -58,16 +66,15 @@ void Paxos::HeartBeat(void) {
     // now we are a leader; start sending heartbeats until we stop being a
     // leader.
     for (;;) {
-      // send RPCs
-      // compute minLastExecuted from the replies
-
+      // int num_replies_ = 0;
+      // for (auto& peer : rpc_peers_) {
+      // }
       // check if we stopped being a leader, and if so, break out of this loop
       // to the outer loop, and go back to sleep until we become a leader again.
-      {
-        std::lock_guard lock(mu_);
-        if (!leader_)
-          break;
-      }
+      std::this_thread::sleep_for(heartbeat_pause_);
+      std::lock_guard lock(mu_);
+      if (!leader_)
+        break;
     }
   }
 }

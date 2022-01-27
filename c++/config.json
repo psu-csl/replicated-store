@@ -1,4 +1,5 @@
 {
+    "heartbeat_pause": 300,
     "client_port": 3333,
     "peer_addresses": ["127.0.0.1:4441",
                        "127.0.0.1:4442",
