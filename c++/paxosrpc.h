@@ -43,7 +43,7 @@ class PaxosRPCClient {
     if (status.ok()) {
       return reply.last_executed();
     }
-    LOG(ERROR) << "Heartbeat RPC to " << context.peer() << " failed";
+    LOG(ERROR) << "heartbeat RPC to " << context.peer() << " failed";
     return -1;
   };
 

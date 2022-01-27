@@ -1,3 +1,7 @@
+- reimplement concurrency stuff using C++20 features.
+
+- add timeouts to RPCs.
+
 - apply hinnant's methodology to class defs: https://howardhinnant.github.io/classdecl.html
 
 - make sure glog and gflags and everything is built with optimizations on
