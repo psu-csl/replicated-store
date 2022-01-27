@@ -10,7 +10,7 @@ Paxos::Paxos(const json& config, KVStore* store)
 
   for (const auto& peer : config["peers"]) {
     if (peer != me) {
-      rpc_clients_.emplace_back(
+      rpc_peers_.emplace_back(
           grpc::CreateChannel(peer, grpc::InsecureChannelCredentials()));
     }
   }

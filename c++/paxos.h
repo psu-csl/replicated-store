@@ -44,7 +44,7 @@ class Paxos : public Consensus {
   std::unique_ptr<KVStore> store_;
 
   // RPC stuff
-  std::vector<PaxosRPCClient> rpc_clients_;
+  std::vector<PaxosRPCClient> rpc_peers_;
   PaxosRPCServiceImpl rpc_server_;
   ServerBuilder builder_;
 };
