@@ -36,7 +36,7 @@ target_link_libraries(grpc_proto
   ${_PROTOBUF_LIBPROTOBUF})
 
 set(CMAKE_CXX_STANDARD 17)
-add_compile_options(-Wall -Wextra -pedantic -Werror)
+add_compile_options(-Wall -Wextra -pedantic -Werror -g -ggdb)
 add_executable(replicant replicant.cc paxos.cc paxosrpc.cc memstore.cc main.cc)
 
 find_package(glog 0.6.0 REQUIRED)
