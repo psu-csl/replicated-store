@@ -10,7 +10,7 @@
 using nlohmann::json;
 
 DEFINE_bool(leader, false, "i am a leader");
-DEFINE_uint32(me, 0, "my index in the peer list in the configuration file");
+DEFINE_uint32(id, 0, "my id in the peers array in configuration file");
 DEFINE_string(config, "config.json", "path to the configuration file");
 
 int main(int argc, char* argv[]) {
@@ -19,13 +19,14 @@ int main(int argc, char* argv[]) {
   FLAGS_logtostderr = 1;
 
   std::ifstream f(FLAGS_config);
-  LOG_IF(FATAL, !f) << "failed to open " << FLAGS_config;
+  CHECK(f);
 
   json config;
   f >> config;
 
-  LOG_IF(FATAL, FLAGS_me >= config["peers"].size()) << FLAGS_me << config;
-  config["me"] = FLAGS_me;
+  CHECK(FLAGS_id < config["peers"].size());
+
+  config["id"] = FLAGS_id;
   config["leader"] = FLAGS_leader;
 
   Replicant replicant(config);

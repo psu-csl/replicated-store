@@ -25,10 +25,9 @@ class Replicant {
   std::string ReadLine(tcp::socket* cli);
 
   std::unique_ptr<Consensus> consensus_;
-  int id_;
   asio::io_context io_;
-  asio::thread_pool tp_;
   tcp::acceptor acceptor_;
+  asio::thread_pool tp_;
 };
 
 #endif

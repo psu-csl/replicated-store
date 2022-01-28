@@ -30,26 +30,13 @@ class PaxosRPCServiceImpl : public PaxosRPC::Service {
 
 class PaxosRPCClient {
  public:
-  PaxosRPCClient(std::shared_ptr<Channel> channel)
-      : stub_(PaxosRPC::NewStub(channel)) {}
+  PaxosRPCClient(Paxos* paxos, std::shared_ptr<Channel> channel)
+      : paxos_(paxos), stub_(PaxosRPC::NewStub(channel)) {}
 
-  int Heartbeat(int min_last_executed) {
-    HeartbeatRequest request;
-    request.set_min_last_executed(min_last_executed);
-    HeartbeatReply reply;
-    ClientContext context;
-
-    LOG(INFO) << "sent heartbeat RPC to " << context.peer();
-    Status status = stub_->Heartbeat(&context, request, &reply);
-    if (status.ok()) {
-      LOG(INFO) << "heartbeat RPC to " << context.peer() << " succeeded";
-      return reply.last_executed();
-    }
-    LOG(ERROR) << "heartbeat RPC to " << context.peer() << " failed";
-    return -1;
-  };
+  int Heartbeat(int min_last_executed);
 
  private:
+  Paxos* paxos_;
   std::unique_ptr<PaxosRPC::Stub> stub_;
 };
 

@@ -12,15 +12,25 @@
 #include "json.h"
 
 Replicant::Replicant(const json& config)
-    : id_(config["me"]),
-      consensus_(new Paxos(config, new MemStore())),
-      tp_(std::thread::hardware_concurrency()),
-      acceptor_(io_, tcp::endpoint(tcp::v4(), config["client_port"] + id_)) {
-  LOG_IF(FATAL, std::thread::hardware_concurrency() == 0);
-  LOG(INFO) << "replicant " << config["me"]
-            << " listening for client connections on port "
-            << config["client_port"];
+    : consensus_(new Paxos(new MemStore(), config)),
+      acceptor_(io_),
+      tp_(config["threadpool_size"]) {
+  // determine port number for clients, which is 1 more than the port for paxos
+  // peers; allows us to run multiple paxos peers on the same host for testing
+  int id = config["id"];
+  std::string me = config["peers"][id];
+  auto pos = me.find(":") + 1;
+  CHECK_NE(pos, std::string::npos);
+  std::string ip = me.substr(0, pos);
+  int port = std::stoi(me.substr(pos)) + 1;
+
+  // start the server for accepting client commands
+  tcp::endpoint endpoint(tcp::v4(), port);
+  acceptor_.open(endpoint.protocol());
+  acceptor_.set_option(tcp::acceptor::reuse_address(true));
+  acceptor_.bind(endpoint);
   acceptor_.listen(5);
+  DLOG(INFO) << "accepting clients at " << ip << ":" << port;
 }
 
 Replicant::~Replicant() {
@@ -56,7 +66,7 @@ std::optional<Command> Replicant::ReadCommand(tcp::socket* cli) {
   if (strncmp(line.c_str(), "del", 3) == 0)
     return Command{CommandType::kDel, line.substr(4), ""};
 
-  LOG_IF(FATAL, strncmp(line.c_str(), "put", 3) != 0);
+  CHECK(strncmp(line.c_str(), "put", 3));
   size_t p = line.find(":", 4);
   return Command{CommandType::kPut, line.substr(4, p - 4), line.substr(p + 1)};
 }

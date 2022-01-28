@@ -14,12 +14,13 @@
 #include "kvstore.h"
 #include "paxosrpc.h"
 
+using grpc::Server;
 using grpc::ServerBuilder;
 using nlohmann::json;
 
 class Paxos : public Consensus {
  public:
-  Paxos(const json& config, KVStore* store);
+  Paxos(KVStore* store, const json& config);
   ~Paxos() = default;
   Result AgreeAndExecute(Command command) override;
 
@@ -27,6 +28,8 @@ class Paxos : public Consensus {
     std::lock_guard lock(mu_);
     min_last_executed_ = n;
   }
+
+  int id(void) const { return id_; }
 
   uint32_t min_last_executed(void) const {
     std::lock_guard lock(mu_);
@@ -46,16 +49,14 @@ class Paxos : public Consensus {
   std::chrono::milliseconds heartbeat_pause_;
   uint32_t last_executed_ = 0;
   uint32_t min_last_executed_ = 0;
-
+  asio::thread_pool tp_;
   std::condition_variable cv_;
   mutable std::mutex mu_;
   std::unique_ptr<KVStore> store_;
-  asio::thread_pool tp_;
 
-  // RPC stuff
   std::vector<PaxosRPCClient> rpc_peers_;
-  PaxosRPCServiceImpl rpc_server_;
-  ServerBuilder builder_;
+  PaxosRPCServiceImpl rpc_service_;
+  std::unique_ptr<Server> rpc_server_;
 };
 
 #endif
