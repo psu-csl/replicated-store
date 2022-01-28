@@ -39,8 +39,10 @@ class PaxosRPCClient {
     HeartbeatReply reply;
     ClientContext context;
 
+    LOG(INFO) << "sent heartbeat RPC to " << context.peer();
     Status status = stub_->Heartbeat(&context, request, &reply);
     if (status.ok()) {
+      LOG(INFO) << "heartbeat RPC to " << context.peer() << " succeeded";
       return reply.last_executed();
     }
     LOG(ERROR) << "heartbeat RPC to " << context.peer() << " failed";

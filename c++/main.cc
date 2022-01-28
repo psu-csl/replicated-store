@@ -1,6 +1,5 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
-#include <cassert>
 #include <fstream>
 #include <iostream>
 #include <memory>
@@ -10,6 +9,7 @@
 
 using nlohmann::json;
 
+DEFINE_bool(leader, false, "i am a leader");
 DEFINE_uint32(me, 0, "my index in the peer list in the configuration file");
 DEFINE_string(config, "config.json", "path to the configuration file");
 
@@ -26,6 +26,7 @@ int main(int argc, char* argv[]) {
 
   LOG_IF(FATAL, FLAGS_me >= config["peers"].size()) << FLAGS_me << config;
   config["me"] = FLAGS_me;
+  config["leader"] = FLAGS_leader;
 
   Replicant replicant(config);
   replicant.Run();

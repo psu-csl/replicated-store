@@ -7,14 +7,15 @@
 
 Paxos::Paxos(const json& config, KVStore* store)
     : id_(config["me"]),
+      leader_(config["leader"]),
       heartbeat_pause_(config["heartbeat_pause"]),
       store_(store),
       tp_(std::thread::hardware_concurrency()),
       rpc_server_(this) {
-  // start the heartbeat thread
+  // start the heartbeat thread.
   std::thread(&Paxos::HeartBeat, this).detach();
 
-  // establish client RPC channels to peers
+  // establish client RPC channels to peers.
   std::string me = config["peers"][id_];
   for (const auto& peer : config["peers"]) {
     if (peer != me) {
@@ -23,7 +24,7 @@ Paxos::Paxos(const json& config, KVStore* store)
     }
   }
 
-  // start the RPC service
+  // start the RPC service.
   LOG(INFO) << "peer " << id_ << " listening for RPC calls at " << me;
   builder_.AddListeningPort(me, grpc::InsecureServerCredentials());
   builder_.RegisterService(&rpc_server_);

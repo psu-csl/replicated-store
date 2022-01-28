@@ -42,8 +42,8 @@ class Paxos : public Consensus {
   void HeartBeat(void);
 
   uint32_t id_;
+  bool leader_;
   std::chrono::milliseconds heartbeat_pause_;
-  bool leader_ = false;
   uint32_t last_executed_ = 0;
   uint32_t min_last_executed_ = 0;
 

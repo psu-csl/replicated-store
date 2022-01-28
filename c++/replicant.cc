@@ -1,10 +1,10 @@
 #include "replicant.h"
 
+#include <glog/logging.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
 #include <asio.hpp>
-#include <cassert>
 #include <cstring>
 #include <iostream>
 #include <memory>
@@ -12,11 +12,15 @@
 #include "json.h"
 
 Replicant::Replicant(const json& config)
-    : consensus_(new Paxos(config, new MemStore())),
+    : id_(config["me"]),
+      consensus_(new Paxos(config, new MemStore())),
       tp_(std::thread::hardware_concurrency()),
-      acceptor_(io_, tcp::endpoint(tcp::v4(), config["client_port"])) {
+      acceptor_(io_, tcp::endpoint(tcp::v4(), config["client_port"] + id_)) {
+  LOG_IF(FATAL, std::thread::hardware_concurrency() == 0);
+  LOG(INFO) << "replicant " << config["me"]
+            << " listening for client connections on port "
+            << config["client_port"];
   acceptor_.listen(5);
-  assert(std::thread::hardware_concurrency());
 }
 
 Replicant::~Replicant() {
@@ -52,7 +56,7 @@ std::optional<Command> Replicant::ReadCommand(tcp::socket* cli) {
   if (strncmp(line.c_str(), "del", 3) == 0)
     return Command{CommandType::kDel, line.substr(4), ""};
 
-  assert(strncmp(line.c_str(), "put", 3) == 0);
+  LOG_IF(FATAL, strncmp(line.c_str(), "put", 3) != 0);
   size_t p = line.find(":", 4);
   return Command{CommandType::kPut, line.substr(4, p - 4), line.substr(p + 1)};
 }
