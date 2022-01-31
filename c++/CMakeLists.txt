@@ -2,6 +2,14 @@ cmake_minimum_required(VERSION 3.16)
 
 project(replicant CXX)
 
+find_program(CCACHE ccache)
+if(CCACHE)
+  message("using ccache")
+  set(CMAKE_CXX_COMPILER_LAUNCHER ${CCACHE})
+else()
+  message("ccache not found")
+endif()
+
 include(cmake/common.cmake)
 
 # Proto file
