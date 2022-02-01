@@ -66,7 +66,7 @@ std::optional<Command> Replicant::ReadCommand(tcp::socket* cli) {
   if (strncmp(line.c_str(), "del", 3) == 0)
     return Command{CommandType::kDel, line.substr(4), ""};
 
-  CHECK(strncmp(line.c_str(), "put", 3));
+  CHECK(strncmp(line.c_str(), "put", 3) == 0);
   size_t p = line.find(":", 4);
   return Command{CommandType::kPut, line.substr(4, p - 4), line.substr(p + 1)};
 }
