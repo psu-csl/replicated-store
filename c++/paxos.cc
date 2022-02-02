@@ -9,9 +9,9 @@ Paxos::Paxos(KVStore* store, const json& config)
     : id_(config["id"]),
       leader_(config["leader"]),
       heartbeat_pause_(config["heartbeat_pause"]),
-      tp_(config["threadpool_size"]),
       store_(store),
-      rpc_service_(this) {
+      rpc_service_(this),
+      tp_(config["threadpool_size"]) {
   // establish client rpc channels to peers
   std::string me = config["peers"][id_];
   for (const std::string peer : config["peers"]) {

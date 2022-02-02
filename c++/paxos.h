@@ -57,6 +57,8 @@ class Paxos : public Consensus {
   std::vector<PaxosRPCClient> rpc_peers_;
   PaxosRPCServiceImpl rpc_service_;
   std::unique_ptr<Server> rpc_server_;
+
+  asio::thread_pool tp_;
 };
 
 #endif
