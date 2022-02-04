@@ -49,7 +49,6 @@ class Paxos : public Consensus {
   std::chrono::milliseconds heartbeat_pause_;
   uint32_t last_executed_ = 0;
   uint32_t min_last_executed_ = 0;
-  asio::thread_pool tp_;
   std::condition_variable cv_;
   mutable std::mutex mu_;
   std::unique_ptr<KVStore> store_;
