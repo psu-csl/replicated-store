@@ -1,0 +1,172 @@
+log: log of commands. initialized to empty. each slot in the log contains a
+command that can be in one of two states: committed or in-progress. a command
+starts in the in-progress state and changes to the committed state once it has
+received the vote of the quorum.
+
+last_assigned: index of the last command in the log. initialized to 0. it is
+used for determining the index of a new command. when a new command is received,
+it gets the index last_assigned + 1.
+
+last_executed: index of the last executed command in the log. initialized to
+0. once a command is committed, it may be safe to execute it on the state
+machine, assuming all the commands before it are in the committed state and have
+already been executed. hence, every time a command is committed, if its index is
+equal to last_executed + 1, then that command is executed and last_executed is
+incremented.
+
+min_last_executed: minimum of last_executed of all peers. initialized to 0. this
+variable helps with pruning logs. all the commands with ids <= min_last_executed
+can be safely pruned from all peers' logs since these commands have been applied
+to the state machine of every peer. this variable is updated through heartbeats.
+as a response to the heartbeat, a leader receives last_executed from all peers,
+computes the min_last_executed, and then in the next heartbeat sends it to the
+followers. the leader should send an updated min_last_executed only if it has
+received last_executed from all the peers. Otherwise, liveness will be violated
+as described in SCENARIO-1.
+
+leader: flag indicating whether a peer is leader. initialized to false.
+
+current_leader: id of the current leader. initialized to null.
+
+last_heartbeat: time of the last heartbeat from current leader. initialized
+to 0.
+
+heartbeat_interval: time between heartbeats. initialized to 300ms.
+
+n: global part of a proposal number, initialized to 0.
+id: id of the peer.
+proposal#: number of the next proposal. computed as concat(++n, id).
+
+- agree_and_execute(command)
+  - if leader:
+    - return phase2(proposal, command)
+  - if current_leader != null && time::now - last_heartbeat < 2*T:
+    - return current_leader
+  // no known current leader or the known one is dead
+  - result = phase1(last_executed)
+  - if result.status == i_am_leader:
+    - start_heartbeat_thread()
+    - update_state(result.log)
+    - return phase2(proposal, command)
+
+- phase2(proposal#, command):
+  command_index = last_assigned++
+  command.status = in-progress
+  # if you are not doing self-loop broadcast, then put the command in the log
+  # before broadcast
+  - broadcast accept(proposal#, command, command_index)
+  - if ok from majority:
+    - command.status = committed
+    - log[command_index] = command
+    - assert(command_index > last_executed)
+    - sleep while (command_index != last_executed + 1)
+    - response = execute log[command_index]
+    - wake up sleeping threads
+    - return response
+  - if not-ok from majority: (in case of partition and an emerging leader)
+    - leader = false
+    - current_leader = extract leader id from plurality, toss a coin if tied
+    - return current_leader
+  // the only remaining case is timeouts
+  - return timeout_error
+
+
+- phase1():
+  - broadcast prepare(proposal#, last_executed)
+  - if ok from majority:
+    - leader_ = true
+    - return {status: i_am_leader, log: extract log from oks}
+  - if received heartbeat with a ballot number higher than ours:
+    - return current_leader
+
+- update_state(log):
+  - copy all entries to my log, for every in-progress entry, choose
+    the one with the highest ballot across the replies
+  - while log[last_executed+1].committed:
+    - execute log[++last_executed]
+
+
+
+
+
+
+- handle duplicates
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+how do we elect a leader?
+
+what happens when a single client connects to one of the peers? the peer starts
+phase1 (it sends prepare requests and receives ok from majority) and then starts
+phase2 (it sends accept requests and receives ok from majority) and it sets
+itself as a leader and starts the heartbeat thread. in this case, how does a
+peer become aware of a leader?
+
+a peer starts phase1, and as soon as it receives the majority of OK votes, it
+declares itself a leader, but then another peer starts phase1 with a higher
+
+the
+
+let's say a peer sends prepare requests to others. possible next case:
+  - it gets ack from majority
+    - starts the heartbeat to let others know
+    -
+  - it gets nack from majority
+  - while it is waiting, it receives a heartbeat
+    - someone became a leader, so cancel phase1 and respond with the address of
+      the new leader.
+
+by default hb handler is like this:
+
+assert(current_leader_exists_ && message_received_from_current_leader)
+update last_heard_from_leader
+update last_min_executed
+
+if hb handler needs to establish leadership, then the handler is like this:
+
+it is possible that we receive a message when there is no leader, and it is
+possible that we receive a message when there is already a leader
+
+if no-current-leader:
+  set_current_leader
+// this handles both cases: preexisting leader
+passert(current_leader_exists_ && message_received_from_current_leader)
+update last_heard_from_leader
+update last_min_executed
+
+
+
+// think about stale messages and how we are going to weed out them
+
+(TODO: imagine a scenario that there is a gap in the log, like [a, b, _, d] and
+once the thread1 commits d, it starts to wait until command at index 2 is
+executed and thread1 is woken up. at that moment, this machine stops being a
+leader, and someone else starts to run. they receive the log state, and
+eventually, they determine what goes into 2, and eventually, they notify this
+peer about the state of the log. then, we should wake up thread1)
+
+SCENARIO-1: Consider peers A, B, C, D, E, where A is the leader, and all peers
+have synchronized logs with last_executed = 10. The peer E experiences a
+partition, and in the meantime, A, B, C, D commit a lot more commands and each
+increase their last_executed to 15, 14, 13, 14, respectively, whereas E's
+last_executed remains at 10. A, the leader, receives last_executed from just B,
+C, and D, and sends 13 as the min_last_executed back to peers, and A, B, C, and
+D prune the commands up to and including 13. In the meantime, a client contacts
+E, which at this point thinks (due to partition) that A is dead. So E increments
+proposal# and starts phase1, times out, and keeps retrying phase1, with higher
+and higher proposal#. At some point, the partition is fixed, and E sends
+proposal# higher than A's current proposal# and asks for the log entries
+starting at 11; but none of the peers has these entries, and the cluster is
+stuck: the peers do not have the log entries so they cannot reply, and E will
+just keep retrying phase1 with higher proposal#.
