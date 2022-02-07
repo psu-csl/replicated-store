@@ -1,74 +1,246 @@
-log: log of commands. initialized to empty. each slot in the log contains a
-command that can be in one of two states: committed or in-progress. a command
-starts in the in-progress state and changes to the committed state once it has
-received the vote of the quorum.
+== TYPES =======================================================================
 
-last_assigned: index of the last command in the log. initialized to 0. it is
-used for determining the index of a new command. when a new command is received,
-it gets the index last_assigned + 1.
+- struct command_t
+  - synopsis: a key-value command
+  - fields:
+    - type: enum {get, put, del}
+    - key: string
+    - value: string (valid only for put type)
+  - init: N/A (fields set upon construction)
 
-last_executed: index of the last executed command in the log. initialized to
-0. once a command is committed, it may be safe to execute it on the state
-machine, assuming all the commands before it are in the committed state and have
-already been executed. hence, every time a command is committed, if its index is
-equal to last_executed + 1, then that command is executed and last_executed is
-incremented.
+- struct instance_t
+  - synopsis: entry in the log.
+  - fields:
+    - value: command_t
+    - state: enum {in-progress, committed}
+  - init:
+    - value: provided during construction
+    - status: in-progress
+  - description: each instance starts in the in-progress state, and changes to
+    the committed state once quorum has voted for it.
 
-min_last_executed: minimum of last_executed of all peers. initialized to 0. this
-variable helps with pruning logs. all the commands with ids <= min_last_executed
-can be safely pruned from all peers' logs since these commands have been applied
-to the state machine of every peer. this variable is updated through heartbeats.
-as a response to the heartbeat, a leader receives last_executed from all peers,
-computes the min_last_executed, and then in the next heartbeat sends it to the
-followers. the leader should send an updated min_last_executed only if it has
-received last_executed from all the peers. Otherwise, liveness will be violated
-as described in SCENARIO-1.
+== THREADS ACTING ON A PAXOS OBJECT ============================================
 
-leader: flag indicating whether a peer is leader. initialized to false.
+- main threads: the entry point of the paxos object is the agree_and_execute
+  method. for each incoming command, this method is called in a separate thread.
+  hence, at any given time, we may have multiple concurrent threads running
+  agree_and_execute method. we call these main threads.
 
-current_leader: id of the current leader. initialized to null.
+- heartbeat thread: a paxos object runs a heartbeat thread. there is just one
+  such thread. we call it the heartbeat thread.
 
-last_heartbeat: time of the last heartbeat from current leader. initialized
-to 0.
+- request threads: agree_and_execute calls RPCs on peers for phase1 and phase2.
+  we are currently using blocking RPC calls; therefore, each of these calls are
+  made in a separate thread. we call these request threads.
 
-heartbeat_interval: time between heartbeats. initialized to 300ms.
+- handler threads: the RPC handlers run in threads managed by gRPC runtime. we
+  call these handler threads.
 
-n: global part of a proposal number, initialized to 0.
-id: id of the peer.
-proposal#: number of the next proposal. computed as concat(++n, id).
+== PAXOS OBJECT STATE VARIABLES ================================================
+
+- peers_
+  - synopsis: an array of RPC endpoints to the peers
+  - init: constructed based on the configuration file
+  - description: this array is constructed on startup and read when sending
+    phase1, phase2, and heartbeat messages to the peers.
+  - reading threads:
+    - main threads: agree_and_execute reads peers_ during phase1 and phase2.
+    - heartbeat thread: reads peers_ when sending heartbeat messages.
+  - writing threads:
+    - none
+  - notes: for now, this array is constructed once at the beginning, and from
+    there on it is only read from. no need to protect it with a mutex until we
+    start supporting reconfiguration.
+
+- log_
+  - synopsis: an array of instance_t's.
+  - init: empty
+  - description: during phase2, instances are appended to log_'s head and they
+    are gradually pruned from its tail.
+  - reading threads:
+  - writing threads:
+    - main threads: agree_and_execute calls phase2, which ends up inserting a
+      new entry into log_ and then possibly updating the entry's status.
+
+- head_
+  - synopsis: index of the last command in the log_.
+  - init: 0
+  - description: used for determining the index of a new command. a new command
+    is assigned the index of ++head_.
+  - reading threads:
+  - writing threads:
+    - main threads: agree_and_execute increments head_
+
+- tail_
+  - synopsis: index of the last executed command in the log_.
+  - init: 0
+  - description: once a command is committed, it is safe to execute it on the
+    state machine if all the preceding commands are committed and executed.
+    hence, every time a command is committed, if its index is equal to tail_ +
+    1, then that command is executed and tail_ is incremented.
+  - writing threads:
+    - main threads: phase2, if successful, executes the command and increments
+      tail_.
+  - reading threads:
+    - main threads: read tail_ to see if it reached index-1.
+    - heartbeat thread: heartbeat thread reads tail_ after it has received all
+      RPC responses to compute the new min_tail_.
+    - request threads: phase1 reads tail_ when sending out prepare message.
+    - handler threads: heartbeat handler reads tail_ to respond to heartbeat.
+
+- tail_cv_ and tail_mu_: a condition variable and a mutex for tail_.
+
+- min_tail_
+  - synopsis: minimum of tails of all peers.
+  - init: 0
+  - description: helps with pruning logs. all the commands with indices <=
+    min_tail can be safely pruned from all peers' logs since these commands have
+    been applied to the state machine of every peer. this variable is updated
+    through heartbeats. as a response to a heartbeat, the leader receives tail_
+    from all peers, computes the min_tail_, and then in the next heartbeat sends
+    it to the followers. the leader should send an updated min_tail_ only if it
+    has received tails from all the peers. Otherwise, liveness will be violated
+    as described in SCENARIO-1.
+  - reading threads:
+    - main threads: currently, we are not doing anything with it, but the main
+      thread, after executing a command, may want to read and prune all the
+      entries before and including min_tail_.
+  - writing threads:
+    - heartbeat thread: after the heartbeat thread receives all the tails from
+      peers, it computes the new value for min_tail_ and updates it.
+    - handler threads: the heartbeat handler, after receiving the new min_tail_
+      value, updates its copy of min_tail_.
+
+- leader_
+  - synopsis: a boolean indicating if a peer is a leader.
+  - init: false
+  - description: true if this peer is a leader and false otherwise.
+  - reading threads:
+    - main threads: agree_and_execute reads leader_ to decide how to act.
+  - writing threads:
+    - main threads: phase1 sets leader_ to true if successful.
+    - request threads: when in response to an RPC request, we receive a response
+      that contains a higher round, we set leader_ to false and current_leader_
+      to the id of the responder.
+    - response threads: when an RPC request contains a higher round, we set
+      leader_ to false and current_leader_ to the id of the requester.
+
+- current_leader_
+  - synopsis: id of the current leader
+  - init: null
+  - description: with the exception of startup, when all peers are followers, at
+    any point in time, either current_leader_ is null and leader_ is true or
+    current_leader_ is non-null and leader_ is false.
+  - reading threads:
+    - main threads: agree_and_execute and phase2 both read current_leader_.
+  - writing threads:
+    - request threads: when in response to an RPC request, we receive a response
+      that contains a higher round, we set leader_ to false and current_leader_
+      to the id of the responder.
+    - response threads: when an RPC request contains a higher round, we set
+      leader_ to false and current_leader_ to the id of the requester.
+
+- last_heartbeat_
+  - synopsis: time of the last heartbeat from current leader.
+  - init: 0
+  - reading threads:
+    - main threads: agree_and_execute reads last_heartbeat_ to determine if the
+      current leader is alive.
+  - writing threads:
+    - handler threads: heartbeat handler sets last_heartbeat_ every time.
+
+- heartbeat_interval_
+  - synopsis: time between heartbeats.
+  - init: 300ms
+  - reading threads: N/A
+  - writing threads: N/A
+
+- id_
+  - synopsis: an integer representing the id of the peer
+  - init: passed in as a command-line argument
+  - reading threads: N/A
+  - writing threads: N/A
+
+- round_
+  - synopsis: an integer representing the latest paxos round.
+  - init: 0
+  - description: also known as ballot or term, this number represents the
+    current round known to peer, during which this or some other peer is the
+    leader. it is incremented when a peer needs to start phase1 (leader
+    election) and sent to other peers as phase1a message with the id_ used as
+    the lower bits, acting as a uniqueifier.
+  - reading threads:
+    - main threads: proposal() reads it to form the current proposal number.
+  - writing threads:
+    -
+
+== PAXOS OBJECT METHODS ========================================================
+
+- proposal#()
+  - return concat(round_, id_)
+
+- next_proposal#()
+  - return concat(++round_, id_)
 
 - agree_and_execute(command)
-  - if leader:
-    - return phase2(proposal, command)
-  - if current_leader != null && time::now - last_heartbeat < 2*T:
-    - return current_leader
+  if leader:
+    return phase2(proposal#(), command, ++head_)
+  if current_leader_ != null && time::now - last_heartbeat_ < 2 * heartbeat_interval_:
+    return current_leader_
   // no known current leader or the known one is dead
-  - result = phase1(last_executed)
-  - if result.status == i_am_leader:
-    - start_heartbeat_thread()
-    - update_state(result.log)
-    - return phase2(proposal, command)
+  result = phase1(tail)
+  if result.status == i_am_leader:
+    start_heartbeat_thread()
+    update_state(result.log)
+    return phase2(proposal, command)
 
-- phase2(proposal#, command):
-  command_index = last_assigned++
-  command.status = in-progress
-  # if you are not doing self-loop broadcast, then put the command in the log
-  # before broadcast
-  - broadcast accept(proposal#, command, command_index)
-  - if ok from majority:
-    - command.status = committed
-    - log[command_index] = command
-    - assert(command_index > last_executed)
-    - sleep while (command_index != last_executed + 1)
-    - response = execute log[command_index]
-    - wake up sleeping threads
-    - return response
-  - if not-ok from majority: (in case of partition and an emerging leader)
-    - leader = false
-    - current_leader = extract leader id from plurality, toss a coin if tied
-    - return current_leader
-  // the only remaining case is timeouts
-  - return timeout_error
+# TODO: handle duplicates
+- phase2(n, command, index):
+  log[index] = instance{command, in-progress}
+  num_responses = 0
+  num_ok_responses = 0
+  cv, mu
+  for each peer P (other than myself) {
+    run closure in a separate thread {
+      send acceptRPC(n, command, index) to P
+      receive response
+      lock(mu)
+      ++num_responses
+      if response is ok:
+        ++num_ok_responses
+      else if response is not ok:
+        leader = false
+        current_leader_ = extract id from response
+      # else response is a timeout error; we do nothing
+      unlock(mu)
+      cv.notify_one()
+    }
+    wake up main thread
+  }
+  lock(mu)
+  while leader &&
+        num_ok_responses < sizeof(peers)/2 &&
+        num_responses != sizeof(peers):
+    cv.wait(mu)
+  # one of the above three conditions is false; handle each, starting with the
+  # most likely one
+  if num_ok_responses >= sizeof(peers)/2: # we have quorum
+    log[index].status = committed
+    lock(tail_mu)
+    assert(index > tail)
+    while (index != tail+1)
+      tail_cv.wait(tail_mu)
+    response = execute(command)
+    ++tail
+    unlock(tail_mu)
+    tail_mu.notify_one()
+    return response
+  if !leader:
+    return current_leader_
+  # multiple timeout responses
+  return error
+
+- heartbeat_handler():
 
 
 - phase1():
@@ -77,7 +249,7 @@ proposal#: number of the next proposal. computed as concat(++n, id).
     - leader_ = true
     - return {status: i_am_leader, log: extract log from oks}
   - if received heartbeat with a ballot number higher than ours:
-    - return current_leader
+    - return current_leader_
 
 - update_state(log):
   - copy all entries to my log, for every in-progress entry, choose
@@ -91,19 +263,6 @@ proposal#: number of the next proposal. computed as concat(++n, id).
 
 
 - handle duplicates
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 how do we elect a leader?
 
@@ -129,7 +288,7 @@ let's say a peer sends prepare requests to others. possible next case:
 
 by default hb handler is like this:
 
-assert(current_leader_exists_ && message_received_from_current_leader)
+assert(current_leader__exists_ && message_received_from_current_leader_)
 update last_heard_from_leader
 update last_min_executed
 
@@ -139,15 +298,11 @@ it is possible that we receive a message when there is no leader, and it is
 possible that we receive a message when there is already a leader
 
 if no-current-leader:
-  set_current_leader
+  set_current_leader_
 // this handles both cases: preexisting leader
-passert(current_leader_exists_ && message_received_from_current_leader)
+passert(current_leader__exists_ && message_received_from_current_leader_)
 update last_heard_from_leader
 update last_min_executed
-
-
-
-// think about stale messages and how we are going to weed out them
 
 (TODO: imagine a scenario that there is a gap in the log, like [a, b, _, d] and
 once the thread1 commits d, it starts to wait until command at index 2 is
