@@ -11,11 +11,15 @@
 - struct instance_t
   - synopsis: entry in the log.
   - fields:
-    - value: command_t
+    - round: the round number
+    - command: command_t
+    - index: index of the command in the log.
     - state: enum {in-progress, committed}
   - init:
-    - value: provided during construction
-    - status: in-progress
+    - round: provided during construction
+    - command: provided during construction
+    - index: provided during construction
+    - state: in-progress
   - description: each instance starts in the in-progress state, and changes to
     the committed state once quorum has voted for it.
 
@@ -125,6 +129,15 @@
     - response threads: when an RPC request contains a higher round, we set
       leader_ to false and current_leader_ to the id of the requester.
 
+- ready_
+  - synopsis: a boolean indicating if the leader is ready to accept commands:
+  - init: false
+  - description: true if this peer is leader and it is ready to accept commands
+  - reading threads:
+    - main thread: agree_and_execute reads ready_ to decide if it can accept commands
+  - writing threads:
+    - phase1 thread:
+
 - current_leader_
   - synopsis: id of the current leader
   - init: null
@@ -162,7 +175,7 @@
   - writing threads: N/A
 
 - round_
-  - synopsis: an integer representing the latest paxos round.
+  - synopsis: an integer representing the current paxos round.
   - init: 0
   - description: also known as ballot or term, this number represents the
     current round known to peer, during which this or some other peer is the
@@ -170,11 +183,14 @@
     election) and sent to other peers as phase1a message with the id_ used as
     the lower bits, acting as a uniqueifier.
   - reading threads:
-    - main threads: proposal() reads it to form the current proposal number.
+    - main threads: proposal() reads round_ to form the current proposal number.
   - writing threads:
-    -
+    - main threads: next_proposal() increments round_.
 
 == PAXOS OBJECT METHODS ========================================================
+
+// TODO: handle duplicate responses due to retries
+// TODO: how to let peers know the committed? we can do it with the heartbeat
 
 - proposal#()
   - return concat(round_, id_)
@@ -183,108 +199,141 @@
   - return concat(++round_, id_)
 
 - agree_and_execute(command)
-  if leader:
-    return phase2(proposal#(), command, ++head_)
-  if current_leader_ != null && time::now - last_heartbeat_ < 2 * heartbeat_interval_:
+  if leader_:
+    if ready_:
+      assert(current_leader_ == null)
+      index = ++head_
+      return phase2(command, index)
+    return retry
+  if current_leader_ != null:
     return current_leader_
-  // no known current leader or the known one is dead
-  result = phase1(tail)
-  if result.status == i_am_leader:
-    start_heartbeat_thread()
-    update_state(result.log)
-    return phase2(proposal, command)
+  return retry
 
-# TODO: handle duplicates
-- phase2(n, command, index):
-  log[index] = instance{command, in-progress}
+- phase2(command, index):
+  log[index] = instance{command, index, proposal#(), in-progress}
   num_responses = 0
   num_ok_responses = 0
   cv, mu
   for each peer P (other than myself) {
     run closure in a separate thread {
-      send acceptRPC(n, command, index) to P
-      receive response
+      response = P.acceptRPC(command, proposal#(), index)
       lock(mu)
       ++num_responses
       if response is ok:
         ++num_ok_responses
       else if response is not ok:
-        leader = false
+        leader_ = false
         current_leader_ = extract id from response
       # else response is a timeout error; we do nothing
       unlock(mu)
       cv.notify_one()
     }
-    wake up main thread
   }
   lock(mu)
-  while leader &&
-        num_ok_responses < sizeof(peers)/2 &&
-        num_responses != sizeof(peers):
+  while leader_ &&
+        num_ok_responses < sizeof(peers_)/2 &&
+        num_responses != sizeof(peers_):
     cv.wait(mu)
   # one of the above three conditions is false; handle each, starting with the
   # most likely one
-  if num_ok_responses >= sizeof(peers)/2: # we have quorum
-    log[index].status = committed
-    lock(tail_mu)
-    assert(index > tail)
-    while (index != tail+1)
-      tail_cv.wait(tail_mu)
+  if num_ok_responses >= sizeof(peers_)/2: # we have quorum
+    log_[index].status = committed
+    lock(tail_mu_)
+    assert(index > tail_)
+    while (index != tail_+1)
+      tail_cv_.wait(tail_mu_)
     response = execute(command)
-    ++tail
-    unlock(tail_mu)
-    tail_mu.notify_one()
+    ++tail_
+    unlock(tail_mu_)
+    tail_cv_.notify_one()
     return response
-  if !leader:
+  if !leader_:
     return current_leader_
   # multiple timeout responses
-  return error
-
-- heartbeat_handler():
-
+  return timeout_error
 
 - phase1():
-  - broadcast prepare(proposal#, last_executed)
-  - if ok from majority:
-    - leader_ = true
-    - return {status: i_am_leader, log: extract log from oks}
-  - if received heartbeat with a ballot number higher than ours:
-    - return current_leader_
+  num_responses = 0
+  num_ok_responses = 0
+  command_log = log[tail+1:]
+  cv, mu
+  n = next_proposal#()
+  for each peer P (other than myself) {
+    run closure in a separate thread {
+      r = P.prepareRPC(n)
+      lock(mu)
+      ++num_responses
+      if r.status is ok:
+        ++num_ok_responses
+        merge_log(command_log, r.received_log)
+      else if r.status is not-ok:
+        leader_ = false
+        current_leader_ = extract id from response
+      # else response is a timeout error; we do nothing
+      unlock(mu)
+      cv.notify_one()
+    }
+  }
+  lock(mu)
+  while leader_ &&
+        num_ok_responses < sizeof(peers_)/2 &&
+        num_responses != sizeof(peers_)
+    cv.wait(mu)
+  # one of the above three conditions is false; handle each, starting with the
+  # most likely one
+  if num_ok_responses >= sizeof(peers_)/2: # we have quorum
+    return {status = ok, log = command_log}
+  if !leader_:
+    return {status = not-ok, log = []}
+  return timeout_error
 
-- update_state(log):
-  - copy all entries to my log, for every in-progress entry, choose
-    the one with the highest ballot across the replies
-  - while log[last_executed+1].committed:
-    - execute log[++last_executed]
+- phase1_thread():
+  for (;;) {
+    sleep until we are not a leader
+    for (;;) {
+      sleep(heartbeat_interval_ + random(10, heartbeat_interval_))
+      if time::now() - last_heartbeat_ < heartbeat_interval_:
+        continue
+      response = phase1()
+      if leader_:
+        wake up heartbeat_thread
+        replay(response.log)
+        break
+    }
+  }
 
+- phase1_handler(message):
+  if message.round < round_:
+    return reject(round_)
+  leader_ = false
+  current_leader_ = extract leader id from message
+  return (ok, log since message.tail)
 
+- heartbeat_thread():
+  for (;;) {
+    sleep until we are a leader
+    for (;;) {
+      for each peer P {
+        run closure {
+          P.sendHeartbeat(min_tail)
+          ...TBD
+        }
+      }
+      sleep(heartbeat_interval_)
+      if !leader_:
+        break
+    }
+  }
 
-
-
+- heartbeat_handler(message):
+  if message.round < round_:
+    return reject(round_)
+  min_tail_ = message.min_tail
+  return ok(tail_)
 
 - handle duplicates
 
 how do we elect a leader?
-
-what happens when a single client connects to one of the peers? the peer starts
-phase1 (it sends prepare requests and receives ok from majority) and then starts
-phase2 (it sends accept requests and receives ok from majority) and it sets
-itself as a leader and starts the heartbeat thread. in this case, how does a
-peer become aware of a leader?
-
-a peer starts phase1, and as soon as it receives the majority of OK votes, it
-declares itself a leader, but then another peer starts phase1 with a higher
-
-the
-
-let's say a peer sends prepare requests to others. possible next case:
-  - it gets ack from majority
-    - starts the heartbeat to let others know
-    -
-  - it gets nack from majority
-  - while it is waiting, it receives a heartbeat
-    - someone became a leader, so cancel phase1 and respond with the address of
-      the new leader.
 
 by default hb handler is like this:
 
@@ -311,6 +360,8 @@ leader, and someone else starts to run. they receive the log state, and
 eventually, they determine what goes into 2, and eventually, they notify this
 peer about the state of the log. then, we should wake up thread1)
 
+== SCENARIOS ===================================================================
+
 SCENARIO-1: Consider peers A, B, C, D, E, where A is the leader, and all peers
 have synchronized logs with last_executed = 10. The peer E experiences a
 partition, and in the meantime, A, B, C, D commit a lot more commands and each
@@ -325,3 +376,12 @@ proposal# higher than A's current proposal# and asks for the log entries
 starting at 11; but none of the peers has these entries, and the cluster is
 stuck: the peers do not have the log entries so they cannot reply, and E will
 just keep retrying phase1 with higher proposal#.
+
+== SCRATCH SPACE ===============================================================
+
+how does leader election work in raft? the heartbeat thread regularly checks if
+it has received a heartbeat from the leader. if it has, then it does nothing. if
+it hasn't, then it sleeps for a random amount of time and starts leader election
+by asking for a vote from everyone. if someone receives a vote with a term
+higher than the its own, they immediately downgrade to a follower. furthermore,
+each follower votes only once in a term.
