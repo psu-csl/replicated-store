@@ -11,12 +11,12 @@
 - struct instance_t
   - synopsis: entry in the log.
   - fields:
-    - round: the round number
+    - proposal_num: the proposal number
     - command: command_t
     - index: index of the command in the log.
     - state: enum {in-progress, committed}
   - init:
-    - round: provided during construction
+    - proposal_num: provided during construction
     - command: provided during construction
     - index: provided during construction
     - state: in-progress
@@ -38,19 +38,19 @@
   heartbeat messages; as soon as it detects that the object is not a leader
   anymore, it goes back to sleep until it is woken up again.
 
-- phase1 thread: each paxos object runs a phase1 (or election) thread. this
+- prepare thread: each paxos object runs an election (phase1) thread. this
   thread runs an infinite loop, similar to the heartbeat thread, where it sleeps
   until the object is not a leader anymore, after which the object should
   constantly monitor the incoming heartbeats to make sure that the current
-  leader is still alive. whenever it detects a dead leader, it runs phase1 to
-  become a leader. at the end of the phase1 either this object or someone else
+  leader is still alive. whenever it detects a dead leader, it runs election to
+  become a leader. at the end of the election either this object or someone else
   is a leader. if it is the leader, then this thread goes back to sleep, until
   this object is not a leader anymore. otherwise, if it is not the leader, the
   thread goes back to monitoring incoming heartbeats to detect when the current
   leader fails.
 
-- request threads: in a main thread, agree_and_execute() calls phase2() which
-  launches RPCs to peers to get the quorum vote; in phase1 thread, phase1()
+- request threads: in a main thread, agree_and_execute() calls accept() which
+  launches RPCs to peers to get the quorum vote; in prepare thread, prepare()
   launches RPCs to peers to get the quorum vote; the heartbeat thread launches
   RPCs for failure detection. we are currently using blocking RPC calls;
   therefore, each of these calls are made in a separate thread. we call these
@@ -65,13 +65,7 @@
   - synopsis: an array of RPC endpoints to the peers
   - init: constructed based on the configuration file
   - description: this array is constructed on startup and read when sending
-    phase1, phase2, and heartbeat messages to the peers.
-  - reading threads:
-    - main threads: phase2() reads peers_ when sending RPCs.
-    - heartbeat thread: reads peers_ when sending heartbeat messages.
-    - phase1 thread: phase1() reads peers_ when sending RPCs.
-  - writing threads:
-    - none
+    prepare, accept, and heartbeat messages to the peers.
   - notes: for now, this array is constructed once at the beginning, and from
     there on it is only read from. no need to protect it with a mutex until we
     start supporting reconfiguration, but we should make sure that it is
@@ -80,19 +74,19 @@
 - log_
   - synopsis: a log of instance_t's.
   - init: empty
-  - description: abstractly, it is a journal with a head and tail, where
+  - description: abstractly, it is a circular buffer with a head and tail, where
     instances are added at the head and removed at the tail. although it may
     appear that the log can easily be implemented as a fixed-size circular
     buffer, it has other requirements that makes circular buffer a bad choice.
     for example, a circular buffer has a fixed size: once it is full, no more
     insertions are possible. in our scenario, we only remove an instance from
-    the tail_ (see below) when all peers have told us their tail. so, if only
-    one of the peers becomes partitioned, it will prevent us moving the tail,
-    and we will quickly fill the circular buffer and stall the progress because
-    only one of the peers is temporarily partitioned. therefore, we are going to
-    use a hashmap from index to instance for this data structure. without going
-    into details, asymptotically, it should act as a resizeable circular buffer.
-    (TODO fill in the details.)
+    the tail_ (see below) when all peers have told us their tail value. so, if
+    only one of the peers becomes partitioned, it will prevent us moving the
+    tail, and we will quickly fill the circular buffer and stall the progress
+    because one of the peers is temporarily partitioned. therefore, we are going
+    to use a hashmap from index to instance for this data structure. without
+    going into details, asymptotically, it should act as a resizeable circular
+    buffer. (TODO fill in the details.)
   - reading threads:
     - TBD
   - writing threads:
@@ -178,14 +172,17 @@
   - reading threads: N/A
   - writing threads: N/A
 
-- round_
+- proposal_num_
   - synopsis: an integer representing the current paxos round.
-  - init: 0
+  - init: id_
   - description: also known as ballot or term, this number represents the
     current round known to peer, during which this or some other peer is the
-    leader. it is incremented when a peer needs to start phase1 (leader
-    election) and sent to other peers as phase1a message with the id_ used as
-    the lower bits, acting as a uniqueifier.
+    leader. it is initialized to id_, which forms its lower bits and incremented
+    when a peer needs to start election and sent to other peers. to obtain its
+    next value, proposal_num_ is incremented by 2^n where n is the number of
+    bits used for storing the id_ at the lower bits. for example, if we use the
+    lower 4 bits to store id_, then the next proposal_num_ is obtained by
+    proposal_num_ += 2^4.
   - reading threads:
     - TBD
   - writing threads:
@@ -193,16 +190,14 @@
 
 == PAXOS OBJECT METHODS ========================================================
 
-- proposal#()
-  return concat(round_, id_)
-
 - next_proposal#()
-  return concat(++round_, id_)
+  proposal_num_ += 2^n (see above)
+  return proposal_num_
 
 - agree_and_execute(command)
   if leader_ == id_:
     if ready_:
-      return phase2(command, ++index)
+      return accept(command, ++index)
     return retry # we are not ready yet
   # someone else is leader
   if leader_ != null:
@@ -213,14 +208,14 @@
   # we receive a higher-numbered ballot than ours.
   return retry
 
-- phase2(command, index):
-  log[index] = instance{command, index, proposal#(), in-progress}
+- accept(command, index):
+  log_[index] = instance{command, index, proposal#(), in-progress}
   num_responses = 0
   num_ok_responses = 0
   cv, mu
   for each peer P {
     run closure in a separate thread {
-      response = P.acceptRPC(command, proposal#(), index)
+      response = P.acceptRPC(command, index, proposal#())
       lock(mu)
       ++num_responses
       if response is ok:
@@ -255,7 +250,21 @@
   # multiple timeout responses
   return retry
 
-- phase1():
+- accept_handler(message):
+  # common case
+  if message.proposal_num == proposal_num_:
+    log_[message.index] = instance{message.command, message.index, message.proposal_num, in-progress}
+    return ok
+  # stale message
+  if message.proposal_num < proposal_num_:
+    return reject(proposal_num_)
+  # someone else is a leader
+  if message.proposal_num > proposal_num_:
+    leader_ = extract id from message
+    log_[message.index] = instance{message.command, message.index, message.proposal_num, in-progress}
+    return ok
+
+- prepare():
   num_responses = 0
   num_ok_responses = 0
   command_log = log[tail+1:]
@@ -290,7 +299,15 @@
   # multiple timeout responses
   return retry
 
-- phase1_thread():
+- prepare_handler(message):
+  # common case for phase1
+  if message.proposal_num >= proposal_num_:
+    leader_ = extract leader id from message
+    return (ok, log since message.tail)
+  # stale messages
+  return reject(proposal_num_)
+
+- prepare_thread():
   for (;;) {
     sleep until we are not a leader
     for (;;) {
@@ -298,8 +315,8 @@
       if time::now() - last_heartbeat_ < heartbeat_interval_:
         continue
       do {
-        response = phase1()
-      while response != retry
+        response = prepare()
+      } while response != retry
       if leader_ == self:
         wake up heartbeat_thread
         replay(response.log)
@@ -308,19 +325,13 @@
     }
   }
 
-- phase1_handler(message):
-  if message.round < round_:
-    return reject(round_)
-  leader_ = extract leader id from message
-  return (ok, log since message.tail)
-
 - heartbeat_thread():
   for (;;) {
     sleep until we are a leader
     for (;;) {
       for each peer P {
         run closure {
-          P.sendHeartbeat(min_tail)
+          P.heartbeatRPC(min_tail)
           ...TBD
         }
       }
@@ -331,10 +342,16 @@
   }
 
 - heartbeat_handler(message):
-  if message.round < round_:
-    return reject(round_)
-  min_tail_ = message.min_tail
-  return ok(tail_)
+  # common case for the heartbeat
+  if message.proposal_num == proposal_num_:
+    min_tail_ = message.min_tail
+    return ok(tail_)
+  # stale messages
+  if message.proposal_num < proposal_num_:
+    return reject(proposal_num_)
+  # someone else is a leader
+  leader = extract id from message
+  return ok
 
 == SCENARIOS ===================================================================
 
