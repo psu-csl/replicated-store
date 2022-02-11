@@ -11,12 +11,12 @@
 - struct instance_t
   - synopsis: entry in the log.
   - fields:
-    - proposal_num: the proposal number
+    - round: current round
     - command: command_t
     - index: index of the command in the log.
     - state: enum {in-progress, committed}
   - init:
-    - proposal_num: provided during construction
+    - round: provided during construction
     - command: provided during construction
     - index: provided during construction
     - state: in-progress
@@ -172,17 +172,16 @@
   - reading threads: N/A
   - writing threads: N/A
 
-- proposal_num_
+- round_
   - synopsis: an integer representing the current paxos round.
   - init: id_
   - description: also known as ballot or term, this number represents the
     current round known to peer, during which this or some other peer is the
     leader. it is initialized to id_, which forms its lower bits and incremented
     when a peer needs to start election and sent to other peers. to obtain its
-    next value, proposal_num_ is incremented by 2^n where n is the number of
-    bits used for storing the id_ at the lower bits. for example, if we use the
-    lower 4 bits to store id_, then the next proposal_num_ is obtained by
-    proposal_num_ += 2^4.
+    next value, round_ is incremented by 2^n where n is the number of bits used
+    for storing the id_ at the lower bits. for example, if we use the lower 4
+    bits to store id_, then the next round_ is obtained by round_ += 2^4.
   - reading threads:
     - TBD
   - writing threads:
@@ -190,9 +189,9 @@
 
 == PAXOS OBJECT METHODS ========================================================
 
-- next_proposal#()
-  proposal_num_ += 2^n (see above)
-  return proposal_num_
+- next_round#()
+  round_ += 2^n (see above)
+  return round_
 
 - agree_and_execute(command)
   if leader_ == id_:
@@ -209,13 +208,13 @@
   return retry
 
 - accept(command, index):
-  log_[index] = instance{command, index, proposal#(), in-progress}
+  log_[index] = instance{command, index, round_, in-progress}
   num_responses = 0
   num_ok_responses = 0
   cv, mu
   for each peer P {
     run closure in a separate thread {
-      response = P.acceptRPC(command, index, proposal#())
+      response = P.acceptRPC(command, index, round_)
       lock(mu)
       ++num_responses
       if response is ok:
@@ -252,16 +251,16 @@
 
 - accept_handler(message):
   # common case
-  if message.proposal_num == proposal_num_:
-    log_[message.index] = instance{message.command, message.index, message.proposal_num, in-progress}
+  if message.round == round_:
+    log_[message.index] = instance{message.command, message.index, message.round, in-progress}
     return ok
   # stale message
-  if message.proposal_num < proposal_num_:
-    return reject(proposal_num_)
+  if message.round < round_:
+    return reject(round_)
   # someone else is a leader
-  if message.proposal_num > proposal_num_:
+  if message.round > round_:
     leader_ = extract id from message
-    log_[message.index] = instance{message.command, message.index, message.proposal_num, in-progress}
+    log_[message.index] = instance{message.command, message.index, message.round, in-progress}
     return ok
 
 - prepare():
@@ -269,10 +268,10 @@
   num_ok_responses = 0
   command_log = log[tail+1:]
   cv, mu
-  n = next_proposal#()
+  r = next_round#()
   for each peer P {
     run closure in a separate thread {
-      response = P.prepareRPC(n)
+      response = P.prepareRPC(r)
       lock(mu)
       ++num_responses
       if response.status is ok:
@@ -301,11 +300,11 @@
 
 - prepare_handler(message):
   # common case for phase1
-  if message.proposal_num >= proposal_num_:
+  if message.round >= round_:
     leader_ = extract leader id from message
     return (ok, log since message.tail)
   # stale messages
-  return reject(proposal_num_)
+  return reject(round_)
 
 - prepare_thread():
   for (;;) {
@@ -343,12 +342,12 @@
 
 - heartbeat_handler(message):
   # common case for the heartbeat
-  if message.proposal_num == proposal_num_:
+  if message.round == round_:
     min_tail_ = message.min_tail
     return ok(tail_)
   # stale messages
-  if message.proposal_num < proposal_num_:
-    return reject(proposal_num_)
+  if message.round < round_:
+    return reject(round_)
   # someone else is a leader
   leader = extract id from message
   return ok
