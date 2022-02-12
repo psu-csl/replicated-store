@@ -11,10 +11,10 @@
 - struct instance_t
   - synopsis: entry in the log.
   - fields:
-    - round: current round
-    - command: command_t
-    - index: index of the command in the log.
-    - state: enum {in-progress, committed}
+    - round_: current round
+    - command_: command_t
+    - index_: index of the command in the log.
+    - state_: enum {in-progress, committed}
   - init:
     - round: provided during construction
     - command: provided during construction
@@ -22,6 +22,47 @@
     - state: in-progress
   - description: each instance starts in the in-progress state, and changes to
     the committed state once quorum has voted for it.
+
+- struct result_t
+  - synopsis: return type of agree_and_execute() and accept()
+  - fields:
+    - type_: enum {ok, fail, retry, leader}
+    - result_: string (if type_ == ok then contains result of command; if type_
+      == fail, then contains error message; undefined otherwise)
+    - leader_: int (if type_ == leader then contains id of the current leader_)
+
+- message accept_rpc_request
+  - synopsis: acceptRPC request protobuf
+  - fields:
+    - command_: command_t
+    - index_: int; index for the command_ in log_
+    - round_: int; round of the sender
+
+- message accept_rpc_response
+  - synopsis: acceptRPC response protobuf
+  - fields:
+    - type_: enum {ok, reject, timeout}
+    - round_: round of the remote peer; valid only if type_ == reject
+
+- struct prepare_result_t
+  - synopsis: return type of prepare()
+  - fields:
+    - type_: enum {ok, reject, timeout}
+    - round_: round of the remote peer; valid only if type_ == reject
+    - log_: log entries
+
+- message prepare_rpc_request
+  - synopsis: prepareRPC request protobuf
+  - fields:
+    - tail_: int
+    - round_: int
+
+- message prepare_rpc_response
+  - synopsis: prepareRPC response protobuf
+  - fields:
+    - type_: enum {ok, reject, timeout}
+    - round_: round of the remote peer; valid only if type_ == reject
+    - log_: instances since tail_ in the corresponding prepareRPC request
 
 == THREADS ACTING ON A PAXOS OBJECT ============================================
 
@@ -38,11 +79,12 @@
   heartbeat messages; as soon as it detects that the object is not a leader
   anymore, it goes back to sleep until it is woken up again.
 
-- prepare thread: each paxos object runs an election (phase1) thread. this
-  thread runs an infinite loop, similar to the heartbeat thread, where it sleeps
-  until the object is not a leader anymore, after which the object should
-  constantly monitor the incoming heartbeats to make sure that the current
-  leader is still alive. whenever it detects a dead leader, it runs election to
+- prepare thread: each paxos object runs a prepare thread for starting election
+  (phase1) when there is a need. this thread runs an infinite loop, similar to
+  the heartbeat thread, where it sleeps until the object is not a leader
+  anymore, after which the object should constantly monitor the incoming
+  heartbeats to make sure that the current leader is still alive. whenever it
+  detects a dead leader, it runs election---sends out prepare messages---to
   become a leader. at the end of the election either this object or someone else
   is a leader. if it is the leader, then this thread goes back to sleep, until
   this object is not a leader anymore. otherwise, if it is not the leader, the
@@ -50,43 +92,56 @@
   leader fails.
 
 - request threads: in a main thread, agree_and_execute() calls accept() which
-  launches RPCs to peers to get the quorum vote; in prepare thread, prepare()
-  launches RPCs to peers to get the quorum vote; the heartbeat thread launches
-  RPCs for failure detection. we are currently using blocking RPC calls;
-  therefore, each of these calls are made in a separate thread. we call these
-  request threads.
+  calls RPCs to peers to get the quorum vote; in prepare thread, prepare() calls
+  RPCs to peers to get the quorum vote; the heartbeat thread calls RPCs for
+  failure detection. we are currently using blocking RPC calls; therefore, each
+  of these calls are made in a separate thread. we call these request threads.
 
-- handler threads: the RPC handlers run in threads managed by gRPC runtime. we
-  call these handler threads.
+- response threads: the RPC handlers run in threads managed by gRPC runtime. we
+  call these response threads.
 
 == PAXOS OBJECT STATE VARIABLES ================================================
 
 - peers_
-  - synopsis: an array of RPC endpoints to the peers
+  - synopsis: an array of RPC endpoints to the peers, including to self.
   - init: constructed based on the configuration file
   - description: this array is constructed on startup and read when sending
     prepare, accept, and heartbeat messages to the peers.
-  - notes: for now, this array is constructed once at the beginning, and from
-    there on it is only read from. no need to protect it with a mutex until we
-    start supporting reconfiguration, but we should make sure that it is
-    constructed completely before starting any threads.
+  - notes:
+    - for now, this array is constructed once at the beginning, and from there
+      on it is only read from. no need to protect it with a mutex until we start
+      supporting reconfiguration, but we should make sure that it is constructed
+      completely before starting any threads.
+    - assert (len(peers_) <= max_num_peers_); see max_num_peers_ description
+      below.
+
+- max_num_peers_:
+  - synopsis: a constant representing the maximum number of peers allowed.
+  - init: initialized to 16
+  - description: it is also used as a delta for incrementing round_ (see below)
+    to obtain the next round_ number. log(max_num_peers_) number of lower bits
+    in round_ store the id_ of the peer. we initialize round_ to the id_ of the
+    peer and increment it by max_num_peers_, which keeps id_ bits intact and
+    increments the higher bits. this allows us to obtain unique round_ numbers.
 
 - log_
   - synopsis: a log of instance_t's.
   - init: empty
   - description: abstractly, it is a circular buffer with a head and tail, where
     instances are added at the head and removed at the tail. although it may
-    appear that the log can easily be implemented as a fixed-size circular
-    buffer, it has other requirements that makes circular buffer a bad choice.
-    for example, a circular buffer has a fixed size: once it is full, no more
+    appear that log_ can be easily implemented as a fixed-size circular buffer,
+    it has other requirements that makes circular buffer a bad choice. for
+    example, a circular buffer has a fixed size: once it is full, no more
     insertions are possible. in our scenario, we only remove an instance from
-    the tail_ (see below) when all peers have told us their tail value. so, if
-    only one of the peers becomes partitioned, it will prevent us moving the
-    tail, and we will quickly fill the circular buffer and stall the progress
-    because one of the peers is temporarily partitioned. therefore, we are going
-    to use a hashmap from index to instance for this data structure. without
-    going into details, asymptotically, it should act as a resizeable circular
-    buffer. (TODO fill in the details.)
+    the tail_ (see below) when all peers have told us their tail_ value. so, if
+    only one of the peers becomes partitioned, it will prevent us moving tail_,
+    and we will fill the circular buffer and stall the progress because one of
+    the peers is temporarily partitioned. therefore, we are going to use a
+    hashmap from index to instance for this data structure. it is possible to
+    implement a resizeable circular buffer (e.g. boost library provides one),
+    but for now we are keeping things simple and use a hashmap. our intuition is
+    that hashmap should behave like a circular buffer performance-wise, but a
+    more thorough evaluation of this is a future work.
   - reading threads:
     - TBD
   - writing threads:
@@ -135,6 +190,8 @@
 - id_
   - synopsis: an integer representing the id of the peer
   - init: passed in as a command-line argument
+  - note:
+    - assert(id_ < max_num_peers_)
   - reading threads: N/A
   - writing threads: N/A
 
@@ -178,10 +235,12 @@
   - description: also known as ballot or term, this number represents the
     current round known to peer, during which this or some other peer is the
     leader. it is initialized to id_, which forms its lower bits and incremented
-    when a peer needs to start election and sent to other peers. to obtain its
-    next value, round_ is incremented by 2^n where n is the number of bits used
-    for storing the id_ at the lower bits. for example, if we use the lower 4
-    bits to store id_, then the next round_ is obtained by round_ += 2^4.
+    when a peer needs to send prepare messages (i.e. start an election). to
+    obtain its next value, round_ is incremented by max_num_peers_, which is set
+    to 2^n where n is the number of bits used for storing the id_ at the lower
+    bits. for now, we initialize max_num_peers_ to 16, which is 2^4; that is, we
+    use the lower 4 bits for storing the id_, which means id_ can be any number
+    in [0,16) and the size of peers_ must be <= max_num_peers_.
   - reading threads:
     - TBD
   - writing threads:
@@ -189,120 +248,127 @@
 
 == PAXOS OBJECT METHODS ========================================================
 
-- next_round#()
-  round_ += 2^n (see above)
+- next_round#() -> int
+  round_ += max_num_peers_
   return round_
 
-- agree_and_execute(command)
+- agree_and_execute(command: command_t) -> result_t
   if leader_ == id_:
     if ready_:
-      return accept(command, ++index)
-    return retry # we are not ready yet
+      return accept(command, ++head_)
+    return result_t{type_: retry, result_: N/A, leader_: N/A}
   # someone else is leader
   if leader_ != null:
-    return leader_
-  # no one is leader -- an election is in progress; interestingly, this path
-  # will be taken just once during the lifetime of the object because we never
-  # set leader_ to null. we only set it to the id of another peer once whenever
-  # we receive a higher-numbered ballot than ours.
-  return retry
+    return result_t{type_: leader, leader_: leader_}
+  # no one is leader---an election is in progress; interestingly, this path will
+  # be taken just once during the lifetime of the object because we never reset
+  # leader_ to null after the first election. we only reset it to the id of
+  # another peer once, whenever we receive a higher-numbered ballot than ours.
+  return result_t{type_: retry, result_: N/A, leader_: N/A}
 
-- accept(command, index):
-  log_[index] = instance{command, index, round_, in-progress}
+- accept(command: command_t, index: int) -> result_t
   num_responses = 0
-  num_ok_responses = 0
+  ok_responses = vector
   cv, mu
-  for each peer P {
+  request = accept_rpc_request{command: command, index: index, round: round_}
+  for each peer p {
     run closure in a separate thread {
-      response = P.acceptRPC(command, index, round_)
+      response = p.acceptRPC(request)
       lock(mu)
       ++num_responses
-      if response is ok:
-        ++num_ok_responses
-      else if response is not ok:
-        leader_ = extract id from response
-      # else response is a timeout error; we do nothing
+      if response.type_ == ok:
+        ok_responses.push(response)
+      else if respose.type_ == reject:
+        leader_ = response.round_ && (max_num_peers_ - 1)
+      # else it is a timeout error; we do nothing
       unlock(mu)
       cv.notify_one()
     }
   }
   lock(mu)
   while leader_ == id_ &&
-        num_ok_responses < sizeof(peers_)/2 &&
-        num_responses != sizeof(peers_):
+        ok_responses.size() <= peers_.size()/2 &&
+        num_responses != peers_.size():
     cv.wait(mu)
   # one of the above three conditions is false; handle each, starting with the
   # most likely one
-  if num_ok_responses >= sizeof(peers_)/2: # we have quorum
+  if ok_responses.size() > peers_.size()/2: # we have quorum
+    # our accept handler must have inserted the command
+    assert(log_[index] != null log_[index].status == in-progress)
     log_[index].status = committed
+    # execute as much as we can.
     lock(tail_mu_)
     assert(index > tail_)
     while (index != tail_+1)
       tail_cv_.wait(tail_mu_)
-    response = execute(command)
+    result = execute(command)
     ++tail_
     unlock(tail_mu_)
     tail_cv_.notify_one()
-    return response
+    if result.ok:
+      return result_t{type_: ok, result_: result.value, leader_: N/A}
+    else
+      return result_t{type_: fail, result_: result.error, leader_: N/A}
   if leader_ != id_:
-    return leader_
+    return result_t{type_: leader, result_: N/A, leader_: leader_}
   # multiple timeout responses
-  return retry
+  return result_t{type_: retry, result_: N/A, leader_: N/A}
 
-- accept_handler(message):
+- accept_handler(message: accept_rpc_request):
   # common case
-  if message.round == round_:
-    log_[message.index] = instance{message.command, message.index, message.round, in-progress}
-    return ok
+  i = instance_t{round_: round_, command_: message.command, index_:
+                 message.index, state_: in-progress}
+  if message.round_ == round_:
+    log_[message.index_] = i
+    return accept_rpc_response{type_: ok, round_: N/A}
   # stale message
-  if message.round < round_:
-    return reject(round_)
+  if message.round_ < round_:
+    return accept_rpc_response{type: reject, round: round_}
   # someone else is a leader
-  if message.round > round_:
-    leader_ = extract id from message
-    log_[message.index] = instance{message.command, message.index, message.round, in-progress}
-    return ok
+  if instance.round > round_:
+    leader_ = message.round_ && (max_num_peers_ - 1)
+    log_[message.index_] = i
+    return accept_rpc_responset{type_: ok, round_: N/A}
 
-- prepare():
+- prepare() -> prepare_result_t:
   num_responses = 0
-  num_ok_responses = 0
-  command_log = log[tail+1:]
+  ok_responses = vector
   cv, mu
-  r = next_round#()
-  for each peer P {
+  request = prepare_rpc_request{tail_: tail_, round_: next_round#()}
+  for each peer p {
     run closure in a separate thread {
-      response = P.prepareRPC(r)
+      response = p.prepareRPC(request)
       lock(mu)
       ++num_responses
-      if response.status is ok:
-        ++num_ok_responses
-        merge_log(command_log, response.received_log)
-      else if response.status is not-ok:
-        leader_ = extract id from response
-      # else response is a timeout error; we do nothing
+      if response.type_ == ok:
+        ok_responses.push(response)
+      else if response.type_ == reject:
+        leader_ = response.round_ && (max_num_peers_ - 1)
+      # else it is a timeout error; we do nothing
       unlock(mu)
       cv.notify_one()
     }
   }
   lock(mu)
   while leader_ == id_ &&
-        num_ok_responses < sizeof(peers_)/2 &&
-        num_responses != sizeof(peers_)
+        ok_responses.size() <= peers_.size()/2 &&
+        num_responses != peers_.size()
     cv.wait(mu)
   # one of the above three conditions is false; handle each, starting with the
   # most likely one
-  if num_ok_responses >= sizeof(peers_)/2: # we have quorum
-    return {status = ok, log = command_log}
+  if ok_responses.size() > peers_.size()/2: # we have quorum
+    log = merge(ok_responses)
+    return prepare_result_t{type_: ok, round_: round_, log_: log}
   if leader_ != id_:
-    return {status = not-ok, log = []}
+    return prepare_result_t{type_: reject, round_: }
   # multiple timeout responses
   return retry
 
-- prepare_handler(message):
+- prepare_handler(tail, round):
   # common case for phase1
-  if message.round >= round_:
-    leader_ = extract leader id from message
-    return (ok, log since message.tail)
+  if round >= round_:
+    leader_ = round && (max_num_peers_ - 1)
+    return (ok, log_[tail+1:])
   # stale messages
   return reject(round_)
 
@@ -315,12 +381,14 @@
         continue
       do {
         response = prepare()
-      } while response != retry
-      if leader_ == self:
-        wake up heartbeat_thread
-        replay(response.log)
-        ready_ = true
-        break
+      } while response.type_ != timeout
+      if response.type_ == reject:
+        continue
+      # response type is ok
+      wake up heartbeat_thread
+      replay(response.log)
+      ready_ = true
+      break
     }
   }
 
@@ -389,6 +457,11 @@ just keep retrying phase1 with higher proposal#.
   and someone else starts to run. they receive the log state, and eventually,
   they determine what goes into 2, and eventually, they notify this peer about
   the state of the log. then, we should wake up thread1)
+
+- evaluate the choice of a resizeable circular buffer (see how boost implements
+  it) for log on the performance.
+
+- evaluate the choice of not sending messages to self on performance.
 
 
 == SCRATCH SPACE ===============================================================
