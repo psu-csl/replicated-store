@@ -110,9 +110,9 @@
     hence, every time a command is committed, if its index is equal to tail_ +
     1, then that command is executed and tail_ is incremented.
   - reading threads:
-    - request, handler
+    - request(accept), handler(heartbeat_handler)
   - writing threads:
-    - request, handler
+    - request(accept)
 
 - tail_cv_ and tail_mu_: a condition variable and a mutex for tail_.
 
@@ -145,26 +145,26 @@
     whenever the peer becomes aware of it. a peer can test if it is currently
     the leader if leader_ == id_.
   - reading threads:
-    - request, handler
+    - main, request(accept, prepare, prepare_thread, heartbeat)
   - writing threads:
-    - request, handler
+    - request(accept,prepare), handler(accept_handler, prepare_handler, heartbeat_handler)
 
 - ready_
   - synopsis: a boolean indicating if the leader is ready to accept commands:
   - init: false
   - description: true if this peer is leader and it is ready to accept commands
   - reading threads:
-    - main
+    - main(agree_and_execute)
   - writing threads:
-    - request
+    - request(prepare_thread)
 
 - last_heartbeat_
   - synopsis: time of the last heartbeat from current leader.
   - init: 0
   - reading threads:
-    - request
+    - request(prepare_thread)
   - writing threads:
-    - handler
+    - handler(heartbeat_handler)
 
 - heartbeat_interval_
   - synopsis: time between heartbeats.
@@ -183,9 +183,9 @@
     for storing the id_ at the lower bits. for example, if we use the lower 4
     bits to store id_, then the next round_ is obtained by round_ += 2^4.
   - reading threads:
-    - request, handler
+    - request(accept), handler(accept_handler, prepare_handler, heartbeat_handler)
   - writing threads:
-    - main
+    - request(prepare)
 
 == PAXOS OBJECT METHODS ========================================================
 
