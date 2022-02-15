@@ -3,23 +3,17 @@
 - struct command_t
   - synopsis: a key-value command
   - fields:
-    - type: enum {get, put, del}
-    - key: string
-    - value: string (valid only for put type)
-  - init: N/A (fields set upon construction)
+    - type_: enum {get, put, del}
+    - key_: string
+    - value_: string (valid only if type_ == put)
 
 - struct instance_t
   - synopsis: entry in the log.
   - fields:
-    - round_: round of the instance
-    - command_: command_t
-    - index_: index of the command in the log.
-    - state_: enum {in-progress, committed, executed}
-  - init:
-    - round_: provided during construction
-    - command_: provided during construction
-    - index_: provided during construction
-    - state_: in-progress
+    - round_: round of the instance (initialized during construction)
+    - command_: command_t (initialized during construction)
+    - index_: index of the command in the log. (initialized during construction)
+    - state_: enum {in-progress, committed, executed} (initialized to in-progress)
   - description: each instance starts in the in-progress state, and changes to
     the committed state once quorum has voted for it, and moves into executed
     state after it is executed. technically, we do not need the executed field
@@ -36,17 +30,13 @@
     - leader_: int (if type_ == reject then contains id of the current leader_)
 
 - message accept_rpc_request
-  - synopsis: acceptRPC request protobuf
-  - fields:
-    - command_: command_t
-    - index_: int; index for the command_ in log_
-    - round_: int; round of the sender
+  - command_: command_t
+  - index_: int; index for the command_ in log_
+  - round_: int; round of the sender
 
 - message accept_rpc_response
-  - synopsis: acceptRPC response protobuf
-  - fields:
-    - type_: enum {ok, reject, timeout}
-    - round_: round of the remote peer; valid only if type_ == reject
+  - type_: enum {ok, reject, timeout}
+  - round_: round of the remote peer (valid only if type_ == reject)
 
 - struct prepare_result_t
   - synopsis: return type of prepare()
@@ -55,18 +45,22 @@
     - log_: log entries (valid only if type_ == ok)
 
 - message prepare_rpc_request
-  - synopsis: prepareRPC request protobuf
-  - fields:
-    - tail_: int
-    - round_: int
+  - tail_: int
+  - round_: int
 
 - message prepare_rpc_response
-  - synopsis: prepareRPC response protobuf
-  - fields:
-    - type_: enum {ok, reject, timeout}
-    - round_: round of the remote peer (valid only if type_ == reject)
-    - log_: instances since tail_ in the corresponding prepareRPC request (valid
-      only if type_ == ok}
+  - type_: enum {ok, reject, timeout}
+  - round_: round of the remote peer (valid only if type_ == reject)
+  - log_: instances since tail_ in the corresponding prepareRPC request (valid
+    only if type_ == ok}
+
+- message heartbeat_rpc_request
+  - min_tail_: int (minimum of all tail_s seen so far)
+
+- message heartbeat_rpc_response
+  - type_: enum {ok, reject, timeout}
+  - round_: round of the remote peer (valid only if type_ == reject)
+  - tail_: int (local tail_)
 
 == THREADS ACTING ON A PAXOS OBJECT ============================================
 
@@ -282,7 +276,7 @@
       ++num_responses
       if response.type_ == ok:
         ok_responses.push(response)
-      else if respose.type_ == reject:
+      else if response.type_ == reject:
         leader_ = response.round_ && (max_num_peers_ - 1)
       # else it is a timeout error; we do nothing
       unlock(mu)
