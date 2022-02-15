@@ -400,15 +400,34 @@
   for (;;) {
     sleep until we are a leader
     for (;;) {
-      for each peer P {
-        run closure {
-          P.heartbeatRPC(min_tail)
-          ...TBD
+      num_responses = 0
+      ok_responses = vector
+      cv, mu
+      request = heartbeat_rpc_request{min_tail_: min_tail_}
+      for each peer p {
+        run closure in a separate thread {
+          response = p.heartbeatRPC(request)
+          lock(mu)
+          ++num_responses
+          if response.type_ == ok
+            ok_responses.push(response)
+          else if response.type_ == reject
+            leader_ = response.round_ && (max_num_peers_ - 1)
+          # else it is a timeout error; we do nothing
+          unlock(mu)
+          cv.notify_one()
         }
       }
-      sleep(heartbeat_interval_)
+      lock(mu)
+      while leader_ == id &&
+            ok_responses.size() <= peers_.size()/2 &&
+            num_responses != peers_.size():
+        cv.wait(mu)
+      # if we are not a leader, then we should stop sending heartbeats
       if !leader_:
         break
+      # we are still a leader; sleep before sending another round of heartbeats
+      sleep(heartbeat_interval_)
     }
   }
 
