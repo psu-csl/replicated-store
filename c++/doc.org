@@ -11,25 +11,29 @@
 - struct instance_t
   - synopsis: entry in the log.
   - fields:
-    - round_: current round
+    - round_: round of the instance
     - command_: command_t
     - index_: index of the command in the log.
-    - state_: enum {in-progress, committed}
+    - state_: enum {in-progress, committed, executed}
   - init:
-    - round: provided during construction
-    - command: provided during construction
-    - index: provided during construction
-    - state: in-progress
+    - round_: provided during construction
+    - command_: provided during construction
+    - index_: provided during construction
+    - state_: in-progress
   - description: each instance starts in the in-progress state, and changes to
-    the committed state once quorum has voted for it.
+    the committed state once quorum has voted for it, and moves into executed
+    state after it is executed. technically, we do not need the executed field
+    because we are already tracking it with the tail_ (see below), but we still
+    keep it for internal consistency checks: whenever we trim the log, we assert
+    that state_ of the trimmed entry is executed.
 
-- struct result_t
+- struct accept_result_t
   - synopsis: return type of agree_and_execute() and accept()
   - fields:
-    - type_: enum {ok, fail, retry, leader}
+    - type_: enum {ok, reject, fail, retry}
     - result_: string (if type_ == ok then contains result of command; if type_
       == fail, then contains error message; undefined otherwise)
-    - leader_: int (if type_ == leader then contains id of the current leader_)
+    - leader_: int (if type_ == reject then contains id of the current leader_)
 
 - message accept_rpc_request
   - synopsis: acceptRPC request protobuf
@@ -48,8 +52,7 @@
   - synopsis: return type of prepare()
   - fields:
     - type_: enum {ok, reject, timeout}
-    - round_: round of the remote peer; valid only if type_ == reject
-    - log_: log entries
+    - log_: log entries (valid only if type_ == ok)
 
 - message prepare_rpc_request
   - synopsis: prepareRPC request protobuf
@@ -61,8 +64,9 @@
   - synopsis: prepareRPC response protobuf
   - fields:
     - type_: enum {ok, reject, timeout}
-    - round_: round of the remote peer; valid only if type_ == reject
-    - log_: instances since tail_ in the corresponding prepareRPC request
+    - round_: round of the remote peer (valid only if type_ == reject)
+    - log_: instances since tail_ in the corresponding prepareRPC request (valid
+      only if type_ == ok}
 
 == THREADS ACTING ON A PAXOS OBJECT ============================================
 
@@ -252,21 +256,21 @@
   round_ += max_num_peers_
   return round_
 
-- agree_and_execute(command: command_t) -> result_t
+- agree_and_execute(command: command_t) -> accept_result_t
   if leader_ == id_:
     if ready_:
       return accept(command, ++head_)
-    return result_t{type_: retry, result_: N/A, leader_: N/A}
+    return accept_result_t{type_: retry, result_: N/A, leader_: N/A}
   # someone else is leader
   if leader_ != null:
-    return result_t{type_: leader, leader_: leader_}
+    return accept_result_t{type_: leader, leader_: leader_}
   # no one is leader---an election is in progress; interestingly, this path will
   # be taken just once during the lifetime of the object because we never reset
   # leader_ to null after the first election. we only reset it to the id of
   # another peer once, whenever we receive a higher-numbered ballot than ours.
-  return result_t{type_: retry, result_: N/A, leader_: N/A}
+  return accept_result_t{type_: retry, result_: N/A, leader_: N/A}
 
-- accept(command: command_t, index: int) -> result_t
+- accept(command: command_t, index: int) -> accept_result_t
   num_responses = 0
   ok_responses = vector
   cv, mu
@@ -306,13 +310,13 @@
     unlock(tail_mu_)
     tail_cv_.notify_one()
     if result.ok:
-      return result_t{type_: ok, result_: result.value, leader_: N/A}
+      return accept_result_t{type_: ok, result_: result.value, leader_: N/A}
     else
-      return result_t{type_: fail, result_: result.error, leader_: N/A}
+      return accept_result_t{type_: fail, result_: result.error, leader_: N/A}
   if leader_ != id_:
-    return result_t{type_: leader, result_: N/A, leader_: leader_}
+    return accept_result_t{type_: leader, result_: N/A, leader_: leader_}
   # multiple timeout responses
-  return result_t{type_: retry, result_: N/A, leader_: N/A}
+  return accept_result_t{type_: retry, result_: N/A, leader_: N/A}
 
 - accept_handler(message: accept_rpc_request):
   # common case
@@ -358,19 +362,19 @@
   # most likely one
   if ok_responses.size() > peers_.size()/2: # we have quorum
     log = merge(ok_responses)
-    return prepare_result_t{type_: ok, round_: round_, log_: log}
+    return prepare_result_t{type_: ok, log_: log}
   if leader_ != id_:
-    return prepare_result_t{type_: reject, round_: }
+    return prepare_result_t{type_: reject, log_: N/A}
   # multiple timeout responses
-  return retry
+  return prepare_result_t{type_: timeout, log_: N/A}
 
 - prepare_handler(tail, round):
   # common case for phase1
   if round >= round_:
     leader_ = round && (max_num_peers_ - 1)
-    return (ok, log_[tail+1:])
+    return prepare_rpc_response_t{type_: ok, round_: N/A, log_: log_[tail+1:]}
   # stale messages
-  return reject(round_)
+  return prepare_rpc_response_t{type_: reject, round_: round_, log_: N/A}
 
 - prepare_thread():
   for (;;) {
@@ -379,14 +383,14 @@
       sleep(heartbeat_interval_ + random(10, heartbeat_interval_))
       if time::now() - last_heartbeat_ < heartbeat_interval_:
         continue
-      do {
-        response = prepare()
-      } while response.type_ != timeout
-      if response.type_ == reject:
+      prepare_result_t result = prepare()
+      while (result.type_ == timeout)
+        result = prepare()
+      if result.type_ == reject: # someone else is a leader
         continue
-      # response type is ok
+      # we are a leader
       wake up heartbeat_thread
-      replay(response.log)
+      replay(result.log_)
       ready_ = true
       break
     }
@@ -462,6 +466,5 @@ just keep retrying phase1 with higher proposal#.
   it) for log on the performance.
 
 - evaluate the choice of not sending messages to self on performance.
-
 
 == SCRATCH SPACE ===============================================================
