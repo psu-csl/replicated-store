@@ -266,7 +266,7 @@
 
 - round_
   - synopsis: an integer representing the current paxos round.
-  - init: id_
+  - init: max_num_peers_
   - description: also known as ballot or term, this number represents the
     current round known to peer, during which this or some other peer is the
     leader. it is initialized to id_, which forms its lower bits and incremented
@@ -284,22 +284,28 @@
 == PAXOS OBJECT METHODS ========================================================
 
 - next_round#() -> int
-  round_ += max_num_peers_
-  round_ = ((round_ & 0xfffffff0) + 1) ## id_
+  round_ += max_num_peers_ # increment the round portion by 1
+  round_ &= id_            # set the id portion to this peer's id
   return round_
 
+- leader() -> int
+  return round_ & (max_num_peers_ - 1)
+
+- i_am_leader() -> bool
+  return leader() == id_
+
+- someone_else_leader() -> bool
+  return round_ != max_num_peers_
+
 - agree_and_execute(command: command_t) -> accept_result_t
-  if leader_ == id_:
+  if i_am_leader():
     if ready_:
       return accept(command, ++head_)
     return accept_result_t{type_: retry, result_: N/A, leader_: N/A}
   # someone else is leader
-  if leader_ != null:
-    return accept_result_t{type_: leader, leader_: leader_}
-  # no one is leader---an election is in progress; interestingly, this path will
-  # be taken just once during the lifetime of the object because we never reset
-  # leader_ to null after the first election. we only reset it to the id of
-  # another peer once, whenever we receive a higher-numbered ballot than ours.
+  if someone_else_leader():
+    return accept_result_t{type_: leader, leader_: leader()}
+  # no one is leader---an election is in progress
   return accept_result_t{type_: retry, result_: N/A, leader_: N/A}
 
 - accept(command: command_t, index: int) -> accept_result_t
@@ -315,14 +321,14 @@
       if response.type_ == ok:
         ok_responses.push(response)
       else if response.type_ == reject:
-        leader_ = response.round_ & (max_num_peers_ - 1)
+        round_ = response.round_
       # else it is a timeout error; we do nothing
       unlock(mu)
       cv.notify_one()
     }
   }
   lock(mu)
-  while leader_ == id_ &&
+  while i_am_leader() &&
         ok_responses.size() <= peers_.size()/2 &&
         num_responses != peers_.size():
     cv.wait(mu)
@@ -342,8 +348,8 @@
     unlock(tail_mu_)
     tail_cv_.notify_one()
     return accept_result_t{type_: result_.type_, value_: result_.value_, leader_: N/A}
-  if leader_ != id_:
-    return accept_result_t{type_: leader, result_: N/A, leader_: leader_}
+  if someone_else_leader():
+    return accept_result_t{type_: leader, result_: N/A, leader_: leader()}
   # multiple timeout responses
   return accept_result_t{type_: retry, result_: N/A, leader_: N/A}
 
@@ -359,7 +365,7 @@
     return accept_rpc_response{type: reject, round: round_}
   # someone else is a leader
   if instance.round > round_:
-    leader_ = message.round_ & (max_num_peers_ - 1)
+    round_ = message.round_
     log_[message.index_] = i
     return accept_rpc_responset{type_: ok, round_: N/A}
 
@@ -376,14 +382,14 @@
       if response.type_ == ok:
         ok_responses.push(response)
       else if response.type_ == reject:
-        leader_ = response.round_ & (max_num_peers_ - 1)
+        round_ = response.round_
       # else it is a timeout error; we do nothing
       unlock(mu)
       cv.notify_one()
     }
   }
   lock(mu)
-  while leader_ == id_ &&
+  while i_am_leader() &&
         ok_responses.size() <= peers_.size()/2 &&
         num_responses != peers_.size()
     cv.wait(mu)
@@ -392,7 +398,7 @@
   if ok_responses.size() > peers_.size()/2: # we have quorum
     log = merge(ok_responses)
     return prepare_result_t{type_: ok, log_: log}
-  if leader_ != id_:
+  if someone_else_leader():
     return prepare_result_t{type_: reject, log_: N/A}
   # multiple timeout responses
   return prepare_result_t{type_: timeout, log_: N/A}
@@ -400,7 +406,7 @@
 - prepare_handler(message: prepare_rpc_request):
   # common case for phase1
   if message.round >= round_:
-    leader_ = round && (max_num_peers_ - 1)
+    round_ = message.round_
     return prepare_rpc_response_t{type_: ok, round_: N/A, log_: log_[tail+1:]}
   # stale messages
   return prepare_rpc_response_t{type_: reject, round_: round_, log_: N/A}
@@ -441,19 +447,19 @@
           if response.type_ == ok
             ok_responses.push(response)
           else if response.type_ == reject
-            leader_ = response.round_ & (max_num_peers_ - 1)
+            round_ = response.round_
           # else it is a timeout error; we do nothing
           unlock(mu)
           cv.notify_one()
         }
       }
       lock(mu)
-      while leader_ == id &&
+      while i_am_leader() &&
             ok_responses.size() <= peers_.size()/2 &&
             num_responses != peers_.size():
         cv.wait(mu)
       # if we are not a leader, then we should stop sending heartbeats
-      if !leader_:
+      if someone_else_leader():
         break
       # we are still a leader; sleep before sending another round of heartbeats
       sleep(heartbeat_interval_)
@@ -463,7 +469,7 @@
 - heartbeat_handler(message: heartbeat_rpc_request):
   # common case for the heartbeat
   if message.round >= round_:
-    leader_ = response.round_ & (max_num_peers_ - 1)
+    round_ = response.round_
     leader_tail_ = message.tail_
     leader_min_tail_ = message.min_tail_
     if leader_min_tail_ > min_tail_ || leader_tail_ > tail_:
