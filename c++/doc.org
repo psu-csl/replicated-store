@@ -454,10 +454,8 @@
             ok_responses.size() <= peers_.size()/2 &&
             num_responses != peers_.size():
         cv.wait(mu)
-      # if we are not a leader, then we should stop sending heartbeats
       if someone_else_is_leader():
         break
-      # we are still a leader; sleep before sending another round of heartbeats
       sleep(heartbeat_interval_)
     }
   }
@@ -468,8 +466,6 @@
     round_ = response.round_
     leader_tail_ = message.tail_
     leader_min_tail_ = message.min_tail_
-    if leader_min_tail_ > min_tail_ || leader_tail_ > tail_:
-      wake up execute_and_trim_thread
     return heartbeat_rpc_response{type_: ok, round_: N/A, tail_: tail_}
   # stale messages
   if message.round < round_:
@@ -477,16 +473,20 @@
 
 - execute_and_trim_thread():
   for (;;) {
-    sleep until leader_min_tail_ or leader_tail_ has changed
-    while min_tail_ < leader_min_tail_:
-      del log_[min_tail_];
-      ++min_tail_
-    while tail_ < leader_tail_:
-      if log_[tail_].command_.type != get:
-        execute(log_[tail_].command_)
-      ++tail_
+    sleep until we are not a leader
+    for (;;) {
+      while min_tail_ < leader_min_tail_:
+        ++min_tail_
+        del log_[min_tail_];
+      while tail_ < leader_tail_:
+        ++tail_
+        if log_[tail_].command_.type != get:
+          execute(log_[tail_].command_)
+      if someone_else_is_leader():
+        break
+      sleep(heartbeat_interval_);
+    }
   }
-
 == SCENARIOS ===================================================================
 
 SCENARIO-1: Consider peers A, B, C, D, E, where A is the leader, and all peers
