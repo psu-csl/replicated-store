@@ -1,25 +1,25 @@
 == TYPES =======================================================================
 
-- struct kv_command_t
+- struct command_t
   - synopsis: a key-value command
   - fields:
     - type_: enum {get, put, del}
     - key_: string
     - value_: string (valid only if type_ == put)
 
-- struct kv_result_t
+- struct result_t
   - synopsis: result of executing a key-value command
   - fields:
     - type_: enum {ok, fail}
-    - value_: value if type_ == ok, error message otherwise
+    - result_: string (value if type_ == ok, error message otherwise)
 
 - struct instance_t
   - synopsis: entry in the log.
   - fields:
-    - round_: round of the instance (initialized during construction)
-    - command_: command_t (initialized during construction)
-    - index_: index of the command in the log. (initialized during construction)
-    - state_: enum {in-progress, committed, executed} (initialized to in-progress)
+    - round_: round of the instance
+    - command_: command_t
+    - index_: index of the command in the log
+    - state_: enum {in-progress, committed, executed}
   - description: each instance starts in the in-progress state, and changes to
     the committed state once quorum has voted for it, and moves into executed
     state after it is executed. technically, we do not need the executed field
@@ -31,7 +31,7 @@
   - synopsis: return type of agree_and_execute() and accept()
   - fields:
     - type_: enum {ok, reject, fail, retry}
-    - value_: string (if type_ == ok then contains result of command; if type_
+    - result_: string (if type_ == ok then contains result of command; if type_
       == fail, then contains error message; undefined otherwise)
     - leader_: int (if type_ == reject then contains id of the current leader_)
 
@@ -136,9 +136,10 @@
   - init: initialized to 16
   - description: it is also used as a delta for incrementing round_ (see below)
     to obtain the next round_ number. log(max_num_peers_) number of lower bits
-    in round_ store the id_ of the peer. we initialize round_ to the id_ of the
-    peer and increment it by max_num_peers_, which keeps id_ bits intact and
-    increments the higher bits. this allows us to obtain unique round_ numbers.
+    in round_ store the id_ of the peer. since current round_ value already
+    contains the id of the current leader, we do not use a separate leader
+    variable. we initialize round_ to max_num_peers_, which is the first invalid
+    peer id, to indicate that at the beginning there is no leader.
 
 - log_
   - synopsis: a log of instance_t's.
@@ -199,7 +200,7 @@
   - synopsis: minimum of tails of all peers.
   - init: 0
   - description: helps with pruning logs. all the commands with indices <=
-    min_tail can be safely pruned from all peers' logs since these commands have
+    min_tail_ can be safely pruned from all peers' logs since these commands have
     been applied to the state machine of every peer. this variable is updated
     through heartbeats. as a response to a heartbeat, the leader receives tail_
     from all peers, computes the min_tail_, and then in the next heartbeat sends
@@ -230,21 +231,16 @@
   - reading threads: N/A
   - writing threads: N/A
 
-- leader_
-  - synopsis: id of the current leader
-  - init: null
-  - description: it starts null, and it is set to the id of the leader peer
-    whenever the peer becomes aware of it. a peer can test if it is currently
-    the leader if leader_ == id_.
-  - reading threads:
-    - TBD
-  - writing threads:
-    - TBD
-
 - ready_
   - synopsis: a boolean indicating if the leader is ready to accept commands:
   - init: false
-  - description: true if this peer is leader and it is ready to accept commands
+  - description: true if this peer is leader and it is ready to accept commands.
+    when a new leader elected, it receives a log that is merged from the
+    responses of all other peers. to recover the latest states of the instances
+    in this newly received log, the newly elected leader needs to run phase2 on
+    each one of them. this may take a while, and to keep things simple, we just
+    tell clients to retry during that period; once the leader has fully
+    recovered the log, it sets ready_ to true and now clients are served.
   - reading threads:
     - TBD
   - writing threads:
@@ -294,7 +290,7 @@
 - i_am_leader() -> bool
   return leader() == id_
 
-- someone_else_leader() -> bool
+- someone_else_is_leader() -> bool
   return round_ != max_num_peers_
 
 - agree_and_execute(command: command_t) -> accept_result_t
@@ -303,7 +299,7 @@
       return accept(command, ++head_)
     return accept_result_t{type_: retry, result_: N/A, leader_: N/A}
   # someone else is leader
-  if someone_else_leader():
+  if someone_else_is_leader():
     return accept_result_t{type_: leader, leader_: leader()}
   # no one is leader---an election is in progress
   return accept_result_t{type_: retry, result_: N/A, leader_: N/A}
@@ -348,7 +344,7 @@
     unlock(tail_mu_)
     tail_cv_.notify_one()
     return accept_result_t{type_: result_.type_, value_: result_.value_, leader_: N/A}
-  if someone_else_leader():
+  if someone_else_is_leader():
     return accept_result_t{type_: leader, result_: N/A, leader_: leader()}
   # multiple timeout responses
   return accept_result_t{type_: retry, result_: N/A, leader_: N/A}
@@ -398,7 +394,7 @@
   if ok_responses.size() > peers_.size()/2: # we have quorum
     log = merge(ok_responses)
     return prepare_result_t{type_: ok, log_: log}
-  if someone_else_leader():
+  if someone_else_is_leader():
     return prepare_result_t{type_: reject, log_: N/A}
   # multiple timeout responses
   return prepare_result_t{type_: timeout, log_: N/A}
@@ -459,7 +455,7 @@
             num_responses != peers_.size():
         cv.wait(mu)
       # if we are not a leader, then we should stop sending heartbeats
-      if someone_else_leader():
+      if someone_else_is_leader():
         break
       # we are still a leader; sleep before sending another round of heartbeats
       sleep(heartbeat_interval_)
