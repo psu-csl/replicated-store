@@ -1,11 +1,17 @@
 == TYPES =======================================================================
 
-- struct command_t
+- struct kv_command_t
   - synopsis: a key-value command
   - fields:
     - type_: enum {get, put, del}
     - key_: string
     - value_: string (valid only if type_ == put)
+
+- struct kv_result_t
+  - synopsis: result of executing a key-value command
+  - fields:
+    - type_: enum {ok, fail}
+    - value_: value if type_ == ok, error message otherwise
 
 - struct instance_t
   - synopsis: entry in the log.
@@ -25,7 +31,7 @@
   - synopsis: return type of agree_and_execute() and accept()
   - fields:
     - type_: enum {ok, reject, fail, retry}
-    - result_: string (if type_ == ok then contains result of command; if type_
+    - value_: string (if type_ == ok then contains result of command; if type_
       == fail, then contains error message; undefined otherwise)
     - leader_: int (if type_ == reject then contains id of the current leader_)
 
@@ -56,6 +62,7 @@
 
 - message heartbeat_rpc_request
   - min_tail_: int (minimum of all tail_s seen so far)
+  - tail_: int (tail of the leader)
 
 - message heartbeat_rpc_response
   - type_: enum {ok, reject, timeout}
@@ -167,7 +174,15 @@
   - writing threads:
     - TBD
 
-- tail_cv_ and tail_mu_: a condition variable and a mutex for tail_.
+- leader_tail_
+  - synopsis: index of the last executed command in the log_ of the leader.
+  - init: 0
+  - description: the leader will inform us of its tail via heartbeats and we
+    will try advance our tail_ by executing commands until leader_tail_.
+  - reading threads:
+    - TBD
+  - writing threads:
+    - TBD
 
 - min_tail_
   - synopsis: minimum of tails of all peers.
@@ -180,6 +195,17 @@
     it to the followers. the leader should send an updated min_tail_ only if it
     has received tails from all the peers. Otherwise, liveness will be violated
     as described in SCENARIO-1 (see at the bottom).
+  - reading threads:
+    - TBD
+  - writing threads:
+    - TBD
+
+- leader_min_tail_
+  - synopsis: index of the last globally executed command known to the leader.
+  - init: 0
+  - description: the leader will inform us of global min_tail_ via heartbeats
+    and we will trim our log_ by deleting instances from min_tail_ until
+    leader_min_tail_.
   - reading threads:
     - TBD
   - writing threads:
@@ -248,6 +274,7 @@
 
 - next_round#() -> int
   round_ += max_num_peers_
+  round_ = ((round_ & 0xfffffff0) + 1) ## id_
   return round_
 
 - agree_and_execute(command: command_t) -> accept_result_t
@@ -277,7 +304,7 @@
       if response.type_ == ok:
         ok_responses.push(response)
       else if response.type_ == reject:
-        leader_ = response.round_ && (max_num_peers_ - 1)
+        leader_ = response.round_ & (max_num_peers_ - 1)
       # else it is a timeout error; we do nothing
       unlock(mu)
       cv.notify_one()
@@ -303,10 +330,7 @@
     ++tail_
     unlock(tail_mu_)
     tail_cv_.notify_one()
-    if result.ok:
-      return accept_result_t{type_: ok, result_: result.value, leader_: N/A}
-    else
-      return accept_result_t{type_: fail, result_: result.error, leader_: N/A}
+    return accept_result_t{type_: result_.type_, value_: result_.value_, leader_: N/A}
   if leader_ != id_:
     return accept_result_t{type_: leader, result_: N/A, leader_: leader_}
   # multiple timeout responses
@@ -324,7 +348,7 @@
     return accept_rpc_response{type: reject, round: round_}
   # someone else is a leader
   if instance.round > round_:
-    leader_ = message.round_ && (max_num_peers_ - 1)
+    leader_ = message.round_ & (max_num_peers_ - 1)
     log_[message.index_] = i
     return accept_rpc_responset{type_: ok, round_: N/A}
 
@@ -341,7 +365,7 @@
       if response.type_ == ok:
         ok_responses.push(response)
       else if response.type_ == reject:
-        leader_ = response.round_ && (max_num_peers_ - 1)
+        leader_ = response.round_ & (max_num_peers_ - 1)
       # else it is a timeout error; we do nothing
       unlock(mu)
       cv.notify_one()
@@ -362,9 +386,9 @@
   # multiple timeout responses
   return prepare_result_t{type_: timeout, log_: N/A}
 
-- prepare_handler(tail, round):
+- prepare_handler(message: prepare_rpc_request):
   # common case for phase1
-  if round >= round_:
+  if message.round >= round_:
     leader_ = round && (max_num_peers_ - 1)
     return prepare_rpc_response_t{type_: ok, round_: N/A, log_: log_[tail+1:]}
   # stale messages
@@ -406,7 +430,7 @@
           if response.type_ == ok
             ok_responses.push(response)
           else if response.type_ == reject
-            leader_ = response.round_ && (max_num_peers_ - 1)
+            leader_ = response.round_ & (max_num_peers_ - 1)
           # else it is a timeout error; we do nothing
           unlock(mu)
           cv.notify_one()
@@ -425,17 +449,30 @@
     }
   }
 
-- heartbeat_handler(message):
+- heartbeat_handler(message: heartbeat_rpc_request):
   # common case for the heartbeat
-  if message.round == round_:
-    min_tail_ = message.min_tail
-    return ok(tail_)
+  if message.round >= round_:
+    leader_ = response.round_ & (max_num_peers_ - 1)
+    leader_tail_ = message.tail_
+    leader_min_tail_ = message.min_tail_
+    if leader_min_tail_ > min_tail_ || leader_tail_ > tail_:
+      wake up execute_and_trim_thread
+    return heartbeat_rpc_response{type_: ok, round_: N/A, tail_: tail_}
   # stale messages
   if message.round < round_:
-    return reject(round_)
-  # someone else is a leader
-  leader = extract id from message
-  return ok
+    return heartbeat_rpc_response{type_: reject, round_: round_, tail_: N/A}
+
+- execute_and_trim_thread():
+  for (;;) {
+    sleep until leader_min_tail_ or leader_tail_ has changed
+    while min_tail_ < leader_min_tail_:
+      del log_[min_tail_];
+      ++min_tail_
+    while tail_ < leader_tail_:
+      if log_[tail_].command_.type != get:
+        execute(log_[tail_].command_)
+      ++tail_
+  }
 
 == SCENARIOS ===================================================================
 
@@ -455,6 +492,17 @@ stuck: the peers do not have the log entries so they cannot reply, and E will
 just keep retrying phase1 with higher proposal#.
 
 == TODO ========================================================================
+
+- How to handle gaps?
+
+  Currently, if a peer temporarily disconnects and then reconnects, then it will
+  have a gap in its log. it will not be able to execute entries past the gap, it
+  will not be able to prune its log, which will prevent everyone else from
+  pruning their logs. when we have a gap like this, we should recover it by
+  asking other peers. or we should resort to using log pruning that persists the
+  state machine to disk and prunes the log without hearing from the peers. we do
+  not implement this at the moment: if a peer temporarily disconnects and
+  accrues a gap, then log pruning will be stuck on all processes.
 
 - how to let peers know the committed? we can do it with the heartbeat, but
   should we, given that we already let everyone know executed entries?
