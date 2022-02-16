@@ -105,6 +105,17 @@
 - response threads: the RPC handlers run in threads managed by gRPC runtime. we
   call these response threads.
 
+- execute_and_trim thread: followers will regularly receive heartbeats
+  containing leader_tail_ (which instances have been committed and executed at
+  the leader) and leader_min_tail_ (which instances have been executed by all of
+  the peers). the followers will use this information to execute entries in
+  their log and trim the log. one option is do these operations within the
+  heartbeat RPC handler thread and respond to the heartbeat after the operations
+  have completed. another choice is to do this in a separate thread,
+  asynchronously, and let the heartbeat RPC handler respond immediately.
+  currently, we do the latter, and we use a separate execute_and_trim thread in
+  each peer to perform log trimming and command execution.
+
 == PAXOS OBJECT STATE VARIABLES ================================================
 
 - peers_
