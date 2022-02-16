@@ -415,7 +415,7 @@
       if time::now() - last_heartbeat_ < heartbeat_interval_:
         continue
       prepare_result_t result = prepare()
-      while (result.type_ == timeout)
+      while result.type_ == timeout
         result = prepare()
       if result.type_ == reject: # someone else is a leader
         continue
