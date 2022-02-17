@@ -61,12 +61,11 @@
     only if type_ == ok}
 
 - message heartbeat_rpc_request
+  - round_: local round
   - min_tail_: int (minimum of all tail_s seen so far)
   - tail_: int (tail of the leader)
 
 - message heartbeat_rpc_response
-  - type_: enum {ok, reject, timeout}
-  - round_: round of the remote peer (valid only if type_ == reject)
   - tail_: int (local tail_)
 
 == THREADS ACTING ON A PAXOS OBJECT ============================================
@@ -280,18 +279,18 @@
 == PAXOS OBJECT METHODS ========================================================
 
 - next_round#() -> int
-  round_ += max_num_peers_ # increment the round portion by 1
-  round_ &= id_            # set the id portion to this peer's id
+  round_ += 256  # increment the round portion by 1
+  round_ = (round_ & 0xffffff00) | id_ # combine our id with the round number
   return round_
 
 - leader() -> int
-  return round_ & (max_num_peers_ - 1)
+  return round_ & 0xff
 
 - i_am_leader() -> bool
   return leader() == id_
 
 - someone_else_is_leader() -> bool
-  return round_ != max_num_peers_
+  return leader() != id_ && leader() < max_num_peers_
 
 - agree_and_execute(command: command_t) -> accept_result_t
   if i_am_leader():
@@ -332,7 +331,6 @@
   # most likely one
   if ok_responses.size() > peers_.size()/2: # we have quorum
     # our accept handler must have inserted the command
-    assert(log_[index] != null log_[index].status == in-progress)
     log_[index].status = committed
     # execute as much as we can.
     lock(tail_mu_)
@@ -351,8 +349,10 @@
 
 - accept_handler(message: accept_rpc_request):
   # common case
-  i = instance_t{round_: round_, command_: message.command, index_:
-                 message.index, state_: in-progress}
+  i = instance_t{round_: message.round_,
+                 command_: message.command_,
+                 index_: message.index_,
+                 state_: in-progress}
   if message.round_ == round_:
     log_[message.index_] = i
     return accept_rpc_response{type_: ok, round_: N/A}
@@ -360,7 +360,7 @@
   if message.round_ < round_:
     return accept_rpc_response{type: reject, round: round_}
   # someone else is a leader
-  if instance.round > round_:
+  if message.round_ > round_:
     round_ = message.round_
     log_[message.index_] = i
     return accept_rpc_responset{type_: ok, round_: N/A}
@@ -409,15 +409,13 @@
 
 - prepare_thread():
   for (;;) {
-    sleep until we are not a leader
+    sleep until follower
     for (;;) {
       sleep(heartbeat_interval_ + random(10, heartbeat_interval_))
       if time::now() - last_heartbeat_ < heartbeat_interval_:
         continue
       prepare_result_t result = prepare()
-      while result.type_ == timeout
-        result = prepare()
-      if result.type_ == reject: # someone else is a leader
+      if result.type_ != ok:
         continue
       # we are a leader
       wake up heartbeat_thread
@@ -429,7 +427,7 @@
 
 - heartbeat_thread():
   for (;;) {
-    sleep until we are a leader
+    sleep until leader
     for (;;) {
       num_responses = 0
       ok_responses = vector
@@ -473,7 +471,7 @@
 
 - execute_and_trim_thread():
   for (;;) {
-    sleep until we are not a leader
+    sleep until follower
     for (;;) {
       while min_tail_ < leader_min_tail_:
         ++min_tail_
@@ -482,7 +480,7 @@
         ++tail_
         if log_[tail_].command_.type != get:
           execute(log_[tail_].command_)
-      if someone_else_is_leader():
+      if i_am_leader():
         break
       sleep(heartbeat_interval_);
     }
