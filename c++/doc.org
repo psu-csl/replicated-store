@@ -349,22 +349,16 @@
   return accept_result_t{type_: retry, result_: N/A, leader_: N/A}
 
 - accept_handler(message: accept_rpc_request):
-  # common case
   i = instance_t{round_: message.round_,
                  command_: message.command_,
                  index_: message.index_,
                  state_: in-progress}
-  if message.round_ == round_:
+  if message.round_ >= round_:
+    round_ = message.round_
     log_[message.index_] = i
     return accept_rpc_response{type_: ok, round_: N/A}
   # stale message
-  if message.round_ < round_:
-    return accept_rpc_response{type: reject, round: round_}
-  # someone else is a leader
-  if message.round_ > round_:
-    round_ = message.round_
-    log_[message.index_] = i
-    return accept_rpc_responset{type_: ok, round_: N/A}
+  return accept_rpc_response{type: reject, round: round_}
 
 - prepare() -> prepare_result_t:
   num_responses = 0
@@ -457,11 +451,11 @@
   }
 
 - heartbeat_handler(message: heartbeat_rpc_request):
-  # common case for the heartbeat
   if message.round >= round_:
     round_ = message.round_
     leader_tail_ = message.tail_
     leader_min_tail_ = message.min_tail_
+  # stale message
   return heartbeat_rpc_response{tail_: tail_}
 
 - execute_and_trim_thread():
