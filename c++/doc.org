@@ -66,6 +66,7 @@
   - tail_: int (tail of the leader)
 
 - message heartbeat_rpc_response
+  - type_: enum {ok, timeout}
   - tail_: int (local tail_)
 
 == THREADS ACTING ON A PAXOS OBJECT ============================================
@@ -428,30 +429,27 @@
 - heartbeat_thread():
   for (;;) {
     sleep until leader
+    num_responses = 0
+    ok_responses = vector
+    cv, mu
     for (;;) {
-      num_responses = 0
-      ok_responses = vector
-      cv, mu
       request = heartbeat_rpc_request{min_tail_: min_tail_}
       for each peer p {
         run closure in a separate thread {
           response = p.heartbeatRPC(request)
           lock(mu)
           ++num_responses
-          if response.type_ == ok
+          if response.ok:
             ok_responses.push(response)
-          else if response.type_ == reject
-            round_ = response.round_
-          # else it is a timeout error; we do nothing
           unlock(mu)
           cv.notify_one()
         }
       }
       lock(mu)
-      while i_am_leader() &&
-            ok_responses.size() <= peers_.size()/2 &&
-            num_responses != peers_.size():
+      while i_am_leader() && num_responses != peers_.size():
         cv.wait(mu)
+      if ok_responses.size() == peers_.size():
+        min_tail_ = min(ok_responses)
       if someone_else_is_leader():
         break
       sleep(heartbeat_interval_)
@@ -461,13 +459,10 @@
 - heartbeat_handler(message: heartbeat_rpc_request):
   # common case for the heartbeat
   if message.round >= round_:
-    round_ = response.round_
+    round_ = message.round_
     leader_tail_ = message.tail_
     leader_min_tail_ = message.min_tail_
-    return heartbeat_rpc_response{type_: ok, round_: N/A, tail_: tail_}
-  # stale messages
-  if message.round < round_:
-    return heartbeat_rpc_response{type_: reject, round_: round_, tail_: N/A}
+  return heartbeat_rpc_response{tail_: tail_}
 
 - execute_and_trim_thread():
   for (;;) {
