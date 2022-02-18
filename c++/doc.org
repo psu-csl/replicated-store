@@ -398,7 +398,7 @@
   # common case for phase1
   if message.round >= round_:
     round_ = message.round_
-    return prepare_rpc_response_t{type_: ok, round_: N/A, log_: log_[tail+1:]}
+    return prepare_rpc_response_t{type_: ok, round_: N/A, log_: log_[tail+1:head]}
   # stale messages
   return prepare_rpc_response_t{type_: reject, round_: round_, log_: N/A}
 
