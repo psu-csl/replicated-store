@@ -362,16 +362,19 @@
 
 - prepare() -> prepare_result_t:
   num_responses = 0
-  ok_responses = vector
   cv, mu
-  request = prepare_rpc_request{tail_: tail_, round_: next_round#()}
+  lock()
+  tail = tail_
+  round = next_round#()
+  unlock()
+  request = prepare_rpc_request{tail_: tail, round_: round}
   for each peer p {
     run closure in a separate thread {
       response = p.prepareRPC(request)
       lock(mu)
       ++num_responses
       if response.type_ == ok:
-        ok_responses.push(response)
+        merge(response.log_)
       else if response.type_ == reject:
         round_ = response.round_
       # else it is a timeout error; we do nothing
@@ -466,11 +469,14 @@
         ++min_tail_
         del log_[min_tail_];
       while tail_ < leader_tail_:
+        lock()
+        if i_am_leader():
+          unlock
+          goto 1
         ++tail_
         if log_[tail_].command_.type != get:
           execute(log_[tail_].command_)
-        if i_am_leader():
-          goto 1
+        unlock()
       sleep(heartbeat_interval_);
     }
   }
