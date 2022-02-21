@@ -459,7 +459,7 @@
   return heartbeat_rpc_response{tail_: tail_}
 
 - execute_and_trim_thread():
-  for (;;) {
+1:for (;;) {
     sleep until follower
     for (;;) {
       while min_tail_ < leader_min_tail_:
@@ -469,8 +469,8 @@
         ++tail_
         if log_[tail_].command_.type != get:
           execute(log_[tail_].command_)
-      if i_am_leader():
-        break
+        if i_am_leader():
+          goto 1
       sleep(heartbeat_interval_);
     }
   }
