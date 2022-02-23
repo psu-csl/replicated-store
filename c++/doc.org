@@ -48,7 +48,6 @@
   - synopsis: return type of prepare()
   - fields:
     - type_: enum {ok, reject, timeout}
-    - log_: log entries (valid only if type_ == ok)
 
 - message prepare_rpc_request
   - tail_: int
@@ -159,6 +158,7 @@
     but for now we are keeping things simple and use a hashmap. our intuition is
     that hashmap should behave like a circular buffer performance-wise, but a
     more thorough evaluation of this is a future work.
+    The log_ starts at 1 now
   - reading threads:
     - TBD
   - writing threads:
@@ -336,8 +336,10 @@
     # execute as much as we can.
     lock(tail_mu_)
     assert(index > tail_)
-    while (index != tail_+1)
+    while (index != tail_+1 && i_am_leader())
       tail_cv_.wait(tail_mu_)
+    if i_am_not_leader():
+      return accept_result_t{type_: leader, result_: N/A, leader_: leader()}
     result = execute(command)
     ++tail_
     unlock(tail_mu_)
@@ -374,6 +376,10 @@
       lock(mu)
       ++num_responses
       if response.type_ == ok:
+        # Late responses will still merge it, though the prepare() has exited.
+        # But the log should be locked first, won't modify the log at the same 
+        # time. It may be useful if it merges it before the replay() starts.
+        # Otherwise, it won't change anything in the log 
         merge(response.log_)
       else if response.type_ == reject:
         round_ = response.round_
@@ -391,11 +397,30 @@
   # most likely one
   if ok_responses.size() > peers_.size()/2: # we have quorum
     log = merge(ok_responses)
-    return prepare_result_t{type_: ok, log_: log}
+    return prepare_result_t{type_: ok}
   if someone_else_is_leader():
-    return prepare_result_t{type_: reject, log_: N/A}
+    return prepare_result_t{type_: reject}
   # multiple timeout responses
-  return prepare_result_t{type_: timeout, log_: N/A}
+  return prepare_result_t{type_: timeout}
+
+- merge(response_log: instance_t[]):
+  lock() #lock the log
+  foreach remote_ in response_log {
+    local_ = log_[remote_.index_]
+
+    # The local log has an instance in the given slot, and the response 
+    # instance has greater round_. We replace the local one.
+    # Given the changes in execute_and_trim, the instances after tail_ won't
+    # be changed when the election starts, so we can skip checking state_(?)
+    
+    if local_ == NULL || local_ != NULL && remote_.round_ > local_.round_:
+      assert(local_ != NULL || local_.state != executed)
+      if remote_.state == executed:
+        remote_.state = committed
+      log_[remote_.index_] = remote_
+    
+    head_ = max(head_, remote_.index_)
+  }
 
 - prepare_handler(message: prepare_rpc_request):
   # common case for phase1
@@ -417,10 +442,37 @@
         continue
       # we are a leader
       wake up heartbeat_thread
-      replay(result.log_)
+      replay()
       ready_ = true
       break
     }
+  }
+
+- replay():
+  lock(tail_mu)
+  index_ = tail_ + 1
+  unlock(tail_mu)
+
+  while (index_ <= head_) {
+    instance = command_log[index]
+    assert(instance != NULL)
+    
+    # The instance needs to accept again
+    if instance.state_ == in-progress:
+      accept_result_ = accept(instance.command, index)
+      if accept_result_.type == leader:
+        break
+      if accept_result_.type == retry:
+        continue
+    else:
+      # The instance is commited
+      lock(tail_mu_)
+      execute(instance.command)
+      log_[index].status = executed
+      ++tail_
+      unlock(tail_mu_)
+
+    ++index
   }
 
 - heartbeat_thread():
