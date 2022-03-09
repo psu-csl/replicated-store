@@ -1,0 +1,326 @@
+* TYPES
+
+- struct instance_t
+  - synopsis: entry in the log.
+  - fields:
+    - round_: round of the instance
+    - command_: command_t
+    - index_: index of the command in the log
+    - state_: enum {in-progress, committed, executed}
+    - sd_: socket identifier for the command
+
+  - description: each instance starts in the in-progress state, and changes to
+    the committed state once quorum has voted for it, and moves into executed
+    state after it is executed. technically, we do not need the executed field
+    because we are already tracking it with the tail_ (see below), but we still
+    keep it for internal consistency checks: whenever we trim the log, we assert
+    that state_ of the trimmed entry is executed. after the command is executed,
+    the result is written to the sd_ socket.
+
+* OBJECTS
+
+- main(void)
+  config = read_config
+  replicant = new(replicant(config))
+  replicant.run()
+
+- replicant
+
+  - members
+    - kv_: kvstore
+    - c_: consensus
+    - tp_: threadpool
+    - l_: socket
+    - log_: log
+    - exe_cv_: condition_variable
+    - exe_mu_: mutex
+
+  - methods
+
+    - constructor(cfg: config)
+      kv_ = new(kvstore)
+      c_ = new(consensus(cfg))
+      log_ = new(log(&exe_cv_, &exe_mu_))
+
+    - run(void)
+      thread(executor).start()
+      for (;;) {
+        cli = accept(l)
+        thread(handle_client, cli).start()
+      }
+
+    - handle_client(cli: socket)
+      for (;;) {
+        cmd = read_command(cli)
+        if (cmd)
+          tp_.post(c.replicate, cmd, cli)
+        else
+          break
+      }
+
+    - executor(void)
+      for (;;) {
+        exe_mu.lock()
+        while (log_.next().status != committed)
+          exe_cv.sleep()
+        do
+          result = kv.execute(log_.next().command)
+          log_.next().status = executed
+          log_.tail_ + 1
+          if (log_.next().sd_ != -1)
+            send(log_.next().sd_, result)
+        while (log_.next().status == committed)
+      }
+
+- log
+
+  - members
+    tail_: int
+    head_: int
+    min_tail_: int
+    log_: map (int -> instance_t)
+    cv_: *condition_variable
+    mu_: *mutex
+
+  - methods
+
+    - constructor(cv: condition_variable, mu: mutex)
+      cv_ = cv
+      mu_ = mu
+
+    - next(void) -> option<&instance_t>
+      if log_[tail+1] is empty
+        return none
+      return &log_[tail+1]
+
+    - append(i: instance)
+      assert(head_ == i.index && log_[head_] is empty)
+      log_[head_] = i
+      ++head_
+
+    - set_min_tail(min_tail: int)
+      while min_tail_ < min_tail
+        ++min_tail_
+        del log_[min_tail_]
+
+- consensus
+
+  - members
+    - peers
+    - head_
+    - log_: log
+    - id_
+    - ready_
+    - last_heartbeat_
+    - heartbeat_interval_
+    - round_
+
+  - methods
+
+    - constructor(cfg: config)
+
+    - replicate(cmd: command, cli: socket)
+      if i_am_leader()
+        if ready_
+          accept(cmd, ++head_, cli)
+        else
+          send(cli, retry)
+      else if someone_else_is_leader()
+        send(cli, leader_)
+      else # election in progress
+        send(cli, retry)
+
+    - accept(cmd: command, index: int, cli: socket)
+      num_responses = 0
+      ok_responses = vector
+      cv, mu
+      request = accept_rpc_request{command: command, index: index, round: round_}
+      for each peer p {
+        run closure in a separate thread {
+          response = p.acceptRPC(request)
+          lock(mu)
+          ++num_responses
+          if response.type_ == ok:
+            ok_responses.push(response)
+          else if response.type_ == reject:
+            round_ = response.round_
+          # else it is a timeout error; we do nothing
+          unlock(mu)
+          cv.notify_one()
+        }
+      }
+      lock(mu)
+      while i_am_leader() &&
+            ok_responses.size() <= peers_.size()/2 &&
+            num_responses != peers_.size():
+        cv.wait(mu)
+
+      if ok_responses.size() > peers_.size() / 2
+        log_.set_status(index, committed)
+      else if someone_else_is_leader()
+        send(cli, leader)
+      else # propose RPCs timed out
+        send(cli, retry)
+
+    - accept_handler(message: accept_rpc_request)
+      i = instance_t{round_: message.round_,
+                     command_: message.command_,
+                     index_: message.index_,
+                     state_: in-progress}
+      if message.round_ >= round_:
+        round_ = message.round_
+        log_[message.index_] = i
+        return accept_rpc_response{type_: ok, round_: N/A}
+      # stale message
+      return accept_rpc_response{type: reject, round: round_}
+
+    - prepare() -> prepare_result_t:
+      num_responses = 0
+      cv, mu
+      lock()
+      tail = tail_
+      round = next_round#()
+      unlock()
+      request = prepare_rpc_request{tail_: tail, round_: round}
+      for each peer p {
+        run closure in a separate thread {
+          response = p.prepareRPC(request)
+          lock(mu)
+          ++num_responses
+          if response.type_ == ok:
+            # Late responses will still merge it, though the prepare() has exited.
+            # But the log should be locked first, won't modify the log at the same
+            # time. It may be useful if it merges it before the replay() starts.
+            # Otherwise, it won't change anything in the log
+            merge(response.log_)
+          else if response.type_ == reject:
+            round_ = response.round_
+          # else it is a timeout error; we do nothing
+          unlock(mu)
+          cv.notify_one()
+        }
+      }
+      lock(mu)
+      while i_am_leader() &&
+            ok_responses.size() <= peers_.size()/2 &&
+            num_responses != peers_.size()
+        cv.wait(mu)
+      # one of the above three conditions is false; handle each, starting with the
+      # most likely one
+      if ok_responses.size() > peers_.size()/2: # we have quorum
+        log = merge(ok_responses)
+        return prepare_result_t{type_: ok}
+      if someone_else_is_leader():
+        return prepare_result_t{type_: reject}
+      # multiple timeout responses
+      return prepare_result_t{type_: timeout}
+
+    - prepare_handler(message: prepare_rpc_request):
+      # common case for phase1
+      if message.round >= round_:
+        round_ = message.round_
+        return prepare_rpc_response_t{type_: ok, round_: N/A, log_: log_[tail+1:head]}
+      # stale messages
+      return prepare_rpc_response_t{type_: reject, round_: round_, log_: N/A}
+
+    - merge(response_log: instance_t[]):
+      lock() #lock the log
+      foreach remote_ in response_log {
+        local_ = log_[remote_.index_]
+
+        # The local log has an instance in the given slot, and the response
+        # instance has greater round_. We replace the local one.
+        # Given the changes in execute_and_trim, the instances after tail_ won't
+        # be changed when the election starts, so we can skip checking state_(?)
+
+        if local_ == NULL || local_ != NULL && remote_.round_ > local_.round_:
+          assert(local_ != NULL || local_.state != executed)
+          if remote_.state == executed:
+            remote_.state = committed
+          log_[remote_.index_] = remote_
+
+        head_ = max(head_, remote_.index_)
+      }
+
+    - prepare_thread():
+      for (;;) {
+        sleep until follower
+        for (;;) {
+          sleep(heartbeat_interval_ + random(10, heartbeat_interval_))
+          if time::now() - last_heartbeat_ < heartbeat_interval_:
+            continue
+          prepare_result_t result = prepare()
+          if result.type_ != ok:
+            continue
+          # we are a leader
+          wake up heartbeat_thread
+          replay()
+          ready_ = true
+          break
+        }
+      }
+
+    - replay():
+      lock(tail_mu)
+      index_ = tail_ + 1
+      unlock(tail_mu)
+
+      while (index_ <= head_) {
+        instance = command_log[index]
+        assert(instance != NULL)
+
+        # The instance needs to accept again
+        if instance.state_ == in-progress:
+          accept_result_ = accept(instance.command, index)
+          if accept_result_.type == leader:
+            break
+          if accept_result_.type == retry:
+            continue
+        else:
+          # The instance is commited
+          lock(tail_mu_)
+          execute(instance.command)
+          log_[index].status = executed
+          ++tail_
+          unlock(tail_mu_)
+
+        ++index
+      }
+
+    - heartbeat_thread():
+      for (;;) {
+        sleep until leader
+        num_responses = 0
+        ok_responses = vector
+        cv, mu
+        for (;;) {
+          request = heartbeat_rpc_request{min_tail_: min_tail_}
+          for each peer p {
+            run closure in a separate thread {
+              response = p.heartbeatRPC(request)
+              lock(mu)
+              ++num_responses
+              if response.ok:
+                ok_responses.push(response)
+              unlock(mu)
+              cv.notify_one()
+            }
+          }
+          lock(mu)
+          while i_am_leader() && num_responses != peers_.size():
+            cv.wait(mu)
+          if ok_responses.size() == peers_.size():
+            min_tail_ = min(ok_responses)
+          if someone_else_is_leader():
+            break
+          sleep(heartbeat_interval_)
+        }
+      }
+
+    - heartbeat_handler(message: heartbeat_rpc_request):
+      if message.round >= round_:
+        round_ = message.round_
+        leader_tail_ = message.tail_
+        leader_min_tail_ = message.min_tail_
+      # stale message
+      return heartbeat_rpc_response{tail_: tail_}
