@@ -1,5 +1,12 @@
 * TYPES
 
+- struct command_t
+  - synopsis: a key-value command
+  - fields:
+    - type_: enum {get, put, del}
+    - key_: string
+    - value_: string (valid only if type_ == put)
+
 - struct instance_t
   - synopsis: entry in the log.
   - fields:
@@ -7,45 +14,87 @@
     - command_: command_t
     - index_: index of the command in the log
     - state_: enum {in-progress, committed, executed}
-    - sd_: socket identifier for the command
-
+    - client-id_: id of the client in the leader that issued the command
   - description: each instance starts in the in-progress state, and changes to
     the committed state once quorum has voted for it, and moves into executed
     state after it is executed. technically, we do not need the executed field
     because we are already tracking it with the tail_ (see below), but we still
     keep it for internal consistency checks: whenever we trim the log, we assert
     that state_ of the trimmed entry is executed. after the command is executed,
-    the result is written to the sd_ socket.
+    we look for the client-id in the global map that maintains client-id to
+    socket mapping. if found, then this is the leader that created the instance,
+    and we write the response to the client; otherwise, this is a follower and
+    we do nothing.
+
+- struct accept_result_t
+  - synopsis: return type of replicate() and accept()
+  - fields:
+    - type_: enum {ok, reject, retry}
+    - leader_: int (if type_ == reject then contains id of the current leader_)
+
+- struct prepare_result_t
+  - synopsis: return type of prepare()
+  - fields:
+    - type_: enum {ok, reject, timeout}
+
+* PROTOBUFS
+
+- message accept_rpc_request
+  - command_: command_t
+  - index_: int; index for the command_ in log_
+  - round_: int; round of the sender
+  - client-id_: int; id of the client initiating command_
+
+- message accept_rpc_response
+  - type_: enum {ok, reject, timeout}
+  - round_: round of the remote peer (valid only if type_ == reject)
+
+- message prepare_rpc_request
+  - tail_: int
+  - round_: int
+
+- message prepare_rpc_response
+  - type_: enum {ok, reject, timeout}
+  - round_: round of the remote peer (valid only if type_ == reject)
+  - log_: instances since tail_ in the corresponding prepareRPC request (valid
+    only if type_ == ok}
 
 * OBJECTS
 
-- main(void)
-  config = read_config
-  replicant = new(replicant(config))
-  replicant.run()
-
-- replicant
+- Replicant
 
   - members
-    - kv_: kvstore
-    - c_: consensus
-    - tp_: threadpool
+    - kv_: KVStore
+    - c_: Consensus
+    - log_: Log
+    - tp_: Threadpool
     - l_: socket
-    - log_: log
     - exe_cv_: condition_variable
     - exe_mu_: mutex
+    - map_: map from client_id(int) to socket object
+    - client_id_: id of the next client that will connect
+    - id_: id of the peers
+    - num_peers_: number of peers
 
   - methods
 
     - constructor(cfg: config)
-      kv_ = new(kvstore)
-      c_ = new(consensus(cfg))
-      log_ = new(log(&exe_cv_, &exe_mu_))
+      kv_ = new(KVStore)
+      c_ = new(Consensus(cfg))
+      log_ = new(Log(&exe_cv_, &exe_mu_))
+      id_ = config["id"]
+      client_id_ = id_
+
+    - next_client_id(void) -> int
+      id = client_id_
+      client_id_ += num_peers_
+      return id
 
     - run(void)
       thread(executor).start()
       for (;;) {
         cli = accept(l)
+        map_[next_client_id()] = cli
         thread(handle_client, cli).start()
       }
 
@@ -53,62 +102,115 @@
       for (;;) {
         cmd = read_command(cli)
         if (cmd)
-          tp_.post(c.replicate, cmd, cli)
+          tp_.post(replicate, cmd, cli)
         else
           break
       }
+      close(cli)
+
+    - replicate(cmd: command, cli: socket)
+      r = c.replicate(cmd, cli)
+      if r.type_ != ok
+        send(cli, r)
+        close(cli)
+
+    - close(cli: socket)
+      # closes connection and removes it from map; we could have maintained a
+      # bidirectional map, but given that this operation is rare and the map is
+      # small, we will avoid bringing in third-party libraries and iterate over
+      # the map.
+      socket.close()
+      for iterator over map_
+        if iterator->value == socket
+          delete iterator
 
     - executor(void)
       for (;;) {
         exe_mu.lock()
-        while (log_.next().status != committed)
+        instance = log_.tail()
+        while (instance == null || instance.status != committed) {
           exe_cv.sleep()
-        do
-          result = kv.execute(log_.next().command)
-          log_.next().status = executed
-          log_.tail_ + 1
-          if (log_.next().sd_ != -1)
-            send(log_.next().sd_, result)
-        while (log_.next().status == committed)
+          instance = log_.tail()
+        }
+        do {
+          execute(instance)
+          instance = log_.advance_tail()
+        } while (instance != null && instance.status == committed)
       }
 
-- log
+    - execute(instance: instance_t)
+      cmd = instance_t.cmd
+      result = if cmd.type == get
+                 kv.get(cmd.key_)
+               else if cmd.type == put
+                 kv.put(cmd.key_, cmd.value)
+               else if cmd.type == del
+                 kv.del(cmd.key_)
+      instance.status = executed
+      socket = map_[instance.client-id]
+      if socket != null
+        send(socket, result)
+
+- Log
 
   - members
-    tail_: int
-    head_: int
-    min_tail_: int
-    log_: map (int -> instance_t)
-    cv_: *condition_variable
-    mu_: *mutex
+
+    - head_: index of the next instance in the log (i.e. 1+index of last
+      instance). initialized to 0, which means an empty log.
+
+    - tail_: index of the next instance to be executed (i.e. 1+index of last
+      executed). initialized to 0.
+
+    - min_tail_: minimum tail_ of all peers
+
+    - log_: a map from int to an instance_t
+
+    - cv_, mu_: pointers to a condition variable and mutex to wake up the
+      executor thread.
 
   - methods
 
-    - constructor(cv: condition_variable, mu: mutex)
+    - constructor(cv: *condition_variable, mu: *mutex)
       cv_ = cv
       mu_ = mu
+      head_ = tail_ = min_tail_ = 0
 
-    - next(void) -> option<&instance_t>
-      if log_[tail+1] is empty
-        return none
-      return &log_[tail+1]
+    - head(void) -> int
+      return head_
 
-    - append(i: instance)
-      assert(head_ == i.index && log_[head_] is empty)
-      log_[head_] = i
-      ++head_
+    - tail(void) -> option<&instance_t>
+      # returns a pointer to the entry at the tail.
+      if log_[tail_] == empty
+        return null
+      return &log_[tail_]
+
+    - advance_tail(void) -> option<&instance_t>
+      # advances the tail and returns a pointer to the next entry
+      assert(log_[tail] != empty && log_[tail_].status == executed)
+      ++tail_
+      return tail()
+
+    - append(instance: instance_t)
+      # this is not exactly append because there may be gaps. e.g. the leader
+      # sends an accept RPC with index 10 and then another accept RPC with index
+      # 11, and the second RPC arrives before the first one.
+      log_[instance.index_] = instance
+      head_ = max(head_, instance.index_)
+
+    - merge(log: instance_t[])
+
 
     - set_min_tail(min_tail: int)
       while min_tail_ < min_tail
         ++min_tail_
         del log_[min_tail_]
 
-- consensus
+- Consensus
 
   - members
     - peers
     - head_
-    - log_: log
+    - log_: Log
     - id_
     - ready_
     - last_heartbeat_
@@ -119,29 +221,28 @@
 
     - constructor(cfg: config)
 
-    - replicate(cmd: command, cli: socket)
+    - replicate(cmd: command, cli: socket) -> accept_result_t
       if i_am_leader()
         if ready_
-          accept(cmd, ++head_, cli)
-        else
-          send(cli, retry)
-      else if someone_else_is_leader()
-        send(cli, leader_)
-      else # election in progress
-        send(cli, retry)
+          return accept(cmd, log_.head(), cli)
+        return accept_result_t{type_: retry, leader_: N/A}
+      if someone_else_is_leader()
+        return accept_result_t{type_: reject, leader_: leader()}
+      # election in progress
+      return accept_result_t{type_: retry, leader_: N/A}
 
-    - accept(cmd: command, index: int, cli: socket)
+    - accept(cmd: command, index: int, cli: socket) -> accept_result_t
       num_responses = 0
-      ok_responses = vector
+      num_ok_responses = 0
       cv, mu
-      request = accept_rpc_request{command: command, index: index, round: round_}
+      request = accept_rpc_request{command: cmd, index: index, round: round_}
       for each peer p {
         run closure in a separate thread {
           response = p.acceptRPC(request)
           lock(mu)
           ++num_responses
           if response.type_ == ok:
-            ok_responses.push(response)
+            ++ok_responses
           else if response.type_ == reject:
             round_ = response.round_
           # else it is a timeout error; we do nothing
@@ -151,48 +252,47 @@
       }
       lock(mu)
       while i_am_leader() &&
-            ok_responses.size() <= peers_.size()/2 &&
+            num_ok_responses <= peers_.size()/2 &&
             num_responses != peers_.size():
         cv.wait(mu)
 
-      if ok_responses.size() > peers_.size() / 2
+      if num_ok_responses > peers_.size() / 2
         log_.set_status(index, committed)
-      else if someone_else_is_leader()
-        send(cli, leader)
-      else # propose RPCs timed out
-        send(cli, retry)
+        return accept_result_t{type_: ok, leader_: N/A}
+      if someone_else_is_leader()
+        return accept_result_t{type_: reject, leader_: leader()}
+      # RPCs timed out
+      return accept_result_t{type_: retry, leader_: N/A}
 
     - accept_handler(message: accept_rpc_request)
-      i = instance_t{round_: message.round_,
-                     command_: message.command_,
-                     index_: message.index_,
-                     state_: in-progress}
       if message.round_ >= round_:
+        instance = instance_t{round_: message.round_,
+                              command_: message.command_,
+                              index_: message.index_,
+                              state_: in-progress,
+                              client-id_: message.client-id_}
         round_ = message.round_
-        log_[message.index_] = i
+        log_.append(instance)
         return accept_rpc_response{type_: ok, round_: N/A}
       # stale message
       return accept_rpc_response{type: reject, round: round_}
 
     - prepare() -> prepare_result_t:
       num_responses = 0
+      num_ok_responses
       cv, mu
       lock()
-      tail = tail_
       round = next_round#()
       unlock()
-      request = prepare_rpc_request{tail_: tail, round_: round}
+      request = prepare_rpc_request{tail_: log_.tail(), round_: round}
       for each peer p {
         run closure in a separate thread {
           response = p.prepareRPC(request)
           lock(mu)
           ++num_responses
           if response.type_ == ok:
-            # Late responses will still merge it, though the prepare() has exited.
-            # But the log should be locked first, won't modify the log at the same
-            # time. It may be useful if it merges it before the replay() starts.
-            # Otherwise, it won't change anything in the log
-            merge(response.log_)
+            ++num_ok_responses
+            log_.merge(response.log_)
           else if response.type_ == reject:
             round_ = response.round_
           # else it is a timeout error; we do nothing
@@ -202,13 +302,12 @@
       }
       lock(mu)
       while i_am_leader() &&
-            ok_responses.size() <= peers_.size()/2 &&
+            num_ok_responses <= peers_.size()/2 &&
             num_responses != peers_.size()
         cv.wait(mu)
       # one of the above three conditions is false; handle each, starting with the
       # most likely one
-      if ok_responses.size() > peers_.size()/2: # we have quorum
-        log = merge(ok_responses)
+      if num_ok_responses > peers_.size()/2: # we have quorum
         return prepare_result_t{type_: ok}
       if someone_else_is_leader():
         return prepare_result_t{type_: reject}
@@ -219,7 +318,7 @@
       # common case for phase1
       if message.round >= round_:
         round_ = message.round_
-        return prepare_rpc_response_t{type_: ok, round_: N/A, log_: log_[tail+1:head]}
+        return prepare_rpc_response_t{type_: ok, round_: N/A, log_: log_[tail:head]}
       # stale messages
       return prepare_rpc_response_t{type_: reject, round_: round_, log_: N/A}
 
@@ -324,3 +423,23 @@
         leader_min_tail_ = message.min_tail_
       # stale message
       return heartbeat_rpc_response{tail_: tail_}
+
+
+when should we add a mapping to the table
+when should we delete a mapping from the table
+
+let's say we just started all of the peers, and a client connects to us. should
+we add it to the map? i think so, and we should remove it from the map once the
+client closes the connection, or once we send a reject.
+
+let's say we are a leader, someone connected to us, issued a command, we
+committed it, and we woke up the executor thread to execute the command.
+even if we become a follower, the executor will execute and issue the command,
+which is fine. when the client tries to send the next command to us, we will
+respond with someone else is leader, and close the connection.
+
+when a client sends a command to a leader, and the leader sends out the command
+to peers, and let's say the majority acks the command but acks are lost, and
+leader switches to someone else, and the leader responds to the client that
+someone else is leader, and the client connects to the new leader and sends the
+command again; in the meantime, the leader recovers and
