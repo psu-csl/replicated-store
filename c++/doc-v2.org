@@ -423,23 +423,3 @@
         leader_min_tail_ = message.min_tail_
       # stale message
       return heartbeat_rpc_response{tail_: tail_}
-
-
-when should we add a mapping to the table
-when should we delete a mapping from the table
-
-let's say we just started all of the peers, and a client connects to us. should
-we add it to the map? i think so, and we should remove it from the map once the
-client closes the connection, or once we send a reject.
-
-let's say we are a leader, someone connected to us, issued a command, we
-committed it, and we woke up the executor thread to execute the command.
-even if we become a follower, the executor will execute and issue the command,
-which is fine. when the client tries to send the next command to us, we will
-respond with someone else is leader, and close the connection.
-
-when a client sends a command to a leader, and the leader sends out the command
-to peers, and let's say the majority acks the command but acks are lost, and
-leader switches to someone else, and the leader responds to the client that
-someone else is leader, and the client connects to the new leader and sends the
-command again; in the meantime, the leader recovers and
