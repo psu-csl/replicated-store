@@ -199,12 +199,6 @@
 
     - merge(log: instance_t[])
 
-
-    - set_min_tail(min_tail: int)
-      while min_tail_ < min_tail
-        ++min_tail_
-        del log_[min_tail_]
-
 - Consensus
 
   - members
