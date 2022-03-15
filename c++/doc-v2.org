@@ -84,6 +84,7 @@
       log_ = new(Log(&exe_cv_, &exe_mu_))
       id_ = config["id"]
       client_id_ = id_
+      num_peers_ = confg["num_peers"]
 
     - next_client_id(void) -> int
       id = client_id_
@@ -93,75 +94,63 @@
     - run(void)
       thread(executor).start()
       for (;;) {
-        cli = accept(l)
-        map_[next_client_id()] = cli
-        thread(handle_client, cli).start()
+        socket = accept(l)
+        client-id = next_client_id()
+        map_[client-id] = socket
+        thread(handle_client, client-id).start()
       }
 
-    - handle_client(cli: socket)
+    - handle_client(client-id: int)
+      it = map_[client-id]
       for (;;) {
-        cmd = read_command(cli)
+        cmd = read_command(it->socket)
         if (cmd)
-          tp_.post(replicate, cmd, cli)
+          tp_.post(replicate, cmd, client-id)
         else
           break
       }
-      close(cli)
+      close(it->socket)
+      del it
 
-    - replicate(cmd: command, cli: socket)
-      r = c.replicate(cmd, cli)
+    - replicate(cmd: command, client-id: int)
+      r = c.replicate(cmd, client-id)
       if r.type_ != ok
-        send(cli, r)
-        close(cli)
-
-    - close(cli: socket)
-      # closes connection and removes it from map; we could have maintained a
-      # bidirectional map, but given that this operation is rare and the map is
-      # small, we will avoid bringing in third-party libraries and iterate over
-      # the map.
-      socket.close()
-      for iterator over map_
-        if iterator->value == socket
-          delete iterator
+        it = map_[client-id]
+        send(it->socket, r)
+        close(it->socket)
+        del it
 
     - executor(void)
       for (;;) {
-        exe_mu.lock()
-        instance = log_.tail()
-        while (instance == null || instance.status != committed) {
-          exe_cv.sleep()
-          instance = log_.tail()
-        }
+        exe_mu_.lock()
+        while (!log_.executable())
+          exe_cv_.sleep()
         do {
-          execute(instance)
-          instance = log_.advance_tail()
-        } while (instance != null && instance.status == committed)
+          client-id, result = log_.execute(kv)
+          respond(client-id, result)
+        } while (log_.executable())
       }
 
-    - execute(instance: instance_t)
-      cmd = instance_t.cmd
-      result = if cmd.type == get
-                 kv.get(cmd.key_)
-               else if cmd.type == put
-                 kv.put(cmd.key_, cmd.value)
-               else if cmd.type == del
-                 kv.del(cmd.key_)
-      instance.status = executed
-      socket = map_[instance.client-id]
-      if socket != null
-        send(socket, result)
+    - respond(client-id, result)
+      # responds to the client with the result of the command execution. this
+      # function will respond to the client only if the client originally sent
+      # the request to this peer when it was a leader. this constraint is
+      # implicitly enforced by having each peer assign a unique id to each
+      # client.
+      it = map_[client-id]
+      if it != null
+        send(it->socket, result)
 
 - Log
 
   - members
 
-    - head_: index of the next instance in the log (i.e. 1+index of last
-      instance). initialized to 0, which means an empty log.
+    - head_: index of the highest-numbered instance in the log. the log starts
+      at index 1; therefore, head_ is initialized to 0, signifying an empty log.
 
-    - tail_: index of the next instance to be executed (i.e. 1+index of last
-      executed). initialized to 0.
+    - tail_: index of the last executed instance. initialized to 0.
 
-    - min_tail_: minimum tail_ of all peers
+    - min_tail_: minimum tail_ of all peers. initialized to 0.
 
     - log_: a map from int to an instance_t
 
@@ -175,20 +164,49 @@
       mu_ = mu
       head_ = tail_ = min_tail_ = 0
 
-    - head(void) -> int
-      return head_
+    - advance_head(void) -> int
+      return ++head_
 
-    - tail(void) -> option<&instance_t>
-      # returns a pointer to the entry at the tail.
-      if log_[tail_] == empty
-        return null
-      return &log_[tail_]
+    - executable(void) -> bool
+      # returns true if the log contains an executable instance, i.e. the
+      # instance right after tail_ is committed.
+      return log_[tail_+1] != empty && log_[tail_+1].status == committed
 
-    - advance_tail(void) -> option<&instance_t>
-      # advances the tail and returns a pointer to the next entry
-      assert(log_[tail] != empty && log_[tail_].status == executed)
+    - execute(kv: KVStore) -> (client-id, result)
+      # executes the next executable instance in the log, updates the instance's
+      # status, increments tail_, and returns the result and the id of the
+      # client that originated the command.
+      assert(executable())
+      instance = &log_[tail_+1]
+      cmd = instance.cmd_
+      result = if cmd.type == get
+                 kv.get(cmd.key_)
+               else if cmd.type == put
+                 kv.put(cmd.key_, cmd.value)
+               else if cmd.type == del
+                 kv.del(cmd.key_)
+      instance.status = executed
       ++tail_
-      return tail()
+      return (instance.client-id_, result)
+
+    - commit(lo: int, hi: int)
+      # sets the status of the instances between [lo, hi] to committed and wakes
+      # up the executor thread if the log is executable.
+      exe_mu_.lock()
+      for (i = lo; i <= hi; ++i) {
+        assert(log_[i] != empty && log_[i].status == in-progress)
+        log_[i].status = committed
+      }
+      exe_mu_.unlock()
+      if (executable())
+        exe_cv_.notify_one()
+
+    - trim(min_tail: int)
+      # trims the instances whose commands have been executed by all peers
+      while min_tail_ < min_tail
+        ++min_tail_
+        assert(log_[min_tail_].status == executed)
+        del log_[min_tail_]
 
     - append(instance: instance_t)
       # this is not exactly append because there may be gaps. e.g. the leader
@@ -215,21 +233,24 @@
 
     - constructor(cfg: config)
 
-    - replicate(cmd: command, cli: socket) -> accept_result_t
+    - replicate(cmd: command, client-id: int) -> accept_result_t
       if i_am_leader()
         if ready_
-          return accept(cmd, log_.head(), cli)
+          return accept(cmd, log_.advance_head(), client-id)
         return accept_result_t{type_: retry, leader_: N/A}
       if someone_else_is_leader()
         return accept_result_t{type_: reject, leader_: leader()}
       # election in progress
       return accept_result_t{type_: retry, leader_: N/A}
 
-    - accept(cmd: command, index: int, cli: socket) -> accept_result_t
+    - accept(cmd: command, index: int, client-id: int) -> accept_result_t
       num_responses = 0
       num_ok_responses = 0
       cv, mu
-      request = accept_rpc_request{command: cmd, index: index, round: round_}
+      request = accept_rpc_request{command_: cmd,
+                                   index_: index,
+                                   round_: round_,
+                                   client-id_: client-id}
       for each peer p {
         run closure in a separate thread {
           response = p.acceptRPC(request)
@@ -251,7 +272,7 @@
         cv.wait(mu)
 
       if num_ok_responses > peers_.size() / 2
-        log_.set_status(index, committed)
+        log_.commit(index, index)
         return accept_result_t{type_: ok, leader_: N/A}
       if someone_else_is_leader()
         return accept_result_t{type_: reject, leader_: leader()}
@@ -260,12 +281,12 @@
 
     - accept_handler(message: accept_rpc_request)
       if message.round_ >= round_:
+        round_ = message.round_
         instance = instance_t{round_: message.round_,
                               command_: message.command_,
                               index_: message.index_,
                               state_: in-progress,
                               client-id_: message.client-id_}
-        round_ = message.round_
         log_.append(instance)
         return accept_rpc_response{type_: ok, round_: N/A}
       # stale message
@@ -411,9 +432,10 @@
       }
 
     - heartbeat_handler(message: heartbeat_rpc_request):
+      tail = log_.tail()
       if message.round >= round_:
         round_ = message.round_
-        leader_tail_ = message.tail_
-        leader_min_tail_ = message.min_tail_
+        log_.commit(tail, message_.tail_)
+        log_.trim(message_.min_tail_)
       # stale message
-      return heartbeat_rpc_response{tail_: tail_}
+      return heartbeat_rpc_response{tail_: tail}
