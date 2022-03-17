@@ -65,7 +65,6 @@
   - tail_: int (tail of the leader)
 
 - message heartbeat_rpc_response
-  - type_: enum {ok, timeout}
   - tail_: int (local tail_)
 
 == THREADS ACTING ON A PAXOS OBJECT ============================================
@@ -377,9 +376,9 @@
       ++num_responses
       if response.type_ == ok:
         # Late responses will still merge it, though the prepare() has exited.
-        # But the log should be locked first, won't modify the log at the same 
+        # But the log should be locked first, won't modify the log at the same
         # time. It may be useful if it merges it before the replay() starts.
-        # Otherwise, it won't change anything in the log 
+        # Otherwise, it won't change anything in the log
         merge(response.log_)
       else if response.type_ == reject:
         round_ = response.round_
@@ -408,17 +407,17 @@
   foreach remote_ in response_log {
     local_ = log_[remote_.index_]
 
-    # The local log has an instance in the given slot, and the response 
+    # The local log has an instance in the given slot, and the response
     # instance has greater round_. We replace the local one.
     # Given the changes in execute_and_trim, the instances after tail_ won't
     # be changed when the election starts, so we can skip checking state_(?)
-    
+
     if local_ == NULL || local_ != NULL && remote_.round_ > local_.round_:
       assert(local_ != NULL || local_.state != executed)
       if remote_.state == executed:
         remote_.state = committed
       log_[remote_.index_] = remote_
-    
+
     head_ = max(head_, remote_.index_)
   }
 
@@ -456,7 +455,7 @@
   while (index_ <= head_) {
     instance = command_log[index]
     assert(instance != NULL)
-    
+
     # The instance needs to accept again
     if instance.state_ == in-progress:
       accept_result_ = accept(instance.command, index)
