@@ -59,6 +59,14 @@
   - log_: instances since tail_ in the corresponding prepareRPC request (valid
     only if type_ == ok}
 
+- message heartbeat_rpc_request
+  - round_: local round
+  - tail_: int (tail of the leader)
+  - min_tail_: int (minimum of all tail_s seen so far)
+
+- message heartbeat_rpc_response
+  - tail_: int (local tail_)
+
 * OBJECTS
 
 - Replicant
@@ -125,6 +133,7 @@
         exe_mu_.lock()
         while (!log_.executable())
           exe_cv_.sleep()
+        exe_mu_.unlock()
         do {
           client-id, result = log_.execute(kv)
           respond(client-id, result)
@@ -150,7 +159,9 @@
 
     - tail_: index of the last executed instance. initialized to 0.
 
-    - min_tail_: minimum tail_ of all peers. initialized to 0.
+    - min_tail_: minimum tail_ of all peers known to peer. initialized to 0.
+
+    - min_tail_leader_: latest minimum tail_ at the leader. initialized to 0.
 
     - log_: a map from int to an instance_t
 
@@ -163,6 +174,12 @@
       cv_ = cv
       mu_ = mu
       head_ = tail_ = min_tail_ = 0
+
+    - tail(void) -> int
+      return tail_
+
+    - min_tail(void) -> int
+      return min_tail_
 
     - advance_head(void) -> int
       return ++head_
@@ -178,32 +195,43 @@
       # client that originated the command.
       assert(executable())
       instance = &log_[tail_+1]
-      cmd = instance.cmd_
-      result = if cmd.type == get
-                 kv.get(cmd.key_)
-               else if cmd.type == put
-                 kv.put(cmd.key_, cmd.value)
-               else if cmd.type == del
-                 kv.del(cmd.key_)
+      result = kv.execute(instance.cmd)
       instance.status = executed
       ++tail_
       return (instance.client-id_, result)
 
-    - commit(lo: int, hi: int)
-      # sets the status of the instances between [lo, hi] to committed and wakes
-      # up the executor thread if the log is executable.
+    - commit(index: int)
+      # sets the status of the instance at index to committed and wakes up the
+      # executor thread if the log is executable.
       exe_mu_.lock()
-      for (i = lo; i <= hi; ++i) {
-        assert(log_[i] != empty && log_[i].status == in-progress)
-        log_[i].status = committed
-      }
-      exe_mu_.unlock()
+      assert(log_[index] != empty && log_[index].status == in-progress)
+      log_[i].status = committed
       if (executable())
         exe_cv_.notify_one()
+      exe_mu_.unlock()
 
-    - trim(min_tail: int)
+    - commit_until(tail: int)
+      # sets the status of all the instances from tail_ until tail and wakes up
+      # the executor thread.
+      exe_mu_.lock()
+      for (int i = tail_+1; i <= tail; ++i)
+        # it is possible that we receive heartbeat before we receive the accept
+        # message; therefore, we should handle the case where we have a gap in
+        # the log; in that case, we will break out of the loop and try
+        # committing the next time we receive heartbeat from the leader;
+        # hopefully, by that time, we will receive the accept message and the
+        # gap will disappear.
+        if (log_[index] == empty)
+          break
+        assert(log_[index].status == in-progress)
+        log_[i].status = committed
+      if (executable())
+        exe_cv_.notify_one()
+      exe_mu_.unlock()
+
+    - trim_until(min_tail_leader_: int)
       # trims the instances whose commands have been executed by all peers
-      while min_tail_ < min_tail
+      while min_tail_ < min_tail_leader_
         ++min_tail_
         assert(log_[min_tail_].status == executed)
         del log_[min_tail_]
@@ -216,6 +244,27 @@
       head_ = max(head_, instance.index_)
 
     - merge(log: instance_t[])
+      foreach remote_ in log {
+        local_ = log_[remote_.index_]
+
+        # since we ask peers for instances after our local tail_, instances that
+        # we receive
+        assert(local_.status != executed)
+
+        # if an instance received from a peer is in executed state, then we
+        # should mark it committed so that it is re-executed in our local state
+        # machine.
+        if remote_.status == executed
+          remote_.status = committed
+
+        if local_ == NULL || local_.round_ <= remote_.round
+          log_[remote_.index] = remote_
+
+        head_ = max(head_, remote_.index_)
+      }
+
+
+    - instances_after(index: int)
 
 - Consensus
 
@@ -272,7 +321,7 @@
         cv.wait(mu)
 
       if num_ok_responses > peers_.size() / 2
-        log_.commit(index, index)
+        log_.commit(index)
         return accept_result_t{type_: ok, leader_: N/A}
       if someone_else_is_leader()
         return accept_result_t{type_: reject, leader_: leader()}
@@ -333,28 +382,9 @@
       # common case for phase1
       if message.round >= round_:
         round_ = message.round_
-        return prepare_rpc_response_t{type_: ok, round_: N/A, log_: log_[tail:head]}
+        return prepare_rpc_response_t{type_: ok, round_: N/A, log_: log_.instances_after(tail)}
       # stale messages
       return prepare_rpc_response_t{type_: reject, round_: round_, log_: N/A}
-
-    - merge(response_log: instance_t[]):
-      lock() #lock the log
-      foreach remote_ in response_log {
-        local_ = log_[remote_.index_]
-
-        # The local log has an instance in the given slot, and the response
-        # instance has greater round_. We replace the local one.
-        # Given the changes in execute_and_trim, the instances after tail_ won't
-        # be changed when the election starts, so we can skip checking state_(?)
-
-        if local_ == NULL || local_ != NULL && remote_.round_ > local_.round_:
-          assert(local_ != NULL || local_.state != executed)
-          if remote_.state == executed:
-            remote_.state = committed
-          log_[remote_.index_] = remote_
-
-        head_ = max(head_, remote_.index_)
-      }
 
     - prepare_thread():
       for (;;) {
@@ -397,7 +427,6 @@
           log_[index].status = executed
           ++tail_
           unlock(tail_mu_)
-
         ++index
       }
 
@@ -407,8 +436,11 @@
         num_responses = 0
         ok_responses = vector
         cv, mu
+        min_tail = log_.min_tail()
         for (;;) {
-          request = heartbeat_rpc_request{min_tail_: min_tail_}
+          request = heartbeat_rpc_request{round_: round_,
+                                          tail_: log_.tail()
+                                          min_tail_: min_tail}
           for each peer p {
             run closure in a separate thread {
               response = p.heartbeatRPC(request)
@@ -424,7 +456,7 @@
           while i_am_leader() && num_responses != peers_.size():
             cv.wait(mu)
           if ok_responses.size() == peers_.size():
-            min_tail_ = min(ok_responses)
+            min_tail = min(ok_responses)
           if someone_else_is_leader():
             break
           sleep(heartbeat_interval_)
@@ -432,10 +464,79 @@
       }
 
     - heartbeat_handler(message: heartbeat_rpc_request):
-      tail = log_.tail()
       if message.round >= round_:
+        last_heartbeat_ = time::now()
         round_ = message.round_
-        log_.commit(tail, message_.tail_)
-        log_.trim(message_.min_tail_)
+        log_.commit_until(message_.tail_)
+        log_.trim_until(message_.min_tail_)
       # stale message
-      return heartbeat_rpc_response{tail_: tail}
+      return heartbeat_rpc_response{tail_: log_.tail()}
+
+== TODO ========================================================================
+
+- How to handle gaps?
+
+  Currently, if a peer temporarily disconnects and then reconnects, then it will
+  have a gap in its log. it will not be able to execute entries past the gap, it
+  will not be able to prune its log, which will prevent everyone else from
+  pruning their logs. when we have a gap like this, we should recover it by
+  asking other peers. or we should resort to using log pruning that persists the
+  state machine to disk and prunes the log without hearing from the peers. we do
+  not implement this at the moment: if a peer temporarily disconnects and
+  accrues a gap, then log pruning will be stuck on all processes.
+
+- how to let peers know the committed? we can do it with the heartbeat, but
+  should we, given that we already let everyone know executed entries?
+
+  - the difference between min_tail_ and the committed entries is that we can
+    only communicate min_tail_ if we have received the tails of all peers,
+    whereas we can communicate the committed entries once we have the responses
+    from the majority.
+
+- handle duplicate responses due to retries
+
+  - we will handle this by having gRPC retry RPC calls.
+
+- imagine a scenario that there is a gap in the log, like [a, b, _, d] and once
+  the thread1 commits d, it starts to wait until command at index 2 is executed
+  and thread1 is woken up. at that moment, this machine stops being a leader,
+  and someone else starts to run. they receive the log state, and eventually,
+  they determine what goes into 2, and eventually, they notify this peer about
+  the state of the log. then, we should wake up thread1)
+
+- evaluate the choice of a resizeable circular buffer (see how boost implements
+  it) for log on the performance.
+
+- evaluate the choice of not sending messages to self on performance.
+
+- evaluate the choice of lazy (via piggybacking onto heartbeats) vs eager (via
+  piggybacking onto accepts) sending commit messages to followers.
+
+== SCRATCH SPACE ===============================================================
+
+         1 2 3 4 5
+leader: |e|e| | | |
+
+head: 2
+tail: 2
+min_tail: 2
+
+follow: |e|e| | | |
+
+head: 2
+tail: 2
+min_tail: 0
+
+
+- method 1
+  - heartbeat only checks liveness and triggers election if leader is not alive
+  - piggyback commit to the next accept
+  - you need to have another thread that checks for inactivity and sends an
+    explicit commit message for the last command when there is no activity
+
+- method 2
+  - heartbeat piggybacks commit message in addition to triggering leader election
+
+- method 3
+  - heartbeat only checks liveness and triggers election if leader is not alive
+  - there is a separate commit phase
