@@ -262,7 +262,8 @@
 
         head_ = max(head_, remote_.index_)
       }
-
+      if (executable())
+        exe_cv_.notify_one()
 
     - instances_after(index: int)
 
@@ -341,13 +342,10 @@
       # stale message
       return accept_rpc_response{type: reject, round: round_}
 
-    - prepare() -> prepare_result_t:
+    - prepare(round: int) -> prepare_result_t:
       num_responses = 0
-      num_ok_responses
+      ok_logs = vector<instance_t[]>
       cv, mu
-      lock()
-      round = next_round#()
-      unlock()
       request = prepare_rpc_request{tail_: log_.tail(), round_: round}
       for each peer p {
         run closure in a separate thread {
@@ -355,8 +353,7 @@
           lock(mu)
           ++num_responses
           if response.type_ == ok:
-            ++num_ok_responses
-            log_.merge(response.log_)
+            ok_logs.push(response.log_)
           else if response.type_ == reject:
             round_ = response.round_
           # else it is a timeout error; we do nothing
@@ -372,6 +369,10 @@
       # one of the above three conditions is false; handle each, starting with the
       # most likely one
       if num_ok_responses > peers_.size()/2: # we have quorum
+        # merge all logs returned by other peers
+        response_log = merge_logs(ok_logs)
+        # then merge response_log to the local log
+        log_.merge(response_log)
         return prepare_result_t{type_: ok}
       if someone_else_is_leader():
         return prepare_result_t{type_: reject}
@@ -386,14 +387,27 @@
       # stale messages
       return prepare_rpc_response_t{type_: reject, round_: round_, log_: N/A}
 
+    - merge_logs(ok_logs: vector<instance_t[]>) -> instance_t[]:
+      response_logs = ok_logs[0]
+      for the rest logs in ok_logs:
+        for every instance:
+          # compare with response_logs and merge it
+
     - prepare_thread():
       for (;;) {
         sleep until follower
         for (;;) {
           sleep(heartbeat_interval_ + random(10, heartbeat_interval_))
+          lock(heartbeat_mu_)
           if time::now() - last_heartbeat_ < heartbeat_interval_:
+            unlock(heartbeat_mu_)
             continue
-          prepare_result_t result = prepare()
+          round = next_round#()
+          # Avoid holding the lock too long
+          # If there is a new leader, its heartbeat request can be handled
+          unlock(heartbeat_mu_)
+
+          prepare_result_t result = prepare(round)
           if result.type_ != ok:
             continue
           # we are a leader
@@ -405,12 +419,10 @@
       }
 
     - replay():
-      lock(tail_mu)
-      index_ = tail_ + 1
-      unlock(tail_mu)
+      index_ = log_.get_tail_index() + 1
 
       while (index_ <= head_) {
-        instance = command_log[index]
+        instance = log_.get_instance(index)
         assert(instance != NULL)
 
         # The instance needs to accept again
@@ -420,13 +432,9 @@
             break
           if accept_result_.type == retry:
             continue
-        else:
-          # The instance is commited
-          lock(tail_mu_)
-          execute(instance.command)
-          log_[index].status = executed
-          ++tail_
-          unlock(tail_mu_)
+        
+        # Else, the instance is commited, nothing needs to be done
+
         ++index
       }
 
@@ -464,12 +472,14 @@
       }
 
     - heartbeat_handler(message: heartbeat_rpc_request):
+      lock(heartbeat_mu_)
       if message.round >= round_:
         last_heartbeat_ = time::now()
         round_ = message.round_
         log_.commit_until(message_.tail_)
         log_.trim_until(message_.min_tail_)
       # stale message
+      unlock(heartbeat_mu_)
       return heartbeat_rpc_response{tail_: log_.tail()}
 
 == TODO ========================================================================
