@@ -51,7 +51,6 @@
 
 - message prepare_rpc_request
   - round_: round of the sender
-  - tail_: int
 
 - message prepare_rpc_response
   - type_: enum {ok, reject, timeout}
@@ -262,10 +261,9 @@
 
         head_ = max(head_, remote_.index_)
       }
-      if (executable())
-        exe_cv_.notify_one()
 
-    - instances_after(index: int)
+    - new_instances() -> instance_t[]
+      # return instances since min_tail_
 
 - Consensus
 
@@ -346,7 +344,7 @@
       num_responses = 0
       ok_logs = vector<instance_t[]>
       cv, mu
-      request = prepare_rpc_request{tail_: log_.tail(), round_: round}
+      request = prepare_rpc_request{round_: round}
       for each peer p {
         run closure in a separate thread {
           response = p.prepareRPC(request)
@@ -385,7 +383,7 @@
         round_ = message.round_
         return prepare_rpc_response_t{type_: ok,
                                       round_: N/A,
-                                      log_: log_.instances_after(message.tail_)}
+                                      log_: log_.new_instances()}
       # stale messages
       return prepare_rpc_response_t{type_: reject, round_: round_, log_: N/A}
 
