@@ -40,9 +40,9 @@
 * PROTOBUFS
 
 - message accept_rpc_request
+  - round_: round of the sender
   - command_: command_t
   - index_: int; index for the command_ in log_
-  - round_: int; round of the sender
   - client-id_: int; id of the client initiating command_
 
 - message accept_rpc_response
@@ -50,8 +50,8 @@
   - round_: round of the remote peer (valid only if type_ == reject)
 
 - message prepare_rpc_request
+  - round_: round of the sender
   - tail_: int
-  - round_: int
 
 - message prepare_rpc_response
   - type_: enum {ok, reject, timeout}
@@ -383,7 +383,9 @@
       # common case for phase1
       if message.round >= round_:
         round_ = message.round_
-        return prepare_rpc_response_t{type_: ok, round_: N/A, log_: log_.instances_after(tail)}
+        return prepare_rpc_response_t{type_: ok,
+                                      round_: N/A,
+                                      log_: log_.instances_after(message.tail_)}
       # stale messages
       return prepare_rpc_response_t{type_: reject, round_: round_, log_: N/A}
 
@@ -432,7 +434,7 @@
             break
           if accept_result_.type == retry:
             continue
-        
+
         # Else, the instance is commited, nothing needs to be done
 
         ++index
