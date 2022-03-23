@@ -13,18 +13,15 @@
     - round_: round of the instance
     - command_: command_t
     - index_: index of the command in the log
-    - state_: enum {in-progress, committed, executed}
+    - state_: enum {in-progress, committed}
     - client-id_: id of the client in the leader that issued the command
   - description: each instance starts in the in-progress state, and changes to
-    the committed state once quorum has voted for it, and moves into executed
-    state after it is executed. technically, we do not need the executed field
-    because we are already tracking it with the tail_ (see below), but we still
-    keep it for internal consistency checks: whenever we trim the log, we assert
-    that state_ of the trimmed entry is executed. after the command is executed,
-    we look for the client-id in the global map that maintains client-id to
-    socket mapping. if found, then this is the leader that created the instance,
-    and we write the response to the client; otherwise, this is a follower and
-    we do nothing.
+    the committed state once quorum has voted for it. we do not need a separate
+    executed state because we are tracking it with the tail_ (see below). after
+    the command is executed, we look for the client-id in the global map that
+    maintains client-id to socket mapping. if found, then this is the leader
+    that created the instance, and we write the response to the client;
+    otherwise, this is a follower and we do nothing.
 
 - struct accept_result_t
   - synopsis: return type of replicate() and accept()
@@ -195,7 +192,6 @@
       assert(executable())
       instance = &log_[tail_+1]
       result = kv.execute(instance.cmd)
-      instance.status = executed
       ++tail_
       return (instance.client-id_, result)
 
@@ -232,7 +228,6 @@
       # trims the instances whose commands have been executed by all peers
       while min_tail_ < min_tail_leader_
         ++min_tail_
-        assert(log_[min_tail_].status == executed)
         del log_[min_tail_]
 
     - append(instance: instance_t)
@@ -242,25 +237,13 @@
       log_[instance.index_] = instance
       head_ = max(head_, instance.index_)
 
-    - merge(log: instance_t[])
-      foreach remote_ in log {
-        local_ = log_[remote_.index_]
-
-        # since we ask peers for instances after our local tail_, instances that
-        # we receive
-        assert(local_.status != executed)
-
-        # if an instance received from a peer is in executed state, then we
-        # should mark it committed so that it is re-executed in our local state
-        # machine.
-        if remote_.status == executed
-          remote_.status = committed
-
-        if local_ == NULL || local_.round_ <= remote_.round
-          log_[remote_.index] = remote_
-
-        head_ = max(head_, remote_.index_)
-      }
+    - merge(logs: vector<instance_t[]>)
+      for log in logs:
+        for instance in log
+          i = instance.index
+          if log_[i] == empty || instance.round_ > log_[i].round
+            log_[i] = instance
+        head_ = max(head_, log[log.len()-1].index)
 
     - new_instances() -> instance_t[]
       # return instances since min_tail_
@@ -367,10 +350,7 @@
       # one of the above three conditions is false; handle each, starting with the
       # most likely one
       if num_ok_responses > peers_.size()/2: # we have quorum
-        # merge all logs returned by other peers
-        response_log = merge_logs(ok_logs)
-        # then merge response_log to the local log
-        log_.merge(response_log)
+        log_.merge(ok_logs)
         return prepare_result_t{type_: ok}
       if someone_else_is_leader():
         return prepare_result_t{type_: reject}
@@ -386,12 +366,6 @@
                                       log_: log_.new_instances()}
       # stale messages
       return prepare_rpc_response_t{type_: reject, round_: round_, log_: N/A}
-
-    - merge_logs(ok_logs: vector<instance_t[]>) -> instance_t[]:
-      response_logs = ok_logs[0]
-      for the rest logs in ok_logs:
-        for every instance:
-          # compare with response_logs and merge it
 
     - prepare_thread():
       for (;;) {
@@ -484,6 +458,11 @@
 
 == TODO ========================================================================
 
+- we can handle gaps if there is a leader election, but if there is no leader
+  election, a follower that temporarily experienced a network partition will
+  hinder global progress. we need to come up with an alternative recovery
+  mechanism to handle this problem.
+
 - How to handle gaps?
 
   Currently, if a peer temporarily disconnects and then reconnects, then it will
@@ -523,30 +502,12 @@
   piggybacking onto accepts) sending commit messages to followers.
 
 == SCRATCH SPACE ===============================================================
+    0    1   2   3   4
+x: |a,x|b,x|c,x|d,x|   |             min_tail = 1, tail = 3
 
-         1 2 3 4 5
-leader: |e|e| | | |
+f1:|a,x|b,x|c,x|d,x|   |             min_tail = 1, tail = 3
 
-head: 2
-tail: 2
-min_tail: 2
-
-follow: |e|e| | | |
-
-head: 2
-tail: 2
-min_tail: 0
+f2:|a,x|b,x|c  |d,i|   |             min_tail = 1, tail = 1
 
 
-- method 1
-  - heartbeat only checks liveness and triggers election if leader is not alive
-  - piggyback commit to the next accept
-  - you need to have another thread that checks for inactivity and sends an
-    explicit commit message for the last command when there is no activity
-
-- method 2
-  - heartbeat piggybacks commit message in addition to triggering leader election
-
-- method 3
-  - heartbeat only checks liveness and triggers election if leader is not alive
-  - there is a separate commit phase
+min_tail = 1
