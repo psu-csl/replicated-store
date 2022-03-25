@@ -7,13 +7,15 @@
     - key_: string
     - value_: string (valid only if type_ == put)
 
+- enum state_t: {in-progress, committed, executed}
+
 - struct instance_t
   - synopsis: entry in the log.
   - fields:
     - round_: round of the instance
     - command_: command_t
     - index_: index of the command in the log
-    - state_: enum {in-progress, committed}
+    - state_: state_t
     - client-id_: id of the client in the leader that issued the command
   - description: each instance starts in the in-progress state, and changes to
     the committed state once quorum has voted for it. we do not need a separate
@@ -33,6 +35,7 @@
   - synopsis: return type of prepare()
   - fields:
     - type_: enum {ok, reject, timeout}
+    - logs_: vector<instance_t[]>
 
 * PROTOBUFS
 
@@ -40,6 +43,7 @@
   - round_: round of the sender
   - command_: command_t
   - index_: int; index for the command_ in log_
+  - status_: enum {in-progress, committed, executed}
   - client-id_: int; id of the client initiating command_
 
 - message accept_rpc_response
@@ -52,7 +56,7 @@
 - message prepare_rpc_response
   - type_: enum {ok, reject, timeout}
   - round_: round of the remote peer (valid only if type_ == reject)
-  - log_: instances since tail_ in the corresponding prepareRPC request (valid
+  - log_: instances since min_tail_ in the corresponding prepareRPC request (valid
     only if type_ == ok}
 
 - message heartbeat_rpc_request
@@ -195,17 +199,38 @@
       ++tail_
       return (instance.client-id_, result)
 
-    - commit(index: int)
+    - commit(index_: int)
       # sets the status of the instance at index to committed and wakes up the
       # executor thread if the log is executable.
       exe_mu_.lock()
-      assert(log_[index] != empty && log_[index].status == in-progress)
-      log_[i].status = committed
+      # it must never be the case that the log has no instance at index_ because
+      # if we are committing index_, we must have sent out an accept for it and
+      # received a positive response from quorum; given that we are a leader, we
+      # must have sent an accept to ourselves via loopback and the accept
+      # handler must have installed the instance at index_. technically, there
+      # is a remote possibility of us receiving a response from remote peers
+      # before a local accept handler runs, but it is more likely that this
+      # assertion will trigger due to another problem than that.
+      assert(log_[index_] != empty)
+
+      # when running prepare, we will ask peers, including ourselves, to send us
+      # their log starting at their min_tail_ and merge it to our log. then we
+      # will run accept on all instances starting at min_tail_. hence, we may
+      # run accept on an instance that is already committed or even executed in
+      # our log. our accept handler will not touch log_ for such instances but
+      # it will respond with an accept and eventually, we may run commit for
+      # such instances, in which case we will end up here. for those instances,
+      # commit will not do anything. hence, we will only update an instances
+      # status to committed only if it is in in-progress state.
+      if log_[index_].status == in-progress
+        log_[index_].status = committed
+      else
+        return
       if (executable())
         exe_cv_.notify_one()
       exe_mu_.unlock()
 
-    - commit_until(tail: int)
+    - commit_until(tail: int, round)
       # sets the status of all the instances from tail_ until tail and wakes up
       # the executor thread.
       exe_mu_.lock()
@@ -225,25 +250,29 @@
       exe_mu_.unlock()
 
     - trim_until(min_tail_leader_: int)
-      # trims the instances whose commands have been executed by all peers
       while min_tail_ < min_tail_leader_
         ++min_tail_
+        assert(log_[min_tail_].status == executed)
         del log_[min_tail_]
 
     - append(instance: instance_t)
-      # this is not exactly append because there may be gaps. e.g. the leader
-      # sends an accept RPC with index 10 and then another accept RPC with index
-      # 11, and the second RPC arrives before the first one.
-      log_[instance.index_] = instance
-      head_ = max(head_, instance.index_)
+      i = instance.index_
+      if log_[i] == empty
+        log_[i] = instance
+        log_[i].status = in-progress
+      else if log_[i].status == committed or executed
+        assert(instance.status_ != committed or executed || log_[i].cmd_ == instance.cmd_)
+      else if log_[i].round_ < instance.round_
+        log_[i] = instance
+        log_[i].status = in-progress
+
+      head_ = max(head_, i)
 
     - merge(logs: vector<instance_t[]>)
-      for log in logs:
+      for log in logs
         for instance in log
-          i = instance.index
-          if log_[i] == empty || instance.round_ > log_[i].round
-            log_[i] = instance
-        head_ = max(head_, log[log.len()-1].index)
+          if instance.index_ > min_tail_
+            append(instance)
 
     - new_instances() -> instance_t[]
       # return instances since min_tail_
@@ -274,13 +303,14 @@
       # election in progress
       return accept_result_t{type_: retry, leader_: N/A}
 
-    - accept(cmd: command, index: int, client-id: int) -> accept_result_t
+    - accept(cmd: command, index: int, status: status_t, client-id: int) -> accept_result_t
       num_responses = 0
       num_ok_responses = 0
       cv, mu
       request = accept_rpc_request{command_: cmd,
                                    index_: index,
                                    round_: round_,
+                                   status_: status,
                                    client-id_: client-id}
       for each peer p {
         run closure in a separate thread {
@@ -316,7 +346,7 @@
         instance = instance_t{round_: message.round_,
                               command_: message.command_,
                               index_: message.index_,
-                              state_: in-progress,
+                              state_: in-progress
                               client-id_: message.client-id_}
         log_.append(instance)
         return accept_rpc_response{type_: ok, round_: N/A}
@@ -350,8 +380,7 @@
       # one of the above three conditions is false; handle each, starting with the
       # most likely one
       if num_ok_responses > peers_.size()/2: # we have quorum
-        log_.merge(ok_logs)
-        return prepare_result_t{type_: ok}
+        return prepare_result_t{type_: ok, log_: ok_logs}
       if someone_else_is_leader():
         return prepare_result_t{type_: reject}
       # multiple timeout responses
@@ -372,20 +401,15 @@
         sleep until follower
         for (;;) {
           sleep(heartbeat_interval_ + random(10, heartbeat_interval_))
-          lock(heartbeat_mu_)
           if time::now() - last_heartbeat_ < heartbeat_interval_:
-            unlock(heartbeat_mu_)
             continue
           round = next_round#()
-          # Avoid holding the lock too long
-          # If there is a new leader, its heartbeat request can be handled
-          unlock(heartbeat_mu_)
-
           prepare_result_t result = prepare(round)
           if result.type_ != ok:
             continue
           # we are a leader
           wake up heartbeat_thread
+          log_.merge(result.logs_)
           replay()
           ready_ = true
           break
@@ -446,14 +470,12 @@
       }
 
     - heartbeat_handler(message: heartbeat_rpc_request):
-      lock(heartbeat_mu_)
       if message.round >= round_:
         last_heartbeat_ = time::now()
         round_ = message.round_
         log_.commit_until(message_.tail_)
         log_.trim_until(message_.min_tail_)
       # stale message
-      unlock(heartbeat_mu_)
       return heartbeat_rpc_response{tail_: log_.tail()}
 
 == TODO ========================================================================
