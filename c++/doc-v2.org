@@ -257,6 +257,8 @@
 
     - append(instance: instance_t)
       i = instance.index_
+      if i <= min_tail_
+        return
       if log_[i] == empty
         log_[i] = instance
         log_[i].status = in-progress
