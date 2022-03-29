@@ -230,7 +230,7 @@
         exe_cv_.notify_one()
       exe_mu_.unlock()
 
-    - commit_until(tail: int, round)
+    - commit_until(tail: int, round_: int)
       # sets the status of all the instances from tail_ until tail and wakes up
       # the executor thread.
       exe_mu_.lock()
@@ -243,8 +243,8 @@
         # gap will disappear.
         if (log_[index] == empty)
           break
-        assert(log_[index].status == in-progress)
-        log_[i].status = committed
+        if (log_[index].round_ == round_)
+          log_[i].status = committed
       if (executable())
         exe_cv_.notify_one()
       exe_mu_.unlock()
@@ -475,7 +475,7 @@
       if message.round >= round_:
         last_heartbeat_ = time::now()
         round_ = message.round_
-        log_.commit_until(message_.tail_)
+        log_.commit_until(message_.tail_, round_)
         log_.trim_until(message_.min_tail_)
       # stale message
       return heartbeat_rpc_response{tail_: log_.tail()}
