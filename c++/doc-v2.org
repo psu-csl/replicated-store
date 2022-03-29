@@ -355,11 +355,11 @@
       # stale message
       return accept_rpc_response{type: reject, round: round_}
 
-    - prepare(round: int) -> prepare_result_t:
+    - prepare() -> prepare_result_t:
       num_responses = 0
       ok_logs = vector<instance_t[]>
       cv, mu
-      request = prepare_rpc_request{round_: round}
+      request = prepare_rpc_request{round_: next_round#()}
       for each peer p {
         run closure in a separate thread {
           response = p.prepareRPC(request)
@@ -405,9 +405,8 @@
           sleep(heartbeat_interval_ + random(10, heartbeat_interval_))
           if time::now() - last_heartbeat_ < heartbeat_interval_:
             continue
-          round = next_round#()
           ready_ = true
-          prepare_result_t result = prepare(round)
+          prepare_result_t result = prepare()
           if result.type_ != ok:
             continue
           # we are a leader
