@@ -406,6 +406,7 @@
           if time::now() - last_heartbeat_ < heartbeat_interval_:
             continue
           round = next_round#()
+          ready_ = true
           prepare_result_t result = prepare(round)
           if result.type_ != ok:
             continue
