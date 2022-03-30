@@ -265,26 +265,55 @@
         assert(log_[min_tail_].status == executed)
         del log_[min_tail_]
 
-    - append(instance: instance_t)
-      i = instance.index_
+    - append(instance_: instance_t)
+      i = instance_.index_
+
+      # append is a no-op if it receives an instance for a slot in the log that
+      # is already committed, executed, and pruned. it is possible to receive
+      # such an instance, for example, if
+      #
+      # (1) we currently have min_tail = 13
+      # (2) a new leader sends us a prepare request
+      # (3) we respond by sending instances after min_tail_, e.g. (14, 15, 16)
+      # (4) we receive a heartbeat with min_tail_ = 15 from the old leader
+      # (5) we trim our log and set min_tail_ to 15
+      # (6) we receive an accept from the new leader for the instance 14
+      #
+      # we should ignore such instances.
       if i <= min_tail_
         return
-      if log_[i] == empty
+
+      # append is a no-op if it receives an instance for a slot in the log that
+      # is already a committed or executed; furthermore, in a situation like
+      # this, the instance_'s command must match the command in the log.
+      if log_[i] != empty && log_[i].status == (committed or executed)
+        # do nothing---just assert and return
+        if instance_.status_ == (committed or executed)
+          assert(log_[i].cmd_ == instance_.cmd_)
+        return
+
+      # otherwise, if we don't have instance_ or if the instance_ has a higher
+      # round number, then we just put it in our log.
+      if log_[i] == empty || log_[i].round_ < instance_.round_
         log_[i] = instance
         log_[i].status = in-progress
-      else if log_[i].status == committed or executed
-        assert(instance.status_ != committed or executed || log_[i].cmd_ == instance.cmd_)
-      else if log_[i].round_ < instance.round_
-        log_[i] = instance
-        log_[i].status = in-progress
+
+      # the remaining cases are
+      #
+      # (1) instance_.round < log_[i].round_
+      # or
+      # (2) instance_.round == log_[i].round_
+      #
+      # we ignore (1), but for (2) we have the following assertion
+      if instance_.round == log_[i].round_
+        assert(instance_.cmd_ == log_[i].cmd_)
 
       head_ = max(head_, i)
 
     - merge(logs: vector<instance_t[]>)
       for log in logs
         for instance in log
-          if instance.index_ > min_tail_
-            append(instance)
+          append(instance)
 
     - new_instances() -> instance_t[]
       # return instances since min_tail_
