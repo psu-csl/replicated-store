@@ -224,25 +224,35 @@
       # status to committed only if it is in in-progress state.
       if log_[index_].status == in-progress
         log_[index_].status = committed
-      else
-        return
-      if (executable())
-        exe_cv_.notify_one()
-      exe_mu_.unlock()
+        if (executable())
+          exe_cv_.notify_one()
+        exe_mu_.unlock()
 
     - commit_until(tail: int, round_: int)
       # sets the status of all the instances from tail_ until tail and wakes up
-      # the executor thread.
+      # the executor thread if necessary.
       exe_mu_.lock()
       for (int i = tail_+1; i <= tail; ++i)
-        # it is possible that we receive heartbeat before we receive the accept
-        # message; therefore, we should handle the case where we have a gap in
-        # the log; in that case, we will break out of the loop and try
+        # we may receive a heartbeat before we receive the accept message;
+        # therefore, the heartbeat handler will run this function while there is
+        # a gap in the log. when we see a gap, we break out of the loop and try
         # committing the next time we receive heartbeat from the leader;
-        # hopefully, by that time, we will receive the accept message and the
-        # gap will disappear.
+        # hopefully, by that time, we will have received the accept message and
+        # the gap will disappear.
         if (log_[index] == empty)
           break
+        # as a follower, we will usually have in-progress instances in our log;
+        # in the common case, we will receive a higher tail value from the
+        # leader and we will catch up by committing instances in our own log.
+        # however, it is possible that (1) we experience a partition, (2) a new
+        # leader emerges and establishes new commands for those instances, and
+        # (3) we reconnect. now, if we receive a heartbeat with a higher tail
+        # value then we shouldn't blindly commit instances in our log; we should
+        # commit them only if the round numbers match (which corresponds to the
+        # common case). otherwise, as a follower we will just get stuck here and
+        # prevent min_tail_ from advancing, until a new leader is elected and
+        # replays every instances since min_tail_ and we discover the new
+        # commands and update stale instances in our log.
         if (log_[index].round_ == round_)
           log_[i].status = committed
       if (executable())
