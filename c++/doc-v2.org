@@ -224,9 +224,14 @@
         # to committed only if it is in in-progress state.
       if log_[index_].status == in-progress
         log_[index_].status = committed
-        if (executable())
-          exe_cv_.notify_one()
-        exe_mu_.unlock()
+
+      # we must do this check every time because it may be an entry that we
+      # merged into our log from a remote peer that was already in committed
+      # state. in this case, we should wake up the thread to execute the entry
+      # on our state machine.
+      if (executable())
+        exe_cv_.notify_one()
+      exe_mu_.unlock()
 
     - commit_until(tail: int, round_: int)
       # sets the status of all the instances from tail_ until tail and wakes up
