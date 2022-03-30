@@ -200,28 +200,28 @@
       return (instance.client-id_, result)
 
     - commit(index_: int)
-      # sets the status of the instance at index to committed and wakes up the
-      # executor thread if the log is executable.
+      # sets the status of the instance at index to committed and possibly wakes
+      # up the executor thread if the log is executable.
       exe_mu_.lock()
-      # it must never be the case that the log has no instance at index_ because
-      # if we are committing index_, we must have sent out an accept for it and
-      # received a positive response from quorum; given that we are a leader, we
-      # must have sent an accept to ourselves via loopback and the accept
-      # handler must have installed the instance at index_. technically, there
-      # is a remote possibility of us receiving a response from remote peers
-      # before a local accept handler runs, but it is more likely that this
-      # assertion will trigger due to another problem than that.
+      * # it must never be the case that the log has no instance at index_ because
+        # if we are committing index_, we must have sent out an accept for it and
+        # received a positive response from quorum; given that we are a leader, we
+        # must have sent an accept to ourselves via loopback and the accept
+        # handler must have installed the instance at index_. technically, there
+        # is a remote possibility of us receiving a response from remote peers
+        # before a local accept handler runs, but it is more likely that this
+        # assertion will trigger due to another problem than that.
       assert(log_[index_] != empty)
 
-      # when running prepare, we will ask peers, including ourselves, to send us
-      # their log starting at their min_tail_ and merge it to our log. then we
-      # will run accept on all instances starting at min_tail_. hence, we may
-      # run accept on an instance that is already committed or even executed in
-      # our log. our accept handler will not touch log_ for such instances but
-      # it will respond with an accept and eventually, we may run commit for
-      # such instances, in which case we will end up here. for those instances,
-      # commit will not do anything. hence, we will only update an instances
-      # status to committed only if it is in in-progress state.
+      * # when running prepare, we will ask peers, including ourselves, to send us
+        # their log starting at their min_tail_ and merge it to our log. then we
+        # will run accept on all instances starting at min_tail_. hence, we may
+        # run accept on an instance that is already committed or even executed in
+        # our log. our accept handler will not touch log_ for such instances but
+        # it will respond with an accept and eventually, we may run commit for
+        # such instances, in which case we will end up here. for those instances,
+        # commit must be a no-op. hence, we will only update an instances status
+        # to committed only if it is in in-progress state.
       if log_[index_].status == in-progress
         log_[index_].status = committed
         if (executable())
@@ -233,26 +233,26 @@
       # the executor thread if necessary.
       exe_mu_.lock()
       for (int i = tail_+1; i <= tail; ++i)
-        # we may receive a heartbeat before we receive the accept message;
-        # therefore, the heartbeat handler will run this function while there is
-        # a gap in the log. when we see a gap, we break out of the loop and try
-        # committing the next time we receive heartbeat from the leader;
-        # hopefully, by that time, we will have received the accept message and
-        # the gap will disappear.
+        * # we may receive a heartbeat before we receive the accept message;
+          # therefore, the heartbeat handler will run this function while there is
+          # a gap in the log. when we see a gap, we break out of the loop and try
+          # committing the next time we receive heartbeat from the leader;
+          # hopefully, by that time, we will have received the accept message and
+          # the gap will disappear.
         if (log_[index] == empty)
           break
-        # as a follower, we will usually have in-progress instances in our log;
-        # in the common case, we will receive a higher tail value from the
-        # leader and we will catch up by committing instances in our own log.
-        # however, it is possible that (1) we experience a partition, (2) a new
-        # leader emerges and establishes new commands for those instances, and
-        # (3) we reconnect. now, if we receive a heartbeat with a higher tail
-        # value then we shouldn't blindly commit instances in our log; we should
-        # commit them only if the round numbers match (which corresponds to the
-        # common case). otherwise, as a follower we will just get stuck here and
-        # prevent min_tail_ from advancing, until a new leader is elected and
-        # replays every instances since min_tail_ and we discover the new
-        # commands and update stale instances in our log.
+        * # as a follower, we will usually have in-progress instances in our log;
+          # in the common case, we will receive a higher tail value from the
+          # leader and we will catch up by committing instances in our own log.
+          # however, it is possible that (1) we experience a partition, (2) a new
+          # leader emerges and establishes new commands for those instances, and
+          # (3) we reconnect. now, if we receive a heartbeat with a higher tail
+          # value then we shouldn't blindly commit instances in our log; we should
+          # commit them only if the round numbers match (which corresponds to the
+          # common case). otherwise, as a follower we will just get stuck here and
+          # prevent min_tail_ from advancing, until a new leader is elected and
+          # replays every instances since min_tail_ and we discover the new
+          # commands and update stale instances in our log.
         if (log_[index].round_ == round_)
           log_[i].status = committed
       if (executable())
@@ -266,64 +266,118 @@
         del log_[min_tail_]
 
     - append(instance_: instance_t)
-      i = instance_.index_
+      * # log invariants
+        #
+        # given that (1) the instances in the log must be executed in order, (2)
+        # tail_ is the index of the last executed entry, and (3) min_tail_ is
+        # the index of the last entry that was executed in all peers, our log
+        # has the following invariants:
+        #
+        # (i1) there is no gap before or at tail_
+        # (i2) there is no executed instance after tail_.
+        # (i3) min_tail_ <= tail_
+        # (i4) there are no instances at indices < min_tail_
 
-      # append is a no-op if it receives an instance for a slot in the log that
-      # is already committed, executed, and pruned. it is possible to receive
-      # such an instance, for example, if
-      #
-      # (1) we currently have min_tail = 13
-      # (2) a new leader sends us a prepare request
-      # (3) we respond by sending instances after min_tail_, e.g. (14, 15, 16)
-      # (4) we receive a heartbeat with min_tail_ = 15 from the old leader
-      # (5) we trim our log and set min_tail_ to 15
-      # (6) we receive an accept from the new leader for the instance 14
-      #
-      # we should ignore such instances.
+      * # append() call paths
+        #
+        # we call append() in two call paths:
+        #
+        # (c1) when we are a follower and we receive an accept message, we call
+        #      append() in accept_handler()
+        # (c2) when we are a leader candidate and we send out prepare request
+        #      and receive logs from the quorum, we call append() in
+        #      log_.merge() to merge the received logs.
+
+      * # case (1): instance_.index is pruned from log
+        #
+        # append() must be a no-op if we call it with an instance at an index
+        # pruned from our log. it is possible to receive such an instance in
+        # (c1), for example, if
+        #
+        # (1) we currently have min_tail = 13
+        # (2) a new leader sends us a prepare request
+        # (3) we respond by sending instances after min_tail_, e.g. (14, 15, 16)
+        # (4) we receive a heartbeat with min_tail_ = 15 from the old leader
+        # (5) we trim our log and set min_tail_ to 15
+        # (6) we receive an accept from the new leader for the instance 14
+        #
+        # it is also possible to receive such an instance in case (c2), for
+        # example, if
+        #
+        # (1) we currently have min_tail = 13
+        # (2) we become a leader candidate and send prepare request to peers
+        # (3) we receive a heartbeat with min_tail = 15 from the old leader
+        # (4) we trim our log and set min_tail to 15
+        # (5) we receive logs from the other peers who still have min_tail = 13
+        #
+        # we should ignore such instances.
+      i = instance_.index_
       if i <= min_tail_
         return
 
-      # append is a no-op if it receives an instance for a slot in the log that
-      # is already a committed or executed; furthermore, in a situation like
-      # this, the instance_'s command must match the command in the log.
-      if log_[i] != empty && log_[i].status == (committed or executed)
-        # do nothing---just assert and return
-        if instance_.status_ == (committed or executed)
-          assert(log_[i].cmd_ == instance_.cmd_)
+      * # case (2): log_[instance_.index] is empty
+        #
+        # in that case, it must be the case that i > tail_ due to (i1).
+        #
+        # (1) we assert i1.
+        # (2) we insert instance_ to our log.
+        # (3) if instance_'s status is executed, we set it to committed to
+        #     preserve (i2). an instance with a status of in-progress will not
+        #     occur in (c1), because instances created in that call path are
+        #     initialized with status in-progress. however, an instance with a
+        #     progress of executed is possible in (c2) because we may be a peer
+        #     that got partitioned and joined back and trying to become a
+        #     leader; in that case we may receive logs from other peers that
+        #     have executed instances in their log. we need to reset the
+        #     status of such instances to back to committed in our log to ensure
+        #     that such instances will be executed on our state machine. if we
+        #     receive an instance that is either in in-progress or in committed
+        #     states, we don't have to do anything to them: if an instance is
+        #     committed, then we will eventually execute it; if it is
+        #     in-progress, then it will either be committed or updated with a
+        #     new command.
+        # (4) we update the head and return
+      if log_[i] == empty
+        assert(i > tail_)
+        log_[i] = instance_
+        head_ = max(head_, i)
+        if log_[i].status == executed
+          log_[i].status = committed
         return
 
-      # otherwise, if we don't have instance_ or if the instance_ has a higher
-      # round number, then we just put it in our log.
-      if log_[i] == empty || log_[i].round_ < instance_.round_
+      * # case (3): log_[instance_.index] is committed/executed
+        #
+        # append() must be a no-op if we call it with an instance at an index
+        # that is already a committed or executed in our log; furthermore, in a
+        # situation like this, instance_'s command must match the command in our
+        # log, *independent of what instance_'s status is*. if instance_'s
+        # status is in-progress, i.e. append() is being called in (c1), then it
+        # must have learned the command from the quorum. if instance_'s status
+        # is committed or executed, i.e. append() is being called in (c2), then
+        # logs from other peers must contain the same command.
+      if log_[i].status == (committed or executed)
+        assert(log_[i].cmd_ == instance_.cmd_)
+        return
+
+      * # case (4): log_[instance_.index] is in-progress
+        #
+        # in this case, we should decide based on the value of round_.
+        #
+        # if log_[instance_.index].round_ > instance_.round, we can ignore the
+        # instance; such a scenario may happen in (c2) when we receive a stale
+        # log from a peer
+        #
+        # if log_[instance_.index].round_ < instance_.round, we must update our
+        # log because we may have a stale instance; such a scenario may happen
+        # in (c2) when we receive a newer log from a peer
+        #
+        # if log_[instance_.index].round_ == instance_.round, it must be the
+        # case that both instances have the same command. this may happen in
+        # scenario (c1) when somehow we receive the same accept command twice.
+      if log_[i].round_ < instance_.round_
         log_[i] = instance
-        log_[i].status = in-progress
-
-      # the remaining case is log_[i] is not empty and log_[i].status ==
-      # in-progress and
-      #
-      # (1) instance_.round < log_[i].round_
-      # or
-      # (2) instance_.round == log_[i].round_
-      #
-      # we call append in two places: (a) in the accept_handler(), when we are a
-      # follower and we receive an accept message, and (b) in log_.merge(), when
-      # we are a leader and we have received logs from the quorum and we want to
-      # merge the received logs.
-      #
-      # The case (1) cannot happen in (a) because the accept_handler() ignores
-      # requests with round number lower than ours; but case (1) can happen in
-      # (b) because we may have received a log with stale entries, in which case
-      # we ignore such an entry.
-      #
-      # The case (2) can happen in (a) if somehow we receive the same accept
-      # message twice, in which case the assertion below must hold; case (2) can
-      # also happen in (b) because we may have received logs from followers that
-      # had the same instance in their log in in-progress state and they
-      # responded to us, in which case, again, the assertion below must hold.
-      if instance_.round == log_[i].round_
-        assert(instance_.cmd_ == log_[i].cmd_)
-
-      head_ = max(head_, i)
+      else if log_[i].round_ == instance_.round_
+        assert(log_[i].cmd_ == instance_.cmd)
 
     - merge(logs: vector<instance_t[]>)
       for log in logs
