@@ -298,13 +298,28 @@
         log_[i] = instance
         log_[i].status = in-progress
 
-      # the remaining cases are
+      # the remaining case is log_[i] is not empty and log_[i].status ==
+      # in-progress and
       #
       # (1) instance_.round < log_[i].round_
       # or
       # (2) instance_.round == log_[i].round_
       #
-      # we ignore (1), but for (2) we have the following assertion
+      # we call append in two places: (a) in the accept_handler(), when we are a
+      # follower and we receive an accept message, and (b) in log_.merge(), when
+      # we are a leader and we have received logs from the quorum and we want to
+      # merge the received logs.
+      #
+      # The case (1) cannot happen in (a) because the accept_handler() ignores
+      # requests with round number lower than ours; but case (1) can happen in
+      # (b) because we may have received a log with stale entries, in which case
+      # we ignore such an entry.
+      #
+      # The case (2) can happen in (a) if somehow we receive the same accept
+      # message twice, in which case the assertion below must hold; case (2) can
+      # also happen in (b) because we may have received logs from followers that
+      # had the same instance in their log in in-progress state and they
+      # responded to us, in which case, again, the assertion below must hold.
       if instance_.round == log_[i].round_
         assert(instance_.cmd_ == log_[i].cmd_)
 
