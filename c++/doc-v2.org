@@ -43,7 +43,6 @@
   - round_: round of the sender
   - command_: command_t
   - index_: int; index for the command_ in log_
-  - status_: enum {in-progress, committed, executed}
   - client-id_: int; id of the client initiating command_
 
 - message accept_rpc_response
@@ -283,9 +282,9 @@
         # (i3) min_tail_ <= tail_
         # (i4) there are no instances at indices < min_tail_
 
-      * # append() call paths
+      * # append() call-paths
         #
-        # we call append() in two call paths:
+        # we call append() in two call-paths:
         #
         # (c1) when we are a follower and we receive an accept message, we call
         #      append() in accept_handler()
@@ -328,7 +327,7 @@
         # (2) we insert instance_ to our log.
         # (3) if instance_'s status is executed, we set it to committed to
         #     preserve (i2). an instance with a status of in-progress will not
-        #     occur in (c1), because instances created in that call path are
+        #     occur in (c1), because instances created in that call-path are
         #     initialized with status in-progress. however, an instance with a
         #     progress of executed is possible in (c2) because we may be a peer
         #     that got partitioned and joined back and trying to become a
@@ -418,14 +417,13 @@
       # election in progress
       return accept_result_t{type_: retry, leader_: N/A}
 
-    - accept(cmd: command, index: int, status: status_t, client-id: int) -> accept_result_t
+    - accept(cmd: command, index: int, client-id: int) -> accept_result_t
       num_responses = 0
       num_ok_responses = 0
       cv, mu
       request = accept_rpc_request{command_: cmd,
                                    index_: index,
                                    round_: round_,
-                                   status_: status,
                                    client-id_: client-id}
       for each peer p {
         run closure in a separate thread {
@@ -518,7 +516,7 @@
           sleep(heartbeat_interval_ + random(10, heartbeat_interval_))
           if time::now() - last_heartbeat_ < heartbeat_interval_:
             continue
-          ready_ = true
+          ready_ = false
           prepare_result_t result = prepare()
           if result.type_ != ok:
             continue
