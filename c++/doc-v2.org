@@ -202,16 +202,6 @@
       # sets the status of the instance at index to committed and possibly wakes
       # up the executor thread if the log is executable.
       exe_mu_.lock()
-      * # it must never be the case that the log has no instance at index_ because
-        # if we are committing index_, we must have sent out an accept for it and
-        # received a positive response from quorum; given that we are a leader, we
-        # must have sent an accept to ourselves via loopback and the accept
-        # handler must have installed the instance at index_. technically, there
-        # is a remote possibility of us receiving a response from remote peers
-        # before a local accept handler runs, but it is more likely that this
-        # assertion will trigger due to another problem than that.
-      assert(log_[index_] != empty)
-
       * # when running prepare, we will ask peers, including ourselves, to send us
         # their log starting at their min_tail_ and merge it to our log. then we
         # will run accept on all instances starting at min_tail_. hence, we may
@@ -273,8 +263,8 @@
       * # log invariants
         #
         # given that (1) the instances in the log must be executed in order, (2)
-        # tail_ is the index of the last executed entry, and (3) min_tail_ is
-        # the index of the last entry that was executed in all peers, our log
+        # tail_ is the index of the last executed instance, and (3) min_tail_ is
+        # the index of the last instance that was executed in all peers, our log
         # has the following invariants:
         #
         # (i1) there is no gap before or at tail_
@@ -373,13 +363,17 @@
         #
         # if log_[instance_.index].round_ < instance_.round, we must update our
         # log because we may have a stale instance; such a scenario may happen
-        # in (c2) when we receive a newer log from a peer
+        # in (c2) when we receive a newer log from a peer. it is also possible
+        # that the received log contains executed entries, in which case we
+        # should set its status to committed to avoid violating (i1).
         #
         # if log_[instance_.index].round_ == instance_.round, it must be the
         # case that both instances have the same command. this may happen in
         # scenario (c1) when somehow we receive the same accept command twice.
       if log_[i].round_ < instance_.round_
         log_[i] = instance
+        if log_[i].status == executed
+          log_[i].status = committed
       else if log_[i].round_ == instance_.round_
         assert(log_[i].cmd_ == instance_.cmd)
 
@@ -516,38 +510,27 @@
           sleep(heartbeat_interval_ + random(10, heartbeat_interval_))
           if time::now() - last_heartbeat_ < heartbeat_interval_:
             continue
-          ready_ = false
           prepare_result_t result = prepare()
           if result.type_ != ok:
             continue
           # we are a leader
           wake up heartbeat_thread
+          ready_ = false
           log_.merge(result.logs_)
-          replay()
-          ready_ = true
+          if (replay())
+            ready_ = true
           break
         }
       }
 
-    - replay():
-      index_ = log_.get_tail_index() + 1
-
-      while (index_ <= head_) {
-        instance = log_.get_instance(index)
-        assert(instance != NULL)
-
-        # The instance needs to accept again
-        if instance.state_ == in-progress:
-          accept_result_ = accept(instance.command, index)
-          if accept_result_.type == leader:
-            break
-          if accept_result_.type == retry:
-            continue
-
-        # Else, the instance is commited, nothing needs to be done
-
-        ++index
-      }
+    - replay() -> bool
+      for i in log_.new_instances()
+        accept_result_t r = accept(i.command_, i.index, i.client-id_)
+        if r.type_ == leader
+          return false
+        if r.type_ == retry
+          continue
+      return true
 
     - heartbeat_thread():
       for (;;) {
