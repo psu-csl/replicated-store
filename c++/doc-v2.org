@@ -193,6 +193,8 @@
     - commit(index_: int)
       # sets the status of the instance at index to committed and possibly wakes
       # up the executor thread if the log is executable.
+
+try_again:
       exe_mu_.lock()
       * # when running prepare, we will ask peers, including ourselves, to send us
         # their log starting at their min_tail_ and merge it to our log. then we
@@ -203,6 +205,11 @@
         # such instances, in which case we will end up here. for those instances,
         # commit must be a no-op. hence, we will only update an instances status
         # to committed only if it is in in-progress state.
+
+      if log_[index_] == empty
+        exe_mu_.unlock()
+        goto try_again:
+
       if log_[index_].status == in-progress
         log_[index_].status = committed
 
