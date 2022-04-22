@@ -147,17 +147,19 @@
 
   - members
 
-    - head_: index of the highest-numbered instance in the log. the log starts
-      at index 1; therefore, head_ is initialized to 0, signifying an empty log.
+    - last_index_: index of the highest-numbered instance in the log. the log
+      starts at index 1; therefore, last_index_ is initialized to 0, signifying
+      an empty log.
 
-    - tail_: index of the last executed instance. initialized to 0.
+    - last_executed_index_: index of the last executed instance. initialized
+      to 0.
 
-    - min_tail_: minimum tail_ of all peers known to peer. initialized to 0.
+    - global_last_executed_index_: index of the last executed instance on all
+      peers known to this peer. initialized to 0.
 
     - log_: a map from int to an instance_t
 
-    - cv_, mu_: pointers to a condition variable and mutex to wake up the
-      executor thread.
+    - cv_, mu_: a condition variable and mutex for the object.
 
   - methods
 
