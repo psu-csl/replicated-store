@@ -1,22 +1,21 @@
 * TYPES
 
-- struct command_t
+- struct Command
   - synopsis: a key-value command
   - fields:
-    - type_: enum {get, put, del}
+    - type_: enum { get, put, del }
     - key_: string
     - value_: string (valid only if type_ == put)
 
-- enum state_t: {in-progress, committed, executed}
-
-- struct instance_t
+- struct Instance
   - synopsis: entry in the log.
   - fields:
     - round_: round of the instance
-    - command_: command_t
     - index_: index of the command in the log
-    - state_: state_t
     - client-id_: id of the client in the leader that issued the command
+    - state_: enum { in-progress, committed, executed }
+    - command_: Command
+
   - description: each instance starts in the in-progress state, and changes to
     the committed state once quorum has voted for it. we do not need a separate
     executed state because we are tracking it with the tail_ (see below). after
@@ -147,6 +146,8 @@
 
   - members
 
+    - log_: a map from int to an instance_t
+
     - last_index_: index of the highest-numbered instance in the log. the log
       starts at index 1; therefore, last_index_ is initialized to 0, signifying
       an empty log.
@@ -157,7 +158,6 @@
     - global_last_executed_index_: index of the last executed instance on all
       peers known to this peer. initialized to 0.
 
-    - log_: a map from int to an instance_t
 
     - cv_, mu_: a condition variable and mutex for the object.
 
