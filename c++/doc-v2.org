@@ -129,14 +129,8 @@
 
     - executor(void)
       for (;;) {
-        exe_mu_.lock()
-        while (!log_.executable())
-          exe_cv_.sleep()
-        exe_mu_.unlock()
-        do {
-          client-id, result = log_.execute(kv)
-          respond(client-id, result)
-        } while (log_.executable())
+        client-id, result = log_.execute(kv)
+        respond(client-id, result)
       }
 
     - respond(client-id, result)
@@ -159,8 +153,6 @@
     - tail_: index of the last executed instance. initialized to 0.
 
     - min_tail_: minimum tail_ of all peers known to peer. initialized to 0.
-
-    - min_tail_leader_: latest minimum tail_ at the leader. initialized to 0.
 
     - log_: a map from int to an instance_t
 
