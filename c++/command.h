@@ -6,14 +6,9 @@
 enum class CommandType { kGet, kPut, kDel };
 
 struct Command {
-  CommandType type;
-  std::string key;
-  std::string value;
-};
-
-struct Result {
-  bool ok = false;
-  std::string value;
+  CommandType type_;
+  std::string key_;
+  std::string value_;
 };
 
 #endif
