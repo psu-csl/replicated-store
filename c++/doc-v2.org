@@ -8,21 +8,19 @@
     - value_: string (valid only if type_ == put)
 
 - struct Instance
-  - synopsis: entry in the log.
+  - synopsis: entry in the log. each instance starts in the in-progress state,
+    and changes to the committed state once quorum has voted for it, and changes
+    to executed state once the executor thread has its command executed. once
+    the command is executed, we look for the client-id in the global map that
+    maintains client-id to socket mapping. if found, then this is the leader
+    that created the instance, and we write the response to the client;
+    otherwise, this is a follower and we do nothing.
   - fields:
     - round_: round of the instance
     - index_: index of the command in the log
     - client-id_: id of the client in the leader that issued the command
     - state_: enum { in-progress, committed, executed }
     - command_: Command
-
-  - description: each instance starts in the in-progress state, and changes to
-    the committed state once quorum has voted for it. we do not need a separate
-    executed state because we are tracking it with the tail_ (see below). after
-    the command is executed, we look for the client-id in the global map that
-    maintains client-id to socket mapping. if found, then this is the leader
-    that created the instance, and we write the response to the client;
-    otherwise, this is a follower and we do nothing.
 
 - struct accept_result_t
   - synopsis: return type of replicate() and accept()
