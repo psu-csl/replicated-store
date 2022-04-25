@@ -157,7 +157,7 @@
 
     - cv_, mu_: a condition variable and mutex for the object.
 
-  - methods
+  - public methods
 
     - constructor()
       last_index_ = last_executed_index_ = global_last_executed_index_ = 0
@@ -170,11 +170,6 @@
 
     - advance_head(void) -> int
       return ++head_
-
-    - executable(void) -> bool
-      # returns true if the log contains an executable instance, i.e. the
-      # instance right after tail_ is committed.
-      return log_[tail_+1] != empty && log_[tail_+1].status == committed
 
     - execute(kv: KVStore) -> (client-id, result)
       # executes the next executable instance in the log, updates the instance's
@@ -189,6 +184,17 @@
     - commit(index_: int)
       # sets the status of the instance at index to committed and possibly wakes
       # up the executor thread if the log is executable.
+
+  - private methods:
+
+    - executable(void) -> bool
+      # returns true if the log contains an executable instance, i.e. the
+      # instance right after last_executed_ is committed.
+
+      # preconditions: mu_ must be held
+
+      return log_[last_executed_+1] != empty &&
+        log_[last_executed_+1].status == committed
 
 try_again:
       exe_mu_.lock()
