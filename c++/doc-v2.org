@@ -150,21 +150,17 @@
       starts at index 1; therefore, last_index_ is initialized to 0, signifying
       an empty log.
 
-    - last_executed_index_: index of the last executed instance. initialized
-      to 0.
+    - last_executed_: index of the last executed instance. initialized to 0.
 
-    - global_last_executed_index_: index of the last executed instance on all
-      peers known to this peer. initialized to 0.
-
+    - global_last_executed_: index of the last executed instance on all peers
+      known to this peer. initialized to 0.
 
     - cv_, mu_: a condition variable and mutex for the object.
 
   - methods
 
-    - constructor(cv: *condition_variable, mu: *mutex)
-      cv_ = cv
-      mu_ = mu
-      head_ = tail_ = min_tail_ = 0
+    - constructor()
+      last_index_ = last_executed_index_ = global_last_executed_index_ = 0
 
     - tail(void) -> int
       return tail_
