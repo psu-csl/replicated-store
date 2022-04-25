@@ -19,8 +19,8 @@ class Log {
  private:
   std::unordered_map<int64_t, Instance> log_;
   int64_t last_index_ = 0;
-  int64_t last_executed_index_ = 0;
-  int64_t global_last_executed_index_ = 0;
+  int64_t last_executed_ = 0;
+  int64_t global_last_executed_ = 0;
   std::mutex mu_;
   std::condition_variable cv_;
 };
