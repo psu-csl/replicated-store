@@ -17,6 +17,8 @@ class Log {
   Log& operator=(Log&& log) = delete;
 
  private:
+  bool Executable(void) const;
+
   std::unordered_map<int64_t, Instance> log_;
   int64_t last_index_ = 0;
   int64_t last_executed_ = 0;
