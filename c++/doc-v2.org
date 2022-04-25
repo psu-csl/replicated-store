@@ -179,8 +179,9 @@
       acquire mu_ and release it automatically on exit
       return global_last_executed_
 
-    - advance_head(void) -> int
-      return ++head_
+    - advance_last_executed(void) -> int
+      acquire mu_ and release it automatically on exit
+      return ++last_executed_
 
     - execute(kv: KVStore) -> (client-id, result)
       # executes the next executable instance in the log, updates the instance's
@@ -411,7 +412,7 @@ try_again:
     - replicate(cmd: command, client-id: int) -> accept_result_t
       if i_am_leader()
         if ready_
-          return accept(cmd, log_.advance_head(), client-id)
+          return accept(cmd, log_.advance_last_executed(), client-id)
         return accept_result_t{type_: retry, leader_: N/A}
       if someone_else_is_leader()
         return accept_result_t{type_: reject, leader_: leader()}
