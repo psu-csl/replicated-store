@@ -73,8 +73,6 @@
     - log_: Log
     - tp_: Threadpool
     - l_: socket
-    - exe_cv_: condition_variable
-    - exe_mu_: mutex
     - map_: map from client_id(int) to socket object
     - client_id_: id of the next client that will connect
     - id_: id of the peers
@@ -85,7 +83,7 @@
     - constructor(cfg: config)
       kv_ = new(KVStore)
       c_ = new(Consensus(cfg))
-      log_ = new(Log(&exe_cv_, &exe_mu_))
+      log_ = new(Log())
       id_ = config["id"]
       client_id_ = id_
       num_peers_ = confg["num_peers"]
@@ -199,7 +197,7 @@
       # up the executor thread if the log is executable.
 
 try_again:
-      exe_mu_.lock()
+      mu_.lock()
       * # when running prepare, we will ask peers, including ourselves, to send us
         # their log starting at their global_last_executed_ and merge it to our
         # log. then we will run accept on all instances starting at
@@ -212,7 +210,7 @@ try_again:
         # in-progress state.
 
       if log_[index_] == empty
-        exe_mu_.unlock()
+        mu_.unlock()
         goto try_again:
 
       if log_[index_].status == in-progress
@@ -223,13 +221,13 @@ try_again:
       # state. in this case, we should wake up the thread to execute the entry
       # on our state machine.
       if (executable())
-        exe_cv_.notify_one()
-      exe_mu_.unlock()
+        cv_.notify_one()
+      mu_.unlock()
 
     - commit_until(last_executed: int, round_: int)
       # sets the status of all the instances from last_executed_ until tail and
       # wakes up the executor thread if necessary.
-      exe_mu_.lock()
+      mu_.lock()
       for (int i = last_executed_+1; i <= last_executed; ++i)
         * # we may receive a heartbeat before we receive the accept message;
           # therefore, the heartbeat handler will run this function while there is
@@ -255,8 +253,8 @@ try_again:
         if (log_[index].round_ == round_)
           log_[i].status = committed
       if (executable())
-        exe_cv_.notify_one()
-      exe_mu_.unlock()
+        cv_.notify_one()
+      mu_.unlock()
 
     - trim_until(global_last_executed: int)
       while global_last_executed_ < global_last_executed
