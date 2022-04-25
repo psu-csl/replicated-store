@@ -338,11 +338,11 @@ try_again:
         #     committed, then we will eventually execute it; if it is
         #     in-progress, then it will either be committed or updated with a
         #     new command.
-        # (4) we update the head and return
+        # (4) we update the last_index_ and return
       if log_[i] == empty
         assert(i > last_executed_)
         log_[i] = instance_
-        head_ = max(head_, i)
+        last_index_ = max(last_index_, i)
         if log_[i].status == executed
           log_[i].status = committed
         return
@@ -397,7 +397,6 @@ try_again:
 
   - members
     - peers
-    - head_
     - log_: Log
     - id_
     - ready_
