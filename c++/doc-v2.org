@@ -177,8 +177,9 @@
       acquire mu_ and release it automatically on exit
       return last_executed_
 
-    - min_tail(void) -> int
-      return min_tail_
+    - global_last_executed(void) -> int
+      acquire mu_ and release it automatically on exit
+      return global_last_executed_
 
     - advance_head(void) -> int
       return ++head_
