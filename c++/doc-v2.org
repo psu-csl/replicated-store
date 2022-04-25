@@ -173,8 +173,9 @@
     - constructor()
       last_index_ = last_executed_index_ = global_last_executed_index_ = 0
 
-    - tail(void) -> int
-      return tail_
+    - last_executed(void) -> int
+      acquire mu_ and release it automatically on exit
+      return last_executed_
 
     - min_tail(void) -> int
       return min_tail_
@@ -542,7 +543,7 @@ try_again:
         min_tail = log_.min_tail()
         for (;;) {
           request = heartbeat_rpc_request{round_: round_,
-                                          tail_: log_.tail()
+                                          tail_: log_.last_executed()
                                           min_tail_: min_tail}
           for each peer p {
             run closure in a separate thread {
@@ -573,7 +574,7 @@ try_again:
         log_.commit_until(message_.tail_, round_)
         log_.trim_until(message_.min_tail_)
       # stale message
-      return heartbeat_rpc_response{tail_: log_.tail()}
+      return heartbeat_rpc_response{tail_: log_.last_executed()}
 
 == TODO ========================================================================
 
