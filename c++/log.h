@@ -21,6 +21,11 @@ class Log {
     return last_executed_;
   }
 
+  int64_t global_last_executed(void) const {
+    std::scoped_lock lock(mu_);
+    return global_last_executed_;
+  }
+
  private:
   bool Executable(void) const;
 
