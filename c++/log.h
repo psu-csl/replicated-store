@@ -16,12 +16,12 @@ class Log {
   Log(Log&& log) = delete;
   Log& operator=(Log&& log) = delete;
 
-  int64_t last_executed(void) const {
+  int64_t LastExecuted(void) const {
     std::scoped_lock lock(mu_);
     return last_executed_;
   }
 
-  int64_t global_last_executed(void) const {
+  int64_t GlobalLastExecuted(void) const {
     std::scoped_lock lock(mu_);
     return global_last_executed_;
   }
