@@ -52,16 +52,16 @@
 - message prepare_rpc_response
   - type_: enum {ok, reject, timeout}
   - round_: round of the remote peer (valid only if type_ == reject)
-  - log_: instances since min_tail_ in the corresponding prepareRPC request (valid
-    only if type_ == ok}
+  - log_: instances since global_last_executed_ in the corresponding prepareRPC
+    request (valid only if type_ == ok}
 
 - message heartbeat_rpc_request
   - round_: local round
-  - tail_: int (tail of the leader)
-  - min_tail_: int (minimum of all tail_s seen so far)
+  - last_executed_: int
+  - global_last_executed_: int
 
 - message heartbeat_rpc_response
-  - tail_: int (local tail_)
+  - last_executed_: int (local last_executed_)
 
 * OBJECTS
 
@@ -186,12 +186,12 @@
 
     - execute(kv: KVStore) -> (client-id, result)
       # executes the next executable instance in the log, updates the instance's
-      # status, increments tail_, and returns the result and the id of the
-      # client that originated the command.
+      # status, increments last_executed_, and returns the result and the id of
+      # the client that originated the command.
       assert(executable())
-      instance = &log_[tail_+1]
+      instance = &log_[last_executed_+1]
       result = kv.execute(instance.cmd)
-      ++tail_
+      ++last_executed_
       return (instance.client-id_, result)
 
     - commit(index_: int)
@@ -201,14 +201,15 @@
 try_again:
       exe_mu_.lock()
       * # when running prepare, we will ask peers, including ourselves, to send us
-        # their log starting at their min_tail_ and merge it to our log. then we
-        # will run accept on all instances starting at min_tail_. hence, we may
-        # run accept on an instance that is already committed or even executed in
-        # our log. our accept handler will not touch log_ for such instances but
-        # it will respond with an accept and eventually, we may run commit for
-        # such instances, in which case we will end up here. for those instances,
-        # commit must be a no-op. hence, we will only update an instances status
-        # to committed only if it is in in-progress state.
+        # their log starting at their global_last_executed_ and merge it to our
+        # log. then we will run accept on all instances starting at
+        # global_last_executed_. hence, we may run accept on an instance that is
+        # already committed or even executed in our log. our accept handler will
+        # not touch log_ for such instances but it will respond with an accept
+        # and eventually, we may run commit for such instances, in which case we
+        # will end up here. for those instances, commit must be a no-op. hence,
+        # we will only update an instances status to committed only if it is in
+        # in-progress state.
 
       if log_[index_] == empty
         exe_mu_.unlock()
@@ -225,11 +226,11 @@ try_again:
         exe_cv_.notify_one()
       exe_mu_.unlock()
 
-    - commit_until(tail: int, round_: int)
-      # sets the status of all the instances from tail_ until tail and wakes up
-      # the executor thread if necessary.
+    - commit_until(last_executed: int, round_: int)
+      # sets the status of all the instances from last_executed_ until tail and
+      # wakes up the executor thread if necessary.
       exe_mu_.lock()
-      for (int i = tail_+1; i <= tail; ++i)
+      for (int i = last_executed_+1; i <= last_executed; ++i)
         * # we may receive a heartbeat before we receive the accept message;
           # therefore, the heartbeat handler will run this function while there is
           # a gap in the log. when we see a gap, we break out of the loop and try
@@ -241,39 +242,40 @@ try_again:
         * # as a follower, we will usually have in-progress instances in our log;
           # in the common case, we will receive a higher tail value from the
           # leader and we will catch up by committing instances in our own log.
-          # however, it is possible that (1) we experience a partition, (2) a new
-          # leader emerges and establishes new commands for those instances, and
-          # (3) we reconnect. now, if we receive a heartbeat with a higher tail
-          # value then we shouldn't blindly commit instances in our log; we should
-          # commit them only if the round numbers match (which corresponds to the
-          # common case). otherwise, as a follower we will just get stuck here and
-          # prevent min_tail_ from advancing, until a new leader is elected and
-          # replays every instances since min_tail_ and we discover the new
-          # commands and update stale instances in our log.
+          # however, it is possible that (1) we experience a partition, (2) a
+          # new leader emerges and establishes new commands for those instances,
+          # and (3) we reconnect. now, if we receive a heartbeat with a higher
+          # tail value then we shouldn't blindly commit instances in our log; we
+          # should commit them only if the round numbers match (which
+          # corresponds to the common case). otherwise, as a follower we will
+          # just get stuck here and prevent global_last_executed_ from
+          # advancing, until a new leader is elected and replays every instances
+          # since global_last_executed_ and we discover the new commands and
+          # update stale instances in our log.
         if (log_[index].round_ == round_)
           log_[i].status = committed
       if (executable())
         exe_cv_.notify_one()
       exe_mu_.unlock()
 
-    - trim_until(min_tail_leader_: int)
-      while min_tail_ < min_tail_leader_
-        ++min_tail_
-        assert(log_[min_tail_].status == executed)
-        del log_[min_tail_]
+    - trim_until(global_last_executed: int)
+      while global_last_executed_ < global_last_executed
+        ++global_last_executed_
+        assert(log_[global_last_executed_].status == executed)
+        del log_[global_last_executed_]
 
     - append(instance_: instance_t)
       * # log invariants
         #
         # given that (1) the instances in the log must be executed in order, (2)
-        # tail_ is the index of the last executed instance, and (3) min_tail_ is
-        # the index of the last instance that was executed in all peers, our log
-        # has the following invariants:
+        # last_executed_ is the index of the last executed instance, and (3)
+        # global_last_executed_ is the index of the last instance that was
+        # executed in all peers, our log has the following invariants:
         #
-        # (i1) there is no gap before or at tail_
-        # (i2) there is no executed instance after tail_.
-        # (i3) min_tail_ <= tail_
-        # (i4) there are no instances at indices < min_tail_
+        # (i1) there is no gap before or at last_executed_
+        # (i2) there is no executed instance after last_executed_.
+        # (i3) global_last_executed_ <= last_executed_
+        # (i4) there are no instances at indices < global_last_executed_
 
       * # append() call-paths
         #
@@ -291,30 +293,34 @@ try_again:
         # pruned from our log. it is possible to receive such an instance in
         # (c1), for example, if
         #
-        # (1) we currently have min_tail = 13
+        # (1) we currently have global_last_executed_ = 13
         # (2) a new leader sends us a prepare request
-        # (3) we respond by sending instances after min_tail_, e.g. (14, 15, 16)
-        # (4) we receive a heartbeat with min_tail_ = 15 from the old leader
-        # (5) we trim our log and set min_tail_ to 15
+        # (3) we respond by sending instances after global_last_executed_, e.g.
+        #     (14, 15, 16)
+        # (4) we receive a heartbeat with global_last_executed_ = 15 from the
+        #     old leader
+        # (5) we trim our log and set global_last_executed_ to 15
         # (6) we receive an accept from the new leader for the instance 14
         #
         # it is also possible to receive such an instance in case (c2), for
         # example, if
         #
-        # (1) we currently have min_tail = 13
+        # (1) we currently have global_last_executed_ = 13
         # (2) we become a leader candidate and send prepare request to peers
-        # (3) we receive a heartbeat with min_tail = 15 from the old leader
-        # (4) we trim our log and set min_tail to 15
-        # (5) we receive logs from the other peers who still have min_tail = 13
+        # (3) we receive a heartbeat with global_last_executed_ = 15 from the
+        #     old leader
+        # (4) we trim our log and set global_last_executed_ to 15
+        # (5) we receive logs from the other peers who still have
+        #     global_last_executed_ = 13
         #
         # we should ignore such instances.
       i = instance_.index_
-      if i <= min_tail_
+      if i <= global_last_executed_
         return
 
       * # case (2): log_[instance_.index] is empty
         #
-        # in that case, it must be the case that i > tail_ due to (i1).
+        # in that case, it must be the case that i > last_executed_ due to (i1).
         #
         # (1) we assert i1.
         # (2) we insert instance_ to our log.
@@ -335,7 +341,7 @@ try_again:
         #     new command.
         # (4) we update the head and return
       if log_[i] == empty
-        assert(i > tail_)
+        assert(i > last_executed_)
         log_[i] = instance_
         head_ = max(head_, i)
         if log_[i].status == executed
@@ -386,7 +392,7 @@ try_again:
           append(instance)
 
     - new_instances() -> instance_t[]
-      # return instances since min_tail_
+      # return instances since global_last_executed_
 
 - Consensus
 
@@ -541,11 +547,11 @@ try_again:
         num_responses = 0
         ok_responses = vector
         cv, mu
-        min_tail = log_.min_tail()
+        global_last_executed = log_.global_last_executed()
         for (;;) {
           request = heartbeat_rpc_request{round_: round_,
-                                          tail_: log_.last_executed()
-                                          min_tail_: min_tail}
+                                          last_executed_: log_.last_executed()
+                                          global_last_executed_: global_last_executed}
           for each peer p {
             run closure in a separate thread {
               response = p.heartbeatRPC(request)
@@ -561,7 +567,7 @@ try_again:
           while i_am_leader() && num_responses != peers_.size():
             cv.wait(mu)
           if ok_responses.size() == peers_.size():
-            min_tail = min(ok_responses)
+            global_last_executed = min(ok_responses)
           if someone_else_is_leader():
             break
           sleep(heartbeat_interval_)
@@ -572,10 +578,10 @@ try_again:
       if message.round >= round_:
         last_heartbeat_ = time::now()
         round_ = message.round_
-        log_.commit_until(message_.tail_, round_)
-        log_.trim_until(message_.min_tail_)
+        log_.commit_until(message_.last_executed_, round_)
+        log_.trim_until(message_.global_last_executed_)
       # stale message
-      return heartbeat_rpc_response{tail_: log_.last_executed()}
+      return heartbeat_rpc_response{last_executed_: log_.last_executed()}
 
 == TODO ========================================================================
 
@@ -598,10 +604,10 @@ try_again:
 - how to let peers know the committed? we can do it with the heartbeat, but
   should we, given that we already let everyone know executed entries?
 
-  - the difference between min_tail_ and the committed entries is that we can
-    only communicate min_tail_ if we have received the tails of all peers,
-    whereas we can communicate the committed entries once we have the responses
-    from the majority.
+  - the difference between global_last_executed_ and the committed entries is
+    that we can only communicate global_last_executed_ if we have received the
+    tails of all peers, whereas we can communicate the committed entries once we
+    have the responses from the majority.
 
 - handle duplicate responses due to retries
 
@@ -623,12 +629,3 @@ try_again:
   piggybacking onto accepts) sending commit messages to followers.
 
 == SCRATCH SPACE ===============================================================
-    0    1   2   3   4
-x: |a,x|b,x|c,x|d,x|   |             min_tail = 1, tail = 3
-
-f1:|a,x|b,x|c,x|d,x|   |             min_tail = 1, tail = 3
-
-f2:|a,x|b,x|c  |d,i|   |             min_tail = 1, tail = 1
-
-
-min_tail = 1
