@@ -26,6 +26,11 @@ class Log {
     return global_last_executed_;
   }
 
+  int64_t AdvanceLastExecuted(void) {
+    std::scoped_lock lock(mu_);
+    return ++last_executed_;
+  }
+
  private:
   bool Executable(void) const {
     auto it = log_.find(last_executed_ + 1);
