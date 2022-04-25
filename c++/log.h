@@ -16,6 +16,11 @@ class Log {
   Log(Log&& log) = delete;
   Log& operator=(Log&& log) = delete;
 
+  int64_t last_executed(void) const {
+    std::scoped_lock lock(mu_);
+    return last_executed_;
+  }
+
  private:
   bool Executable(void) const;
 
