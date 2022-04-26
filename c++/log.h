@@ -26,9 +26,9 @@ class Log {
     return global_last_executed_;
   }
 
-  int64_t AdvanceLastExecuted(void) {
+  int64_t AdvanceLastIndex(void) {
     std::scoped_lock lock(mu_);
-    return ++last_executed_;
+    return ++last_index_;
   }
 
  private:
@@ -41,7 +41,7 @@ class Log {
   int64_t last_index_ = 0;
   int64_t last_executed_ = 0;
   int64_t global_last_executed_ = 0;
-  std::mutex mu_;
+  mutable std::mutex mu_;
   std::condition_variable cv_;
 };
 
