@@ -35,9 +35,9 @@ Paxos::Paxos(KVStore* store, const json& config)
 
 Result Paxos::AgreeAndExecute(Command cmd) {
   Result r;
-  switch (cmd.type) {
+  switch (cmd.type_) {
     case CommandType::kGet: {
-      auto v = store_->get(cmd.key);
+      auto v = store_->get(cmd.key_);
       if (v != nullptr) {
         r.ok = true;
         r.value = *v;
@@ -45,11 +45,11 @@ Result Paxos::AgreeAndExecute(Command cmd) {
       break;
     }
     case CommandType::kPut: {
-      r.ok = store_->put(cmd.key, cmd.value);
+      r.ok = store_->put(cmd.key_, cmd.value_);
       break;
     }
     case CommandType::kDel: {
-      r.ok = store_->del(cmd.key);
+      r.ok = store_->del(cmd.key_);
       break;
     }
   }

@@ -82,7 +82,7 @@ std::string Replicant::ReadLine(tcp::socket* cli) {
 }
 
 void Replicant::HandleCommand(tcp::socket* cli, Command cmd) {
-  bool is_get = cmd.type == CommandType::kGet;
+  bool is_get = cmd.type_ == CommandType::kGet;
   auto r = consensus_->AgreeAndExecute(std::move(cmd));
 
   static const std::string success = "success\n";
