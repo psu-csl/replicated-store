@@ -60,3 +60,25 @@ target_link_libraries(replicant
   grpc_proto
   ${_GRPC_GRPCPP}
   ${_PROTOBUF_LIBPROTOBUF})
+
+# tests
+include(FetchContent)
+
+FetchContent_Declare(
+  googletest
+  URL https://github.com/google/googletest/archive/609281088cfefc76f9d0ce82e1ff6c30cc3591e5.zip
+)
+FetchContent_MakeAvailable(googletest)
+enable_testing()
+
+add_executable(
+  log_test
+  log_test.cc
+)
+target_link_libraries(
+  log_test
+  gtest_main
+)
+
+include(GoogleTest)
+gtest_discover_tests(log_test)
