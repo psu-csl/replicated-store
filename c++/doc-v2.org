@@ -7,6 +7,13 @@
     - key_: string
     - value_: string (valid only if type_ == put)
 
+- struct Result
+  - synopsis: result of a key-value command
+  - fields:
+    - ok_: bool (true if result is a success, false otherwise)
+    - value_: string (if ok_ == false, contains error message, otherwise
+      contains return value for a get command or empty for put and del)
+
 - struct Instance
   - synopsis: entry in the log. each instance starts in the in-progress state,
     and changes to the committed state once quorum has voted for it, and changes

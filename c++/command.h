@@ -12,8 +12,8 @@ struct Command {
 };
 
 struct Result {
-  bool ok = false;
-  std::string value;
+  bool ok_ = false;
+  std::string value_;
 };
 
 #endif
