@@ -34,26 +34,7 @@ Paxos::Paxos(KVStore* store, const json& config)
 }
 
 Result Paxos::AgreeAndExecute(Command cmd) {
-  Result r;
-  switch (cmd.type_) {
-    case CommandType::kGet: {
-      auto v = store_->get(cmd.key_);
-      if (v != nullptr) {
-        r.ok = true;
-        r.value = *v;
-      }
-      break;
-    }
-    case CommandType::kPut: {
-      r.ok = store_->put(cmd.key_, cmd.value_);
-      break;
-    }
-    case CommandType::kDel: {
-      r.ok = store_->del(cmd.key_);
-      break;
-    }
-  }
-  return r;
+  return store_->Execute(cmd);
 }
 
 void Paxos::HeartBeat(void) {

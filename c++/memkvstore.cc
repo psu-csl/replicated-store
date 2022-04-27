@@ -2,7 +2,7 @@
 #include <string>
 
 #include "command.h"
-#include "memstore.h"
+#include "memkvstore.h"
 
 static std::string kKeyNotFound = "key not found";
 static std::string kEmpty = "";

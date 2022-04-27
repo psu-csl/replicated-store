@@ -1,5 +1,3 @@
-#include "replicant.h"
-
 #include <glog/logging.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
@@ -9,10 +7,13 @@
 #include <iostream>
 #include <memory>
 #include <optional>
+
+#include "command.h"
 #include "json.h"
+#include "replicant.h"
 
 Replicant::Replicant(const json& config)
-    : consensus_(new Paxos(new MemStore(), config)),
+    : consensus_(new Paxos(new MemKVStore(), config)),
       acceptor_(io_),
       tp_(config["threadpool_size"]) {
   // determine port number for clients, which is 1 more than the port for paxos
@@ -88,12 +89,10 @@ void Replicant::HandleCommand(tcp::socket* cli, Command cmd) {
   static const std::string success = "success\n";
   static const std::string failure = "failure\n";
 
-  if (r.ok) {
+  if (r.ok_) {
     asio::write(*cli, asio::buffer(success));
-    if (is_get) {
-      r.value.push_back('\n');
-      asio::write(*cli, asio::buffer(r.value));
-    }
+    if (is_get)
+      asio::write(*cli, asio::buffer(*r.value_));
   } else {
     asio::write(*cli, asio::buffer(failure));
   }

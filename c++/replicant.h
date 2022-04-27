@@ -6,7 +6,7 @@
 #include <optional>
 
 #include "json_fwd.h"
-#include "memstore.h"
+#include "memkvstore.h"
 #include "paxos.h"
 
 using asio::ip::tcp;
