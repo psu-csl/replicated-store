@@ -31,12 +31,12 @@ class Log {
     return ++last_index_;
   }
 
- private:
   bool Executable(void) const {
     auto it = log_.find(last_executed_ + 1);
     return it != log_.end() && it->second.state_ == InstanceState::kCommitted;
   }
 
+ private:
   std::unordered_map<int64_t, Instance> log_;
   int64_t last_index_ = 0;
   int64_t last_executed_ = 0;
