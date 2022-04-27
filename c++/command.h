@@ -13,7 +13,7 @@ struct Command {
 
 struct Result {
   bool ok_ = false;
-  std::string value_;
+  std::string* value_;
 };
 
 #endif
