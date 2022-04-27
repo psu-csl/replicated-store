@@ -4,13 +4,13 @@
 #include "command.h"
 #include "kvstore.h"
 
-class MemStore : public KVStore {
+class MemKVStore : public KVStore {
  public:
-  MemStore() = default;
-  MemStore(MemStore const& store) = delete;
-  MemStore& operator=(MemStore const& store) = delete;
-  MemStore(MemStore&& store) = delete;
-  MemStore& operator=(MemStore&& store) = delete;
+  MemKVStore() = default;
+  MemKVStore(MemKVStore const& store) = delete;
+  MemKVStore& operator=(MemKVStore const& store) = delete;
+  MemKVStore(MemKVStore&& store) = delete;
+  MemKVStore& operator=(MemKVStore&& store) = delete;
 
   std::string* Get(const std::string& key) override;
   bool Put(const std::string& key, const std::string& value) override;
