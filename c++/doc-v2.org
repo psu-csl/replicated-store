@@ -164,7 +164,7 @@
 
   - private methods:
 
-    - executable(void) -> bool
+    - is_executable(void) -> bool
       # returns true if the log contains an executable instance, i.e. the
       # instance right after last_executed_ is committed.
 
