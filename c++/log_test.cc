@@ -7,5 +7,5 @@ TEST(LogTest, Constructor) {
 
   EXPECT_EQ(log.LastExecuted(), 0);
   EXPECT_EQ(log.GlobalLastExecuted(), 0);
-  EXPECT_FALSE(log.Executable());
+  EXPECT_FALSE(log.IsExecutable());
 }

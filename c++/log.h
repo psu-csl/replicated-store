@@ -31,7 +31,7 @@ class Log {
     return ++last_index_;
   }
 
-  bool Executable(void) const {
+  bool IsExecutable(void) const {
     auto it = log_.find(last_executed_ + 1);
     return it != log_.end() && it->second.state_ == InstanceState::kCommitted;
   }
