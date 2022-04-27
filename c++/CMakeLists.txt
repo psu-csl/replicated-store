@@ -81,5 +81,15 @@ target_link_libraries(
   gtest_main
 )
 
+add_executable(
+  memkvstore_test
+  memkvstore_test.cc memkvstore.cc
+)
+target_link_libraries(
+  memkvstore_test
+  gtest_main glog::glog
+)
+
 include(GoogleTest)
 gtest_discover_tests(log_test)
+gtest_discover_tests(memkvstore_test)
