@@ -4,8 +4,8 @@
 #include "command.h"
 #include "kvstore.h"
 
-static std::string kKeyNotFound = "key not found";
-static std::string kEmpty = "";
+static std::string const kKeyNotFound = "key not found";
+static std::string const kEmpty = "";
 
 class MemKVStore : public KVStore {
  public:
