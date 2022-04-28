@@ -11,9 +11,14 @@ public class Log {
   private long lastExecuted = 0;
   private long globalLastExecuted = 0;
   private ReentrantLock mu;
-  private Condition cv = mu.newCondition();
+  private Condition cv;
   private HashMap<Long, Instance> log;
 
+  public Log(){
+    log = new HashMap<>();
+    mu = new ReentrantLock();
+    cv = mu.newCondition();
+  }
   public long getLastExecuted() {
     mu.lock();
     try {
