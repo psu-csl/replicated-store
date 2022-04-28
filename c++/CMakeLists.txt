@@ -72,24 +72,9 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(googletest)
 enable_testing()
 
-add_executable(
-  log_test
-  log_test.cc
-)
-target_link_libraries(
-  log_test
-  gtest_main
-)
-
-add_executable(
-  memkvstore_test
-  memkvstore_test.cc memkvstore.cc
-)
-target_link_libraries(
-  memkvstore_test
-  gtest_main glog::glog
-)
-
 include(GoogleTest)
-gtest_discover_tests(log_test)
-gtest_discover_tests(memkvstore_test)
+foreach(_target log memkvstore)
+  add_executable("${_target}_test" "${_target}.cc" "${_target}_test.cc")
+  target_link_libraries("${_target}_test" gtest_main glog::glog)
+  gtest_discover_tests("${_target}_test")
+endforeach()
