@@ -4,9 +4,6 @@
 #include "command.h"
 #include "memkvstore.h"
 
-static std::string kKeyNotFound = "key not found";
-static std::string kEmpty = "";
-
 std::string* MemKVStore::Get(const std::string& key) {
   auto it = map_.find(key);
   if (it != map_.end())
