@@ -1,39 +1,44 @@
 package command;
 
-
-/*
-Command :
-    - CommandID
-    - Key
-    - Value
-    - Type
- */
-
 public class Command {
 
-  // TODO : ? not sure what to set commandID
-  //private long commandID;
-  private final String key;
-  private final String value;
-  private final String commandType;
+  private CommandType type;
+  private String key;
+  private String value;
 
-  public Command(String key, String value, String type) {
+  public Command(String key, String value, CommandType type){
     this.key = key;
     this.value = value;
-    this.commandType = type;
+    this.type = type;
+  }
+  public CommandType getCommandType() {
+    return type;
+  }
+
+  public void setCommandType(CommandType type) {
+    this.type = type;
   }
 
   public String getKey() {
-    return this.key;
+    return key;
   }
+
+  public void setKey(String key) {
+    this.key = key;
+  }
+
+  ;
 
   public String getValue() {
-    return this.value;
+    return value;
   }
 
-  public String getCommandType() {
-    return this.commandType;
+  public void setValue(String value) {
+    this.value = value;
   }
+  public enum CommandType {
+    kGet, kPut, kDel
+  }
+
 
 }
-

@@ -1,5 +1,6 @@
 package replicant;
 
+import command.Command.CommandType;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
@@ -93,6 +94,15 @@ public class HTTPRequest {
 
   public String getMethod() {
     return method;
+  }
+
+  public CommandType getComandType() {
+    return switch (this.method) {
+      case "Get" -> CommandType.kGet;
+      case "Put" -> CommandType.kPut;
+      case "Delete" -> CommandType.kDel;
+      default -> null;
+    };
   }
 
   public Map<String, String> getParams() {

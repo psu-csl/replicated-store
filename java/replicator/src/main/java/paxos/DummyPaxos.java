@@ -1,7 +1,8 @@
 package paxos;
 
 import command.Command;
-import command.CommandResult;
+import command.Command.CommandType;
+import command.Result;
 import kvstore.KVStore;
 
 public class DummyPaxos {
@@ -12,25 +13,25 @@ public class DummyPaxos {
     this.kvStore = kvStore;
   }
 
-  public CommandResult agreeAndExecute(Command cmd) {
-    String cmdName = cmd.getCommandType();
+  public Result agreeAndExecute(Command cmd) {
+    CommandType cmdName = cmd.getCommandType();
     boolean isSuccess;
-    CommandResult dummyPaxosResult;
+    Result dummyPaxosResult;
     switch (cmdName) {
-      case "Get":
+      case kGet:
         String value = kvStore.get(cmd.getKey());
-        dummyPaxosResult = new CommandResult(true, value);
+        dummyPaxosResult = new Result(true, value);
         break;
-      case "Put":
+      case kPut:
         isSuccess = kvStore.put(cmd.getKey(), cmd.getValue());
-        dummyPaxosResult = new CommandResult(isSuccess, null);
+        dummyPaxosResult = new Result(isSuccess, null);
         break;
-      case "Del":
+      case kDel:
         isSuccess = kvStore.del(cmd.getKey());
-        dummyPaxosResult = new CommandResult(isSuccess, null);
+        dummyPaxosResult = new Result(isSuccess, null);
         break;
       default:
-        dummyPaxosResult = new CommandResult(false, null);
+        dummyPaxosResult = new Result(false, null);
     }
 
     return dummyPaxosResult;

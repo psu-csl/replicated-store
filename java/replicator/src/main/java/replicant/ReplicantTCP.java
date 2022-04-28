@@ -1,6 +1,7 @@
 package replicant;
 
 import command.Command;
+import command.Command.CommandType;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.PrintWriter;
@@ -42,7 +43,7 @@ public class ReplicantTCP extends TCPServer {
         String value = kvRequest.getValue();
 
         //  send requests to paxos to be handled over thread pool
-        String method = kvRequest.getCommandType();
+        CommandType method = kvRequest.getCommandType();
 
         Command cmd = new Command(kvRequest.getKey(), kvRequest.getValue(), method);
         Future<TCPResponse> future = threadPool.submit(new Task(cmd, paxos));

@@ -1,7 +1,7 @@
 package replicant;
 
 import command.Command;
-import command.CommandResult;
+import command.Result;
 import java.util.concurrent.Callable;
 import paxos.DummyPaxos;
 
@@ -18,8 +18,8 @@ public class Task implements Callable<TCPResponse> {
   @Override
   public TCPResponse call() throws Exception {
 
-    CommandResult commandResult = paxos.agreeAndExecute(cmd);
-    TCPResponse response = new TCPResponse(commandResult.isSuccessful(), commandResult.getValue());
+    Result commandResult = paxos.agreeAndExecute(cmd);
+    TCPResponse response = new TCPResponse(commandResult.isOk(), commandResult.getValue());
     return response;
         /* GET
         if (commandResult.getValue() != null && commandResult.isSuccessful()) {
