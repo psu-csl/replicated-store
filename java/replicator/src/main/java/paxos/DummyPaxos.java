@@ -3,14 +3,14 @@ package paxos;
 import command.Command;
 import command.Command.CommandType;
 import command.Result;
-import kvstore.KVStore;
+import kvstore.MemStore;
 
 public class DummyPaxos {
 
-  private final KVStore kvStore;
+  private final MemStore memStore;
 
-  public DummyPaxos(KVStore kvStore) {
-    this.kvStore = kvStore;
+  public DummyPaxos(MemStore memStore) {
+    this.memStore = memStore;
   }
 
   public Result agreeAndExecute(Command cmd) {
@@ -18,20 +18,19 @@ public class DummyPaxos {
     boolean isSuccess;
     Result dummyPaxosResult;
     switch (cmdName) {
-      case kGet:
-        String value = kvStore.get(cmd.getKey());
+      case kGet -> {
+        String value = memStore.get(cmd.getKey());
         dummyPaxosResult = new Result(true, value);
-        break;
-      case kPut:
-        isSuccess = kvStore.put(cmd.getKey(), cmd.getValue());
+      }
+      case kPut -> {
+        isSuccess = memStore.put(cmd.getKey(), cmd.getValue());
         dummyPaxosResult = new Result(isSuccess, null);
-        break;
-      case kDel:
-        isSuccess = kvStore.del(cmd.getKey());
+      }
+      case kDel -> {
+        isSuccess = memStore.del(cmd.getKey());
         dummyPaxosResult = new Result(isSuccess, null);
-        break;
-      default:
-        dummyPaxosResult = new Result(false, null);
+      }
+      default -> dummyPaxosResult = new Result(false, null);
     }
 
     return dummyPaxosResult;

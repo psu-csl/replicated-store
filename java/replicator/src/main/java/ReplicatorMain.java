@@ -1,10 +1,8 @@
-import java.io.IOException;
-
 public class ReplicatorMain {
 
-  public static void main(String[] args) throws IOException {
+  public static void main(String[] args) {
 
-    /*KVStore kvStore = new KVStore();
+    /*MemStore kvStore = new MemStore();
     DummyPaxos paxos = new DummyPaxos(kvStore);
     int tpSize = 10;
     */
