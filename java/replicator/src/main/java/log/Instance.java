@@ -1,21 +1,21 @@
 package log;
 
-import command.Command.CommandType;
+import command.Command;
 
 public class Instance {
 
-  private CommandType command;
+  private Command command;
 
   private long round;
   private long index;
   private long clientId;
   private InstanceState state;
 
-  public CommandType getCommand() {
+  public Command getCommand() {
     return command;
   }
 
-  public void setCommand(CommandType command) {
+  public void setCommand(Command command) {
     this.command = command;
   }
 
