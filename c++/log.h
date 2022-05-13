@@ -4,9 +4,12 @@
 #include <condition_variable>
 #include <cstdint>
 #include <mutex>
+#include <tuple>
 #include <unordered_map>
 
+#include "command.h"
 #include "instance.h"
+#include "kvstore.h"
 
 class Log {
  public:
@@ -35,6 +38,8 @@ class Log {
     auto it = log_.find(last_executed_ + 1);
     return it != log_.end() && it->second.state_ == InstanceState::kCommitted;
   }
+
+  std::tuple<client_id_t, Result> Execute(KVStore* kv);
 
  private:
   std::unordered_map<int64_t, Instance> log_;
