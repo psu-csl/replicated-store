@@ -6,14 +6,14 @@
 enum class CommandType { kGet, kPut, kDel };
 
 struct Command {
-  CommandType type_;
+  CommandType type_ = CommandType::kGet;
   std::string key_;
   std::string value_;
 };
 
 struct Result {
   bool ok_ = false;
-  std::string const* value_;
+  std::string const* value_ = nullptr;
 };
 
 #endif
