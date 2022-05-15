@@ -9,10 +9,11 @@ std::tuple<client_id_t, Result> Log::Execute(KVStore* kv) {
 
   auto it = log_.find(last_executed_ + 1);
   CHECK(it != log_.end());
-  Instance const* instance = &it->second;
+  Instance* instance = &it->second;
 
   CHECK_NOTNULL(kv);
   Result result = kv->Execute(instance->command_);
+  instance->state_ = InstanceState::kExecuted;
   ++last_executed_;
   return {instance->client_id_, result};
 }
