@@ -11,6 +11,8 @@ struct Command {
   std::string value_;
 };
 
+bool operator==(Command const& lhs, Command const& rhs);
+
 struct Result {
   bool ok_ = false;
   std::string const* value_ = nullptr;
