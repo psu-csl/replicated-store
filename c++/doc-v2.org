@@ -182,7 +182,7 @@
       # returns true if the log contains an executable instance, i.e. the
       # instance right after last_executed_ is committed.
       return log_[last_executed_+1] != empty &&
-        log_[last_executed_+1].status == committed
+        log_[last_executed_+1].state == committed
 
   - public methods
 
@@ -207,7 +207,7 @@
       # As described above, this method acts as a consume method of a
       # producer/consumer queue. Therefore, it sleeps until it is woken up by
       # someone calling commit (i.e. produce) method of the queue. Once woken
-      # up, it executes one instance, sets the status of the instance to
+      # up, it executes one instance, sets the state of the instance to
       # executed, increments last_executed_, and returns the result and the id
       # of the client that originated the command.
       mu_.lock()
@@ -220,7 +220,7 @@
       return (instance.client-id_, result)
 
     - commit(index_: int)
-      # sets the status of the instance at index to committed and possibly wakes
+      # sets the state of the instance at index to committed and possibly wakes
       # up the executor thread if the log is executable.
 
 try_again:
@@ -233,15 +233,15 @@ try_again:
         # not touch log_ for such instances but it will respond with an accept
         # and eventually, we may run commit for such instances, in which case we
         # will end up here. for those instances, commit must be a no-op. hence,
-        # we will only update an instances status to committed only if it is in
+        # we will only update an instances state to committed only if it is in
         # in-progress state.
 
       if log_[index_] == empty
         mu_.unlock()
         goto try_again:
 
-      if log_[index_].status == in-progress
-        log_[index_].status = committed
+      if log_[index_].state == in-progress
+        log_[index_].state = committed
 
       # we must do this check every time because it may be an entry that we
       # merged into our log from a remote peer that was already in committed
@@ -252,7 +252,7 @@ try_again:
       mu_.unlock()
 
     - commit_until(last_executed: int, round_: int)
-      # sets the status of all the instances from last_executed_ until tail and
+      # sets the state of all the instances from last_executed_ until tail and
       # wakes up the executor thread if necessary.
       mu_.lock()
       for (int i = last_executed_+1; i <= last_executed; ++i)
@@ -278,7 +278,7 @@ try_again:
           # since global_last_executed_ and we discover the new commands and
           # update stale instances in our log.
         if (log_[index].round_ == round_)
-          log_[i].status = committed
+          log_[i].state = committed
       if (executable())
         cv_.notify_one()
       mu_.unlock()
@@ -286,7 +286,7 @@ try_again:
     - trim_until(global_last_executed: int)
       while global_last_executed_ < global_last_executed
         ++global_last_executed_
-        assert(log_[global_last_executed_].status == executed)
+        assert(log_[global_last_executed_].state == executed)
         del log_[global_last_executed_]
 
     - append(instance_: instance_t)
@@ -339,38 +339,42 @@ try_again:
         #     global_last_executed_ = 13
         #
         # we should ignore such instances.
+
+      mu_.lock()
       i = instance_.index_
       if i <= global_last_executed_
+        mu_.unlock()
         return
 
-      * # case (2): log_[instance_.index] is empty
+      * # before we jump to the next case, now that we know the instance_ is not
+        # stale, we need to see if it is in executed state and change it to
+        # committed to preserve (i2). that's because append may be called with
+        # an instance in executed state in (c2): if we are a peer that got
+        # partitioned and joined back, and we try to become a leader, we will
+        # receive logs from other peers that have executed instances in their
+        # logs. we need to reset the state of such instances back to committed
+        # to ensure that such instances will be executed on our state machine.
+        # we don't need to do anything to an instance that is in in-progress or
+        # committed states -- if it is committed, then it will eventually get
+        # executed, or if it is in-progress, it will either be committed or
+        # updated. also, as an aside, in (c1), append will only be called with
+        # instances in in-progress state because the instances are initialized
+        # as such.
+      if instance.state == executed
+        instance.state = committed
+
+      * # case (2): log_[instance_.index_] is empty
         #
         # in that case, it must be the case that i > last_executed_ due to (i1).
         #
         # (1) we assert i1.
         # (2) we insert instance_ to our log.
-        # (3) if instance_'s status is executed, we set it to committed to
-        #     preserve (i2). an instance with a status of in-progress will not
-        #     occur in (c1), because instances created in that call-path are
-        #     initialized with status in-progress. however, an instance with a
-        #     progress of executed is possible in (c2) because we may be a peer
-        #     that got partitioned and joined back and trying to become a
-        #     leader; in that case we may receive logs from other peers that
-        #     have executed instances in their log. we need to reset the
-        #     status of such instances to back to committed in our log to ensure
-        #     that such instances will be executed on our state machine. if we
-        #     receive an instance that is either in in-progress or in committed
-        #     states, we don't have to do anything to them: if an instance is
-        #     committed, then we will eventually execute it; if it is
-        #     in-progress, then it will either be committed or updated with a
-        #     new command.
-        # (4) we update the last_index_ and return
+        # (3) we update the last_index_ and return
       if log_[i] == empty
         assert(i > last_executed_)
         log_[i] = instance_
         last_index_ = max(last_index_, i)
-        if log_[i].status == executed
-          log_[i].status = committed
+        mu_.unlock()
         return
 
       * # case (3): log_[instance_.index] is committed/executed
@@ -378,38 +382,42 @@ try_again:
         # append() must be a no-op if we call it with an instance at an index
         # that is already a committed or executed in our log; furthermore, in a
         # situation like this, instance_'s command must match the command in our
-        # log, *independent of what instance_'s status is*. if instance_'s
-        # status is in-progress, i.e. append() is being called in (c1), then it
-        # must have learned the command from the quorum. if instance_'s status
+        # log, *independent of what instance_'s state is*. if instance_'s
+        # state is in-progress, i.e. append() is being called in (c1), then it
+        # must have learned the command from the quorum. if instance_'s state
         # is committed or executed, i.e. append() is being called in (c2), then
         # logs from other peers must contain the same command.
-      if log_[i].status == (committed or executed)
-        assert(log_[i].cmd_ == instance_.cmd_)
+      if log_[i].state == (committed or executed)
+        assert(log_[instance_.index_].command_ == instance_.command_)
+        mu_.unlock()
         return
 
       * # case (4): log_[instance_.index] is in-progress
         #
         # in this case, we should decide based on the value of round_.
         #
-        # if log_[instance_.index].round_ > instance_.round, we can ignore the
-        # instance; such a scenario may happen in (c2) when we receive a stale
-        # log from a peer
-        #
-        # if log_[instance_.index].round_ < instance_.round, we must update our
+        # if log_[instance_.index].round_ < instance_.round_, we must update our
         # log because we may have a stale instance; such a scenario may happen
-        # in (c2) when we receive a newer log from a peer. it is also possible
-        # that the received log contains executed entries, in which case we
-        # should set its status to committed to avoid violating (i1).
+        # in (c2) when we receive a newer log from a peer.
         #
         # if log_[instance_.index].round_ == instance_.round, it must be the
         # case that both instances have the same command. this may happen in
         # scenario (c1) when somehow we receive the same accept command twice.
+        #
+        # if log_[instance_.index].round_ > instance_.round_, we can ignore the
+        # instance; such a scenario may happen in (c2) when we receive a stale
+        # log from a peer.
+        #
       if log_[i].round_ < instance_.round_
         log_[i] = instance
-        if log_[i].status == executed
-          log_[i].status = committed
-      else if log_[i].round_ == instance_.round_
-        assert(log_[i].cmd_ == instance_.cmd)
+        mu_.unlock()
+        return
+
+      if log_[i].round_ == instance_.round_
+        assert(log_[instance_.index_].command_ == instance_.command_)
+        mu_.unlock()
+        return
+      # ignore the case of log_[instance_.index_].round_ > instance_.round_
 
     - merge(logs: vector<instance_t[]>)
       for log in logs
