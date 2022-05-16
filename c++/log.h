@@ -40,6 +40,7 @@ class Log {
   }
 
   std::tuple<client_id_t, Result> Execute(KVStore* kv);
+  void Append(Instance instance);
 
  private:
   std::unordered_map<int64_t, Instance> log_;
