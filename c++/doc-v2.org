@@ -146,6 +146,14 @@
         send(it->socket, result)
 
 - Log
+  # We can think of Log as an unbounded producer-consumer queue. From this
+  # perspective, the execute method acts as the consume method of a queue, and
+  # the commit method acts as a produce method of a queue. Technically,
+  # instances are inserted into the queue via the append method; however, they
+  # do not become executable until they are committed by calling commit on the
+  # instance. The Log is unbounded because the instances will usually be
+  # executed quickly; therefore, wake up happens only one way: the thread that
+  # commits wakes up the executor thread to execute instances.
 
   - members
 
@@ -160,41 +168,52 @@
     - global_last_executed_: index of the last executed instance on all peers
       known to this peer. initialized to 0.
 
-    - cv_, mu_: a condition variable and mutex for the object.
+    - mu_: the mutex of the object that needs to be acquired before the object
+      is modified.
+
+    - cv_: the condition variable on which the execute method sleeps and commit
+      method signals.
 
   - private methods:
 
     - is_executable(void) -> bool
-      # returns true if the log contains an executable instance, i.e. the
-      # instance right after last_executed_ is committed.
-
       # preconditions: mu_ must be held
 
+      # returns true if the log contains an executable instance, i.e. the
+      # instance right after last_executed_ is committed.
       return log_[last_executed_+1] != empty &&
         log_[last_executed_+1].status == committed
 
   - public methods
 
     - constructor()
-      last_index_ = last_executed_index_ = global_last_executed_index_ = 0
+      last_index_ = 0
+      last_executed_ = 0
+      global_last_executed_ = 0
 
     - last_executed(void) -> int
-      acquire mu_ and release it automatically on exit
+      acquire mu_ and release on exit
       return last_executed_
 
     - global_last_executed(void) -> int
-      acquire mu_ and release it automatically on exit
+      acquire mu_ and release on exit
       return global_last_executed_
 
     - advance_last_index(void) -> int
-      acquire mu_ and release it automatically on exit
+      acquire mu_ and release on exit
       return ++last_index_
 
     - execute(kv: KVStore) -> (client-id, result)
-      # executes the next executable instance in the log, updates the instance's
-      # status, increments last_executed_, and returns the result and the id of
-      # the client that originated the command.
-      assert(executable())
+      # As described above, this method acts as a consume method of a
+      # producer/consumer queue. Therefore, it sleeps until it is woken up by
+      # someone calling commit (i.e. produce) method of the queue. Once woken
+      # up, it executes one instance, sets the status of the instance to
+      # executed, increments last_executed_, and returns the result and the id
+      # of the client that originated the command.
+      mu_.lock()
+      while not is_executable():
+        cv_.wait()
+
       instance = &log_[last_executed_+1]
       result = kv.execute(instance.cmd)
       ++last_executed_
