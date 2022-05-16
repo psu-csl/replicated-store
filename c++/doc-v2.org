@@ -388,7 +388,7 @@ try_again:
         # is committed or executed, i.e. append() is being called in (c2), then
         # logs from other peers must contain the same command.
       if log_[i].state == (committed or executed)
-        assert(log_[instance_.index_].command_ == instance_.command_)
+        assert(log_[i].command_ == instance_.command_)
         mu_.unlock()
         return
 
@@ -414,7 +414,7 @@ try_again:
         return
 
       if log_[i].round_ == instance_.round_
-        assert(log_[instance_.index_].command_ == instance_.command_)
+        assert(log_[i].command_ == instance_.command_)
         mu_.unlock()
         return
       # ignore the case of log_[instance_.index_].round_ > instance_.round_
