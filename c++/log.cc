@@ -50,3 +50,8 @@ void Log::Append(Instance instance) {
   if (it->second.round_ == instance.round_)
     CHECK(it->second.command_ == instance.command_);
 }
+
+Instance const* Log::operator[](std::size_t i) const {
+  auto it = log_.find(i);
+  return it == log_.end() ? nullptr : &it->second;
+}

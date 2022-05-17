@@ -34,13 +34,15 @@ class Log {
     return ++last_index_;
   }
 
+  std::tuple<client_id_t, Result> Execute(KVStore* kv);
+  void Append(Instance instance);
+
   bool IsExecutable(void) const {
     auto it = log_.find(last_executed_ + 1);
     return it != log_.end() && it->second.state_ == InstanceState::kCommitted;
   }
 
-  std::tuple<client_id_t, Result> Execute(KVStore* kv);
-  void Append(Instance instance);
+  Instance const* operator[](std::size_t i) const;
 
  private:
   std::unordered_map<int64_t, Instance> log_;

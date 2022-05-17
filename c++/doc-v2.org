@@ -174,16 +174,6 @@
     - cv_: the condition variable on which the execute method sleeps and commit
       method signals.
 
-  - private methods:
-
-    - is_executable(void) -> bool
-      # preconditions: mu_ must be held
-
-      # returns true if the log contains an executable instance, i.e. the
-      # instance right after last_executed_ is committed.
-      return log_[last_executed_+1] != empty &&
-        log_[last_executed_+1].state == committed
-
   - public methods
 
     - constructor()
@@ -426,6 +416,25 @@ try_again:
 
     - new_instances() -> instance_t[]
       # return instances since global_last_executed_
+
+  - private methods:
+
+    - is_executable(void) -> bool
+      # preconditions: mu_ must be held
+
+      # returns true if the log contains an executable instance, i.e. the
+      # instance right after last_executed_ is committed.
+      return log_[last_executed_+1] != empty &&
+        log_[last_executed_+1].state == committed
+
+   - test methods:
+     # these methods are used only in unit tests
+
+     - at(index: int) -> pointer to instance
+       return a constant pointer to the instance
+
+
+
 
 - Consensus
 
