@@ -171,8 +171,11 @@
     - mu_: the mutex of the object that needs to be acquired before the object
       is modified.
 
-    - cv_: the condition variable on which the execute method sleeps and commit
-      method signals.
+    - cv_executable_: the condition variable on which the execute method sleeps
+      and commit method signals.
+
+    - cv_commitable_: the condition variable on which the commit method sleeps
+      on rare occasions and append method signals
 
   - public methods
 
@@ -202,7 +205,7 @@
       # of the client that originated the command.
       mu_.lock()
       while not is_executable():
-        cv_.wait()
+        cv_executable_.wait()
 
       instance = &log_[last_executed_+1]
       result = kv.execute(instance.cmd)
@@ -210,24 +213,24 @@
       return (instance.client-id_, result)
 
     - commit(index_: int)
+      # precondition: int > 0
       # sets the state of the instance at index to committed and possibly wakes
       # up the executor thread if the log is executable.
 
       * # commit is called exclusively by the leader, after it sends out accept
-        # to all peers, including itself, and receiving a postivie response from
-        # the majority of peers. the accept handler in every peer inserts an
-        # entry into the log and then respond with an ok if successful. most of
-        # the time, the leader will immediately receive an ok from its own rpc
-        # handler before receiving ok from the remote peers; therefore, by the
-        # time it calls commit, it is almost guaranteed to have an entry at the
-        # index_, and calling commit is fine. in the rare cases when the leader
-        # receives ok responses from remote peers before its own rpc handler has
-        # run and inserted an entry and responded, we busy wait to avoid crash.
-      for (;;)
-        mu_.lock()
-        if log_[index_] == empty
-          break
-        mu_.unlock()
+        # to all peers, including itself, and receiving ok responses from the
+        # quorum. the accept handler in every peer inserts an entry into the log
+        # and then responds with an ok if successful. most of the time, the
+        # leader will immediately receive an ok from its own rpc handler before
+        # receiving ok from the remote peers; therefore, by the time it calls
+        # commit, it is likely to have an entry at the index_, and calling
+        # commit is fine. in the rare cases when the leader receives ok
+        # responses from remote peers before itself, we wait on the condition
+        # variable that will eventually be signalled by append called from
+        # accept_handler.
+      mu.lock()
+      while log_[index] == empty
+        cv_commitable_.wait()
 
       * # when running prepare, we will ask peers, including ourselves, to send us
         # their log starting at their global_last_executed_ and merge it to our
@@ -247,7 +250,7 @@
       # state. in this case, we should wake up the thread to execute the entry
       # on our state machine.
       if (executable())
-        cv_.notify_one()
+        cv_executable_.notify_one()
       mu_.unlock()
 
     - commit_until(last_executed: int, ballot_: int)
@@ -279,7 +282,7 @@
         if (log_[index].ballot_ == ballot_)
           log_[i].state = committed
       if (executable())
-        cv_.notify_one()
+        cv_executable_.notify_one()
       mu_.unlock()
 
     - trim_until(global_last_executed: int)
@@ -337,11 +340,13 @@
       * # case (2): log_[instance_.index_] is empty
         #
         # in that case, it must be that i > last_executed_ due to (i1); we
-        # assert this, insert instance_ to log, update last_index_ and return.
+        # assert this, insert instance_ to log, update last_index_, and notify
+        # the cv_commitable_ to possibly wake up the commit thread and return.
       if log_[i] == empty
         assert(i > last_executed_)
         log_[i] = instance_
         last_index_ = max(last_index_, i)
+        cv_commitable_.notify_one()
         mu_.unlock()
         return
 
