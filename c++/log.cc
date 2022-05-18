@@ -36,9 +36,10 @@ void Log::Append(Instance instance) {
 }
 
 void Log::Commit(int64_t index) {
+  CHECK(index > 0) << "invalid index";
+
   std::unique_lock lock(mu_);
   auto it = log_.find(index);
-
   while (it == log_.end()) {
     cv_commitable_.wait(lock);
     it = log_.find(index);

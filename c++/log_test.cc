@@ -115,7 +115,7 @@ TEST(LogDeathTest, Append) {
 
     Command cmd2{CommandType::kPut, "", ""};
     Instance i2{0, index, 0, InstanceState::kInProgress, cmd2};
-    ASSERT_DEATH(log.Append(std::move(i2)), "case 3");
+    EXPECT_DEATH(log.Append(std::move(i2)), "case 3");
   }
   // same as above, except when the instance already in the log is in executed
   // state.
@@ -144,4 +144,27 @@ TEST(LogDeathTest, Append) {
     Instance i2{0, index, 0, InstanceState::kInProgress, cmd2};
     EXPECT_DEATH(log.Append(std::move(i2)), "case 4");
   }
+}
+
+TEST(LogTest, Commit) {
+  // common case: an instance gets appended and committing it changes its state
+  // to committed.
+  {
+    Log log;
+    Command cmd;
+
+    int64_t index = log.AdvanceLastIndex();
+    Instance i1{0, index, 0, InstanceState::kInProgress, cmd};
+    log.Append(std::move(i1));
+    EXPECT_EQ(InstanceState::kInProgress, log[index]->state_);
+    log.Commit(index);
+    EXPECT_EQ(InstanceState::kCommitted, log[index]->state_);
+  }
+}
+
+TEST(LogDeathTest, Commit) {
+  Log log;
+
+  EXPECT_DEATH(log.Commit(0), "invalid index");
+  EXPECT_DEATH(log.Commit(-1), "invalid index");
 }
