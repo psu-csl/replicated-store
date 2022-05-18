@@ -314,31 +314,9 @@
       * # case (1): instance_.index is pruned from log
         #
         # append() must be a no-op if we call it with an instance at an index
-        # pruned from our log. it is possible to receive such an instance in
-        # (c1), for example, if
-        #
-        # (1) we currently have global_last_executed_ = 13
-        # (2) a new leader sends us a prepare request
-        # (3) we respond by sending instances after global_last_executed_, e.g.
-        #     (14, 15, 16)
-        # (4) we receive a heartbeat with global_last_executed_ = 15 from the
-        #     old leader
-        # (5) we trim our log and set global_last_executed_ to 15
-        # (6) we receive an accept from the new leader for the instance 14
-        #
-        # it is also possible to receive such an instance in case (c2), for
-        # example, if
-        #
-        # (1) we currently have global_last_executed_ = 13
-        # (2) we become a leader candidate and send prepare request to peers
-        # (3) we receive a heartbeat with global_last_executed_ = 15 from the
-        #     old leader
-        # (4) we trim our log and set global_last_executed_ to 15
-        # (5) we receive logs from the other peers who still have
-        #     global_last_executed_ = 13
-        #
-        # we should ignore such instances.
-
+        # pruned from our log. this can happen in some rare and convoluted
+        # scenarios in both call paths (c1) and (c2), the details of which we
+        # omit for brevity.
       mu_.lock()
       i = instance_.index_
       if i <= global_last_executed_
