@@ -23,7 +23,7 @@
     that created the instance, and we write the response to the client;
     otherwise, this is a follower and we do nothing.
   - fields:
-    - round_: round of the instance
+    - ballot_: ballot of the instance
     - index_: index of the command in the log
     - client-id_: id of the client in the leader that issued the command
     - state_: enum { in-progress, committed, executed }
@@ -44,26 +44,26 @@
 * PROTOBUFS
 
 - message accept_rpc_request
-  - round_: round of the sender
+  - ballot_: ballot of the sender
   - command_: command_t
   - index_: int; index for the command_ in log_
   - client-id_: int; id of the client initiating command_
 
 - message accept_rpc_response
   - type_: enum {ok, reject, timeout}
-  - round_: round of the remote peer (valid only if type_ == reject)
+  - ballot_: ballot of the remote peer (valid only if type_ == reject)
 
 - message prepare_rpc_request
-  - round_: round of the sender
+  - ballot_: ballot of the sender
 
 - message prepare_rpc_response
   - type_: enum {ok, reject, timeout}
-  - round_: round of the remote peer (valid only if type_ == reject)
+  - ballot_: ballot of the remote peer (valid only if type_ == reject)
   - log_: instances since global_last_executed_ in the corresponding prepareRPC
     request (valid only if type_ == ok}
 
 - message heartbeat_rpc_request
-  - round_: local round
+  - ballot_: local ballot
   - last_executed_: int
   - global_last_executed_: int
 
@@ -241,7 +241,7 @@ try_again:
         cv_.notify_one()
       mu_.unlock()
 
-    - commit_until(last_executed: int, round_: int)
+    - commit_until(last_executed: int, ballot_: int)
       # sets the state of all the instances from last_executed_ until tail and
       # wakes up the executor thread if necessary.
       mu_.lock()
@@ -261,13 +261,13 @@ try_again:
           # new leader emerges and establishes new commands for those instances,
           # and (3) we reconnect. now, if we receive a heartbeat with a higher
           # tail value then we shouldn't blindly commit instances in our log; we
-          # should commit them only if the round numbers match (which
+          # should commit them only if the ballot numbers match (which
           # corresponds to the common case). otherwise, as a follower we will
           # just get stuck here and prevent global_last_executed_ from
           # advancing, until a new leader is elected and replays every instances
           # since global_last_executed_ and we discover the new commands and
           # update stale instances in our log.
-        if (log_[index].round_ == round_)
+        if (log_[index].ballot_ == ballot_)
           log_[i].state = committed
       if (executable())
         cv_.notify_one()
@@ -384,30 +384,30 @@ try_again:
 
       * # case (4): log_[instance_.index] is in-progress
         #
-        # in this case, we should decide based on the value of round_.
+        # in this case, we should decide based on the value of ballot_.
         #
-        # if log_[instance_.index].round_ < instance_.round_, we must update our
-        # log because we may have a stale instance; such a scenario may happen
-        # in (c2) when we receive a newer log from a peer.
+        # if log_[instance_.index].ballot_ < instance_.ballot_, we must update
+        # our log because we may have a stale instance; such a scenario may
+        # happen in (c2) when we receive a newer log from a peer.
         #
-        # if log_[instance_.index].round_ == instance_.round, it must be the
+        # if log_[instance_.index].ballot_ == instance_.ballot_, it must be the
         # case that both instances have the same command. this may happen in
         # scenario (c1) when somehow we receive the same accept command twice.
         #
-        # if log_[instance_.index].round_ > instance_.round_, we can ignore the
-        # instance; such a scenario may happen in (c2) when we receive a stale
-        # log from a peer.
+        # if log_[instance_.index].ballot_ > instance_.ballot_, we can ignore
+        # the instance; such a scenario may happen in (c2) when we receive a
+        # stale log from a peer.
         #
-      if log_[i].round_ < instance_.round_
+      if log_[i].ballot_ < instance_.ballot_
         log_[i] = instance
         mu_.unlock()
         return
 
-      if log_[i].round_ == instance_.round_
+      if log_[i].ballot_ == instance_.ballot_
         assert(log_[i].command_ == instance_.command_)
         mu_.unlock()
         return
-      # ignore the case of log_[instance_.index_].round_ > instance_.round_
+      # ignore the case of log_[instance_.index_].ballot_ > instance_.ballot_
 
     - merge(logs: vector<instance_t[]>)
       for log in logs
@@ -445,7 +445,7 @@ try_again:
     - ready_
     - last_heartbeat_
     - heartbeat_interval_
-    - round_
+    - ballot_
 
   - methods
 
@@ -467,7 +467,7 @@ try_again:
       cv, mu
       request = accept_rpc_request{command_: cmd,
                                    index_: index,
-                                   round_: round_,
+                                   ballot_: ballot_,
                                    client-id_: client-id}
       for each peer p {
         run closure in a separate thread {
@@ -477,7 +477,7 @@ try_again:
           if response.type_ == ok:
             ++ok_responses
           else if response.type_ == reject:
-            round_ = response.round_
+            ballot_ = response.ballot_
           # else it is a timeout error; we do nothing
           unlock(mu)
           cv.notify_one()
@@ -498,23 +498,23 @@ try_again:
       return accept_result_t{type_: retry, leader_: N/A}
 
     - accept_handler(message: accept_rpc_request)
-      if message.round_ >= round_:
-        round_ = message.round_
-        instance = instance_t{round_: message.round_,
+      if message.ballot_ >= ballot_:
+        ballot_ = message.ballot_
+        instance = instance_t{ballot_: message.ballot_,
                               command_: message.command_,
                               index_: message.index_,
                               state_: in-progress
                               client-id_: message.client-id_}
         log_.append(instance)
-        return accept_rpc_response{type_: ok, round_: N/A}
+        return accept_rpc_response{type_: ok, ballot_: N/A}
       # stale message
-      return accept_rpc_response{type: reject, round: round_}
+      return accept_rpc_response{type: reject, ballot: ballot_}
 
     - prepare() -> prepare_result_t:
       num_responses = 0
       ok_logs = vector<instance_t[]>
       cv, mu
-      request = prepare_rpc_request{round_: next_round#()}
+      request = prepare_rpc_request{ballot_: next_ballot#()}
       for each peer p {
         run closure in a separate thread {
           response = p.prepareRPC(request)
@@ -523,7 +523,7 @@ try_again:
           if response.type_ == ok:
             ok_logs.push(response.log_)
           else if response.type_ == reject:
-            round_ = response.round_
+            ballot_ = response.ballot_
           # else it is a timeout error; we do nothing
           unlock(mu)
           cv.notify_one()
@@ -545,13 +545,13 @@ try_again:
 
     - prepare_handler(message: prepare_rpc_request):
       # common case for phase1
-      if message.round >= round_:
-        round_ = message.round_
+      if message.ballot >= ballot_:
+        ballot_ = message.ballot_
         return prepare_rpc_response_t{type_: ok,
-                                      round_: N/A,
+                                      ballot_: N/A,
                                       log_: log_.new_instances()}
       # stale messages
-      return prepare_rpc_response_t{type_: reject, round_: round_, log_: N/A}
+      return prepare_rpc_response_t{type_: reject, ballot_: ballot_, log_: N/A}
 
     - prepare_thread():
       for (;;) {
@@ -590,7 +590,7 @@ try_again:
         cv, mu
         global_last_executed = log_.global_last_executed()
         for (;;) {
-          request = heartbeat_rpc_request{round_: round_,
+          request = heartbeat_rpc_request{ballot_: ballot_,
                                           last_executed_: log_.last_executed()
                                           global_last_executed_: global_last_executed}
           for each peer p {
@@ -616,10 +616,10 @@ try_again:
       }
 
     - heartbeat_handler(message: heartbeat_rpc_request):
-      if message.round >= round_:
+      if message.ballot >= ballot_:
         last_heartbeat_ = time::now()
-        round_ = message.round_
-        log_.commit_until(message_.last_executed_, round_)
+        ballot_ = message.ballot_
+        log_.commit_until(message_.last_executed_, ballot_)
         log_.trim_until(message_.global_last_executed_)
       # stale message
       return heartbeat_rpc_response{last_executed_: log_.last_executed()}
