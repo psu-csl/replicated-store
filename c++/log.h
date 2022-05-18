@@ -36,6 +36,7 @@ class Log {
 
   std::tuple<client_id_t, Result> Execute(KVStore* kv);
   void Append(Instance instance);
+  void Commit(int64_t index);
 
   bool IsExecutable(void) const {
     auto it = log_.find(last_executed_ + 1);

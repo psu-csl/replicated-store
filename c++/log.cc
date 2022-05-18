@@ -51,6 +51,24 @@ void Log::Append(Instance instance) {
     CHECK(it->second.command_ == instance.command_) << "case 4 violation";
 }
 
+void Log::Commit(int64_t index) {
+  std::unique_lock lock(mu_, std::defer_lock);
+  std::unordered_map<int64_t, Instance>::iterator it;
+  for (;;) {
+    lock.lock();
+    it = log_.find(index);
+    if (it != log_.end())
+      break;
+    lock.unlock();
+  }
+
+  if (it->second.state_ == InstanceState::kInProgress)
+    it->second.state_ = InstanceState::kCommitted;
+
+  if (IsExecutable())
+    cv_.notify_one();
+}
+
 Instance const* Log::operator[](std::size_t i) const {
   auto it = log_.find(i);
   return it == log_.end() ? nullptr : &it->second;
