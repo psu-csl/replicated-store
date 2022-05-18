@@ -223,11 +223,11 @@
         # index_, and calling commit is fine. in the rare cases when the leader
         # receives ok responses from remote peers before its own rpc handler has
         # run and inserted an entry and responded, we busy wait to avoid crash.
-try_again:
-      mu_.lock()
-      if log_[index_] == empty
+      for (;;)
+        mu_.lock()
+        if log_[index_] == empty
+          break
         mu_.unlock()
-        goto try_again:
 
       * # when running prepare, we will ask peers, including ourselves, to send us
         # their log starting at their global_last_executed_ and merge it to our
