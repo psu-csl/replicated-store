@@ -15,6 +15,13 @@ struct Instance {
   client_id_t client_id_ = 0;
   InstanceState state_ = InstanceState::kInProgress;
   Command command_;
+
+  bool IsInProgress(void) const { return state_ == InstanceState::kInProgress; }
+  bool IsCommitted(void) const { return state_ == InstanceState::kCommitted; }
+  bool IsExecuted(void) const { return state_ == InstanceState::kExecuted; }
+
+  void SetCommitted(void) { state_ = InstanceState::kCommitted; }
+  void SetExecuted(void) { state_ = InstanceState::kExecuted; }
 };
 
 #endif

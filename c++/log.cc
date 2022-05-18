@@ -13,7 +13,7 @@ std::tuple<client_id_t, Result> Log::Execute(KVStore* kv) {
 
   CHECK_NOTNULL(kv);
   Result result = kv->Execute(instance->command_);
-  instance->state_ = InstanceState::kExecuted;
+  instance->SetExecuted();
   ++last_executed_;
   return {instance->client_id_, result};
 }
@@ -25,8 +25,8 @@ void Log::Append(Instance instance) {
   if (i <= global_last_executed_)
     return;
 
-  if (instance.state_ == InstanceState::kExecuted)
-    instance.state_ = InstanceState::kCommitted;
+  if (instance.IsExecuted())
+    instance.SetCommitted();
 
   auto it = log_.find(i);
   if (it == log_.end()) {
@@ -36,8 +36,7 @@ void Log::Append(Instance instance) {
     return;
   }
 
-  if (it->second.state_ == InstanceState::kCommitted ||
-      it->second.state_ == InstanceState::kExecuted) {
+  if (it->second.IsCommitted() || it->second.IsExecuted()) {
     CHECK(it->second.command_ == instance.command_) << "case 3 violation";
     return;
   }
@@ -62,8 +61,8 @@ void Log::Commit(int64_t index) {
     lock.unlock();
   }
 
-  if (it->second.state_ == InstanceState::kInProgress)
-    it->second.state_ = InstanceState::kCommitted;
+  if (it->second.IsInProgress())
+    it->second.SetCommitted();
 
   if (IsExecutable())
     cv_.notify_one();
