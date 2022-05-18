@@ -2,22 +2,6 @@
 
 #include "log.h"
 
-std::tuple<client_id_t, Result> Log::Execute(KVStore* kv) {
-  std::unique_lock lock(mu_);
-  while (!IsExecutable())
-    cv_.wait(lock);
-
-  auto it = log_.find(last_executed_ + 1);
-  CHECK(it != log_.end());
-  Instance* instance = &it->second;
-
-  CHECK_NOTNULL(kv);
-  Result result = kv->Execute(instance->command_);
-  instance->SetExecuted();
-  ++last_executed_;
-  return {instance->client_id_, result};
-}
-
 void Log::Append(Instance instance) {
   std::scoped_lock lock(mu_);
 
@@ -33,6 +17,7 @@ void Log::Append(Instance instance) {
     CHECK(i > last_executed_) << "case 2 violation";
     log_[i] = std::move(instance);
     last_index_ = std::max(last_index_, i);
+    cv_commitable_.notify_one();
     return;
   }
 
@@ -51,21 +36,35 @@ void Log::Append(Instance instance) {
 }
 
 void Log::Commit(int64_t index) {
-  std::unique_lock lock(mu_, std::defer_lock);
-  std::unordered_map<int64_t, Instance>::iterator it;
-  for (;;) {
-    lock.lock();
+  std::unique_lock lock(mu_);
+  auto it = log_.find(index);
+
+  while (it == log_.end()) {
+    cv_commitable_.wait(lock);
     it = log_.find(index);
-    if (it != log_.end())
-      break;
-    lock.unlock();
   }
 
   if (it->second.IsInProgress())
     it->second.SetCommitted();
 
   if (IsExecutable())
-    cv_.notify_one();
+    cv_executable_.notify_one();
+}
+
+std::tuple<client_id_t, Result> Log::Execute(KVStore* kv) {
+  std::unique_lock lock(mu_);
+  while (!IsExecutable())
+    cv_executable_.wait(lock);
+
+  auto it = log_.find(last_executed_ + 1);
+  CHECK(it != log_.end());
+  Instance* instance = &it->second;
+
+  CHECK_NOTNULL(kv);
+  Result result = kv->Execute(instance->command_);
+  instance->SetExecuted();
+  ++last_executed_;
+  return {instance->client_id_, result};
 }
 
 Instance const* Log::operator[](std::size_t i) const {

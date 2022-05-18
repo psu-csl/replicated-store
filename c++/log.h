@@ -34,9 +34,9 @@ class Log {
     return ++last_index_;
   }
 
-  std::tuple<client_id_t, Result> Execute(KVStore* kv);
   void Append(Instance instance);
   void Commit(int64_t index);
+  std::tuple<client_id_t, Result> Execute(KVStore* kv);
 
   bool IsExecutable(void) const {
     auto it = log_.find(last_executed_ + 1);
@@ -51,7 +51,8 @@ class Log {
   int64_t last_executed_ = 0;
   int64_t global_last_executed_ = 0;
   mutable std::mutex mu_;
-  std::condition_variable cv_;
+  std::condition_variable cv_executable_;
+  std::condition_variable cv_commitable_;
 };
 
 #endif
