@@ -42,12 +42,12 @@ void Log::Append(Instance instance) {
     return;
   }
 
-  if (it->second.round_ < instance.round_) {
+  if (it->second.ballot_ < instance.ballot_) {
     log_[i] = std::move(instance);
     return;
   }
 
-  if (it->second.round_ == instance.round_)
+  if (it->second.ballot_ == instance.ballot_)
     CHECK(it->second.command_ == instance.command_);
 }
 
