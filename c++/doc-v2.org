@@ -289,21 +289,18 @@
         del log_[global_last_executed_]
 
     - append(instance_: instance_t)
-      * # log invariants
-        #
-        # given that (1) the instances in the log must be executed in order, (2)
-        # last_executed_ is the index of the last executed instance, and (3)
-        # global_last_executed_ is the index of the last instance that was
-        # executed in all peers, our log has the following invariants:
+      * # log invariants: given that (1) the instances in the log must be
+        # executed in order, (2) last_executed_ is the index of the last
+        # executed instance, and (3) global_last_executed_ is the index of the
+        # last instance that was executed in all peers, our log has the
+        # following invariants:
         #
         # (i1) there is no gap before or at last_executed_
         # (i2) there is no executed instance after last_executed_.
         # (i3) global_last_executed_ <= last_executed_
         # (i4) there are no instances at indices < global_last_executed_
-
-      * # append() call-paths
         #
-        # we call append() in two call-paths:
+        # we call append() in two call paths:
         #
         # (c1) when we are a follower and we receive an accept message, we call
         #      append() in accept_handler()
@@ -313,10 +310,9 @@
 
       * # case (1): instance_.index is pruned from log
         #
-        # append() must be a no-op if we call it with an instance at an index
+        # append() must be a no-op when called it with an instance at an index
         # pruned from our log. this can happen in some rare and convoluted
-        # scenarios in both call paths (c1) and (c2), the details of which we
-        # omit for brevity.
+        # scenarios in both call paths (c1) and (c2).
       mu_.lock()
       i = instance_.index_
       if i <= global_last_executed_
@@ -325,28 +321,23 @@
 
       * # before we jump to the next case, now that we know the instance_ is not
         # stale, we need to see if it is in executed state and change it to
-        # committed to preserve (i2). that's because append may be called with
-        # an instance in executed state in (c2): if we are a peer that got
-        # partitioned and joined back, and we try to become a leader, we will
-        # receive logs from other peers that have executed instances in their
-        # logs. we need to reset the state of such instances back to committed
-        # to ensure that such instances will be executed on our state machine.
-        # we don't need to do anything to an instance that is in in-progress or
-        # committed states -- if it is committed, then it will eventually get
-        # executed, or if it is in-progress, it will either be committed or
-        # updated. also, as an aside, in (c1), append will only be called with
-        # instances in in-progress state because the instances are initialized
-        # as such.
+        # committed to preserve (i2). that's because in call path (c2) append
+        # may be called with an instance in "executed" state: if we are a peer
+        # that got partitioned and joined back, and we try to become a leader,
+        # we will receive logs from other peers that have executed instances in
+        # their logs. we need to reset the state of such instances back to
+        # "committed" to ensure that such instances will be executed on our
+        # state machine. we don't need to do anything to an instance that is in
+        # in-progress or committed states: if it is committed, then it will
+        # eventually get executed, or if it is in-progress, it will either be
+        # committed or updated.
       if instance.state == executed
         instance.state = committed
 
       * # case (2): log_[instance_.index_] is empty
         #
-        # in that case, it must be the case that i > last_executed_ due to (i1).
-        #
-        # (1) we assert i1.
-        # (2) we insert instance_ to our log.
-        # (3) we update the last_index_ and return
+        # in that case, it must be that i > last_executed_ due to (i1); we
+        # assert this, insert instance_ to log, update last_index_ and return.
       if log_[i] == empty
         assert(i > last_executed_)
         log_[i] = instance_
@@ -354,24 +345,27 @@
         mu_.unlock()
         return
 
-      * # case (3): log_[instance_.index] is committed/executed
+      * # case (3): log_[instance_.index_] is committed/executed
         #
-        # append() must be a no-op if we call it with an instance at an index
-        # that is already a committed or executed in our log; furthermore, in a
-        # situation like this, instance_'s command must match the command in our
-        # log, *independent of what instance_'s state is*. if instance_'s
-        # state is in-progress, i.e. append() is being called in (c1), then it
-        # must have learned the command from the quorum. if instance_'s state
-        # is committed or executed, i.e. append() is being called in (c2), then
-        # logs from other peers must contain the same command.
-      if log_[i].state == (committed or executed)
+        # append() must be a no-op if we call it with an instance that is
+        # already a committed or executed in our log; furthermore, instance_'s
+        # command must match the command in our log, *independent of what
+        # instance_'s state is*: if instance_'s state is in-progress, i.e.
+        # append() is being called in (c1), then it must have learned the
+        # command from the quorum; if instance_'s state is committed or
+        # executed, i.e. append() is being called in (c2), then logs from other
+        # peers must contain the same command.
+      if log_[i].state_ == (committed or executed)
         assert(log_[i].command_ == instance_.command_)
         mu_.unlock()
         return
 
-      * # case (4): log_[instance_.index] is in-progress
+      * # case (4): log_[instance_.index_] is in-progress
         #
-        # in this case, we should decide based on the value of ballot_.
+        # in this case, we should decide based on the value of ballot_; we only
+        # consider the case of instance_'s ballot being larger or equal to
+        # log_[instance_.index_]'s ballot. if instance_'s ballot is smaller than
+        # the log_[instance_.index_]'s ballot, we ignore it because it's stale.
         #
         # if log_[instance_.index].ballot_ < instance_.ballot_, we must update
         # our log because we may have a stale instance; such a scenario may
@@ -380,11 +374,6 @@
         # if log_[instance_.index].ballot_ == instance_.ballot_, it must be the
         # case that both instances have the same command. this may happen in
         # scenario (c1) when somehow we receive the same accept command twice.
-        #
-        # if log_[instance_.index].ballot_ > instance_.ballot_, we can ignore
-        # the instance; such a scenario may happen in (c2) when we receive a
-        # stale log from a peer.
-        #
       if log_[i].ballot_ < instance_.ballot_
         log_[i] = instance
         mu_.unlock()
@@ -394,7 +383,6 @@
         assert(log_[i].command_ == instance_.command_)
         mu_.unlock()
         return
-      # ignore the case of log_[instance_.index_].ballot_ > instance_.ballot_
 
     - merge(logs: vector<instance_t[]>)
       for log in logs
