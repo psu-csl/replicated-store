@@ -42,7 +42,7 @@ TEST(LogTest, Append) {
     EXPECT_EQ(InstanceState::kCommitted, log[index]->state_);
   }
   // append an instance at a high index and ensure that the last_index_ was
-  // updated by inserting a new instance and verifying its index.
+  // updated.
   {
     Log log;
     Command cmd;
