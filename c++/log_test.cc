@@ -30,8 +30,8 @@ TEST(LogTest, Append) {
     log.Append(std::move(i2));
     EXPECT_EQ(index, log[index]->index_);
   }
-  // append an instance in executed state and ensure the state was updated to
-  // committed.
+  // when appending an instance in executed state, its state should be updated
+  // to committed.
   {
     Log log;
     Command cmd;
@@ -41,8 +41,8 @@ TEST(LogTest, Append) {
     log.Append(std::move(i1));
     EXPECT_EQ(InstanceState::kCommitted, log[index]->state_);
   }
-  // append an instance at a high index and ensure that the last_index_ was
-  // updated.
+  // when append an instance at an index higher than last_index_, last_index_
+  // should be updated.
   {
     Log log;
     Command cmd;
@@ -53,8 +53,8 @@ TEST(LogTest, Append) {
     EXPECT_EQ(index, log[index]->index_);
     EXPECT_EQ(index + 1, log.AdvanceLastIndex());
   }
-  // append an instance at an index containing an instance with a lower ballot
-  // number and  ensure that the instance in the log is updated.
+  // appending an instance at an index containing an instance with a lower
+  // ballot number should replace the instance in the log.
   {
     Log log;
     Command cmd1{CommandType::kPut, "", ""};
@@ -70,8 +70,8 @@ TEST(LogTest, Append) {
     log.Append(std::move(i2));
     EXPECT_EQ(CommandType::kDel, log[index]->command_.type_);
   }
-  // append an instance at an index containing an instance with a higher ballot
-  // number and ensure that the instance in the log is not modified.
+  // appending an instance at an index containing an instance with a lower
+  // ballot number should have no effect.
   {
     Log log;
     Command cmd1{CommandType::kPut, "", ""};
