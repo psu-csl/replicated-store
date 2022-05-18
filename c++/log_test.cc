@@ -109,14 +109,25 @@ TEST(LogDeathTest, Append) {
     Log log;
     Command cmd1;
 
-    // append an entry at index 1 in executed state
     int64_t index = log.AdvanceLastIndex();
     Instance i1{0, index, 0, InstanceState::kExecuted, cmd1};
     log.Append(std::move(i1));
 
-    // append another entry at index 1 with a different command
     Command cmd2{CommandType::kPut, "", ""};
     Instance i2{0, index, 0, InstanceState::kInProgress, cmd2};
-    EXPECT_DEATH(log.Append(std::move(i2)), "");
+    EXPECT_DEATH(log.Append(std::move(i2)), "case 3");
+  }
+  // ensure that the assertion fires for case (4) from the design doc.
+  {
+    Log log;
+    Command cmd1{CommandType::kPut, "", ""};
+
+    int64_t index = log.AdvanceLastIndex();
+    Instance i1{0, index, 0, InstanceState::kInProgress, cmd1};
+    log.Append(std::move(i1));
+
+    Command cmd2{CommandType::kDel, "", ""};
+    Instance i2{0, index, 0, InstanceState::kInProgress, cmd2};
+    EXPECT_DEATH(log.Append(std::move(i2)), "case 4");
   }
 }
