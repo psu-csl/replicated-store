@@ -213,11 +213,25 @@
       # sets the state of the instance at index to committed and possibly wakes
       # up the executor thread if the log is executable.
 
+      * # commit is called exclusively by the leader, after it sends out accept
+        # to all peers, including itself, and receiving a postivie response from
+        # the majority of peers. the accept handler in every peer inserts an
+        # entry into the log and then respond with an ok if successful. most of
+        # the time, the leader will immediately receive an ok from its own rpc
+        # handler before receiving ok from the remote peers; therefore, by the
+        # time it calls commit, it is almost guaranteed to have an entry at the
+        # index_, and calling commit is fine. in the rare cases when the leader
+        # receives ok responses from remote peers before its own rpc handler has
+        # run and inserted an entry and responded, we busy wait to avoid crash.
 try_again:
       mu_.lock()
+      if log_[index_] == empty
+        mu_.unlock()
+        goto try_again:
+
       * # when running prepare, we will ask peers, including ourselves, to send us
         # their log starting at their global_last_executed_ and merge it to our
-        # log. then we will run accept on all instances starting at
+        # log. then we will run accept on all instances starting after
         # global_last_executed_. hence, we may run accept on an instance that is
         # already committed or even executed in our log. our accept handler will
         # not touch log_ for such instances but it will respond with an accept
@@ -225,11 +239,6 @@ try_again:
         # will end up here. for those instances, commit must be a no-op. hence,
         # we will only update an instances state to committed only if it is in
         # in-progress state.
-
-      if log_[index_] == empty
-        mu_.unlock()
-        goto try_again:
-
       if log_[index_].state == in-progress
         log_[index_].state = committed
 
