@@ -51,12 +51,41 @@ TEST(LogTest, Append) {
     Instance i1{0, index, 0, InstanceState::kExecuted, cmd};
     log.Append(std::move(i1));
     EXPECT_EQ(index, log[index]->index_);
+    EXPECT_EQ(index + 1, log.AdvanceLastIndex());
+  }
+  // append an instance at an index containing an instance with a lower ballot
+  // number and  ensure that the instance in the log is updated.
+  {
+    Log log;
+    Command cmd1{CommandType::kPut, "", ""};
 
-    index = log.AdvanceLastIndex();
-    Instance i2{0, index, 0, InstanceState::kInProgress, cmd};
-    log.Append(std::move(i2));
+    int64_t index = log.AdvanceLastIndex();
+    Instance i1{0, index, 0, InstanceState::kInProgress, cmd1};
+    log.Append(std::move(i1));
     EXPECT_EQ(index, log[index]->index_);
-    EXPECT_EQ(index, 43);
+    EXPECT_EQ(CommandType::kPut, log[index]->command_.type_);
+
+    Command cmd2{CommandType::kDel, "", ""};
+    Instance i2{1, index, 0, InstanceState::kInProgress, cmd2};
+    log.Append(std::move(i2));
+    EXPECT_EQ(CommandType::kDel, log[index]->command_.type_);
+  }
+  // append an instance at an index containing an instance with a higher ballot
+  // number and ensure that the instance in the log is not modified.
+  {
+    Log log;
+    Command cmd1{CommandType::kPut, "", ""};
+
+    int64_t index = log.AdvanceLastIndex();
+    Instance i1{2, index, 0, InstanceState::kInProgress, cmd1};
+    log.Append(std::move(i1));
+    EXPECT_EQ(index, log[index]->index_);
+    EXPECT_EQ(CommandType::kPut, log[index]->command_.type_);
+
+    Command cmd2{CommandType::kDel, "", ""};
+    Instance i2{1, index, 0, InstanceState::kInProgress, cmd2};
+    log.Append(std::move(i2));
+    EXPECT_EQ(CommandType::kPut, log[index]->command_.type_);
   }
 }
 
