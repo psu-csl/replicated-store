@@ -87,6 +87,20 @@ TEST(LogTest, Append) {
     log.Append(std::move(i2));
     EXPECT_EQ(CommandType::kPut, log[index]->command_.type_);
   }
+  // filling the gaps in the log (i.e. inserting entries at indexes lower than
+  // the current value of last_index_) should not affect last_index_
+  {
+    Log log;
+    Command cmd;
+    int64_t index = 42;
+    Instance i1{0, index, 0, InstanceState::kInProgress, cmd};
+    log.Append(std::move(i1));
+
+    Instance i2{0, index - 10, 0, InstanceState::kInProgress, cmd};
+    log.Append(std::move(i2));
+
+    EXPECT_EQ(index + 1, log.AdvanceLastIndex());
+  }
 }
 
 TEST(LogDeathTest, Append) {
