@@ -30,7 +30,7 @@ void Log::Append(Instance instance) {
 
   auto it = log_.find(i);
   if (it == log_.end()) {
-    CHECK(i > last_executed_);
+    CHECK(i > last_executed_) << "case 2 violation";
     log_[i] = std::move(instance);
     last_index_ = std::max(last_index_, i);
     return;
@@ -38,7 +38,7 @@ void Log::Append(Instance instance) {
 
   if (it->second.state_ == InstanceState::kCommitted ||
       it->second.state_ == InstanceState::kExecuted) {
-    CHECK(it->second.command_ == instance.command_);
+    CHECK(it->second.command_ == instance.command_) << "case 3 violation";
     return;
   }
 
@@ -48,7 +48,7 @@ void Log::Append(Instance instance) {
   }
 
   if (it->second.ballot_ == instance.ballot_)
-    CHECK(it->second.command_ == instance.command_);
+    CHECK(it->second.command_ == instance.command_) << "case 4 violation";
 }
 
 Instance const* Log::operator[](std::size_t i) const {

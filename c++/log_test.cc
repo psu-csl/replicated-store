@@ -103,7 +103,7 @@ TEST(LogDeathTest, Append) {
     // append another entry at index 1 with a different command
     Command cmd2{CommandType::kPut, "", ""};
     Instance i2{0, index, 0, InstanceState::kInProgress, cmd2};
-    EXPECT_DEATH(log.Append(std::move(i2)), "");
+    ASSERT_DEATH(log.Append(std::move(i2)), "case 3");
   }
   // same as above, except when the instance already in the log is in executed
   // state.
