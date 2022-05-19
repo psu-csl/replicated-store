@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <thread>
 
 #include "log.h"
 
@@ -158,6 +159,17 @@ TEST(LogTest, Commit) {
     log.Append(std::move(i1));
     EXPECT_EQ(InstanceState::kInProgress, log[index]->state_);
     log.Commit(index);
+    EXPECT_EQ(InstanceState::kCommitted, log[index]->state_);
+  }
+  // commit is called first, followed by
+  {
+    Log log;
+    Command cmd;
+    int64_t index = log.AdvanceLastIndex();
+    std::thread commit([&log, index] { log.Commit(index); });
+    Instance i1{0, index, 0, InstanceState::kInProgress, cmd};
+    log.Append(std::move(i1));
+    commit.join();
     EXPECT_EQ(InstanceState::kCommitted, log[index]->state_);
   }
 }
