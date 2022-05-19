@@ -5,13 +5,13 @@ import command.Command.CommandType;
 import command.Result;
 import java.util.concurrent.ConcurrentHashMap;
 
-public class MemStore implements KVStore {
+public class MemKVStore implements KVStore {
 
   private static final String kKeyNotFound = "key not found";
   private static final String kEmpty = "";
   private final ConcurrentHashMap<String, String> store;
 
-  public MemStore() {
+  public MemKVStore() {
     this.store = new ConcurrentHashMap<>();
   }
 

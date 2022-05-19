@@ -3,14 +3,14 @@ package paxos;
 import command.Command;
 import command.Command.CommandType;
 import command.Result;
-import kvstore.MemStore;
+import kvstore.MemKVStore;
 
 public class DummyPaxos {
 
-  private final MemStore memStore;
+  private final MemKVStore memStore;
 
-  public DummyPaxos(MemStore memStore) {
-    this.memStore = memStore;
+  public DummyPaxos(MemKVStore memKVStore) {
+    this.memStore = memKVStore;
   }
 
   public Result agreeAndExecute(Command cmd) {

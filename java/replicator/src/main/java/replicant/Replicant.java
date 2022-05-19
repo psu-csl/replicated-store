@@ -8,16 +8,17 @@ import java.net.Socket;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.ThreadPoolExecutor;
-import kvstore.MemStore;
+import kvstore.MemKVStore;
 import org.codehaus.jackson.map.ObjectMapper;
 import paxos.DummyPaxos;
 
 public class Replicant extends TCPServer {
 
-  public Replicant(int port, DummyPaxos paxos, MemStore memStore, ThreadPoolExecutor threadPool) {
+  public Replicant(int port, DummyPaxos paxos, MemKVStore memKVStore,
+      ThreadPoolExecutor threadPool) {
 
     try {
-      startServer(port, paxos, memStore, threadPool);
+      startServer(port, paxos, memKVStore, threadPool);
       System.out.println("Successfully created a new replicant server!");
     } catch (IOException e) {
       e.printStackTrace();
