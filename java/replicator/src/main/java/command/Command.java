@@ -6,11 +6,12 @@ public class Command {
   private String key;
   private String value;
 
-  public Command(String key, String value, CommandType type){
+  public Command(CommandType type, String key, String value) {
     this.key = key;
     this.value = value;
     this.type = type;
   }
+
   public CommandType getCommandType() {
     return type;
   }
@@ -27,8 +28,6 @@ public class Command {
     this.key = key;
   }
 
-  ;
-
   public String getValue() {
     return value;
   }
@@ -36,6 +35,7 @@ public class Command {
   public void setValue(String value) {
     this.value = value;
   }
+
   public enum CommandType {
     kGet, kPut, kDel
   }

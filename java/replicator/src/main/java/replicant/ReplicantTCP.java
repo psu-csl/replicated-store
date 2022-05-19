@@ -46,7 +46,8 @@ public class ReplicantTCP extends TCPServer {
         //  send requests to paxos to be handled over thread pool
         CommandType method = kvRequest.getCommandType();
 
-        Command cmd = new Command(kvRequest.getKey(), kvRequest.getValue(), method);
+        Command cmd = new Command(kvRequest.getCommandType(), kvRequest.getKey(),
+            kvRequest.getValue());
         Future<TCPResponse> future = threadPool.submit(new Task(cmd, paxos));
         TCPResponse response = future.get();
         System.out.println(response);

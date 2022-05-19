@@ -7,8 +7,8 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class MemKVStore implements KVStore {
 
-  private static final String kKeyNotFound = "key not found";
-  private static final String kEmpty = "";
+  public static final String kKeyNotFound = "key not found";
+  public static final String kEmpty = "";
   private final ConcurrentHashMap<String, String> store;
 
   public MemKVStore() {
@@ -45,7 +45,7 @@ public class MemKVStore implements KVStore {
     } else if (cmdType == CommandType.kPut) {
       put(cmd.getKey(), cmd.getValue());
       return new Result(true, kEmpty);
-    } else if (cmdType == CommandType.kDel) {
+    } else if (cmdType == CommandType.kDel && del(cmd.getKey())) {
       return new Result(true, kEmpty);
     } else {
       // default action if command type is not matched
