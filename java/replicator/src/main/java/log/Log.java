@@ -1,5 +1,7 @@
 package log;
 
+import static java.lang.Math.max;
+
 import command.Result;
 import java.util.AbstractMap.SimpleEntry;
 import java.util.HashMap;
@@ -11,17 +13,19 @@ import log.Instance.InstanceState;
 
 public class Log {
 
-  private long lastIndex = 0;
-  private long lastExecuted = 0;
   private final long globalLastExecuted = 0;
   private final ReentrantLock mu;
-  private final Condition cv;
+  private final Condition cvExecutable;
+  private final Condition cvCommitable;
   private final HashMap<Long, Instance> log;
+  private long lastIndex = 0;
+  private long lastExecuted = 0;
 
   public Log() {
     log = new HashMap<>();
     mu = new ReentrantLock();
-    cv = mu.newCondition();
+    cvExecutable = mu.newCondition();
+    cvCommitable = mu.newCondition();
   }
 
   public long getLastExecuted() {
@@ -56,14 +60,80 @@ public class Log {
     return found != null && found.getState() == InstanceState.kCommitted;
   }
 
-  public Map.Entry<Long, Result> execute(KVStore kv) {
-    assert (isExecutable());
+  public void append(Instance instance) {
     mu.lock();
     try {
-      Instance instance = log.get(lastExecuted + 1);
-      Result result = kv.execute(instance.getCommand());
+      long i = instance.getIndex();
+      if (i <= globalLastExecuted) {
+        return;
+      }
+      if (instance.isExecuted()) {
+        instance.setCommited();
+      }
+
+      var it = log.get(i);
+      if (it == null) {
+        assert (i > lastExecuted) : "case 2 violation";
+        log.put(i, instance);
+        lastIndex = max(lastIndex, i);
+        cvCommitable.notifyAll();
+        return;
+      }
+
+      if (it.isCommited() || it.isExecuted()) {
+        assert (it.getCommand() == instance.getCommand()) : "case 3 violation";
+        return;
+      }
+      if (it.getBallot() < instance.getBallot()) {
+        log.put(i, instance);
+        return;
+      }
+      assert it.getBallot() != instance.getBallot() || (it.getCommand()
+          == instance.getCommand()) : "case 4 violation";
+    } finally {
+      mu.unlock();
+    }
+  }
+
+  public void commit(long index) {
+    assert (index > 0) : "invalid index";
+
+    mu.lock();
+    try {
+      var it = log.get(index);
+      while (it == null) {
+        cvCommitable.wait();
+        it = log.get(index);
+      }
+      if (it.isInProgress()) {
+        it.setCommited();
+      }
+      if (isExecutable()) {
+        cvExecutable.notify();
+      }
+    } catch (InterruptedException e) {
+      throw new RuntimeException(e);
+    } finally {
+      mu.unlock();
+    }
+  }
+
+  public Map.Entry<Long, Result> execute(KVStore kv) {
+    mu.lock();
+    try {
+      while (!isExecutable()) {
+        cvExecutable.wait();
+      }
+      var it = log.get(lastExecuted + 1);
+      assert it != null;
+
+      assert kv != null;
+      Result result = kv.execute(it.getCommand());
+      it.setExecuted();
       ++lastExecuted;
-      return new SimpleEntry<>(instance.getClientId(), result);
+      return new SimpleEntry<>(it.getClientId(), result);
+    } catch (InterruptedException e) {
+      throw new RuntimeException(e);
     } finally {
       mu.unlock();
     }
