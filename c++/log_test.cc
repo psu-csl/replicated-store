@@ -161,13 +161,16 @@ TEST(LogTest, Commit) {
     log.Commit(index);
     EXPECT_EQ(InstanceState::kCommitted, log[index]->state_);
   }
-  // commit is called first, followed by
+  // if commit is called first on an index where there is no instance yet, it
+  // should still eventually succeed when append is called and the instance is
+  // put at index.
   {
     Log log;
     Command cmd;
     int64_t index = log.AdvanceLastIndex();
     std::thread commit([&log, index] { log.Commit(index); });
     Instance i1{0, index, 0, InstanceState::kInProgress, cmd};
+    std::this_thread::yield();
     log.Append(std::move(i1));
     commit.join();
     EXPECT_EQ(InstanceState::kCommitted, log[index]->state_);
