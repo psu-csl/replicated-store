@@ -17,7 +17,7 @@ void Log::Append(Instance instance) {
     CHECK(i > last_executed_) << "case 2 violation";
     log_[i] = std::move(instance);
     last_index_ = std::max(last_index_, i);
-    cv_commitable_.notify_one();
+    cv_commitable_.notify_all();
     return;
   }
 

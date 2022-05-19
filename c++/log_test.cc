@@ -1,7 +1,9 @@
 #include <gtest/gtest.h>
+#include <atomic>
 #include <thread>
 
 #include "log.h"
+#include "memkvstore.h"
 
 TEST(LogTest, Constructor) {
   Log log;
@@ -161,16 +163,81 @@ TEST(LogTest, Commit) {
     log.Commit(index);
     EXPECT_EQ(InstanceState::kCommitted, log[index]->state_);
   }
-  // commit is called first, followed by
+}
+
+TEST(LogTest, AppendCommit) {
+  // if we append and instance and commit it, the log should become executable
+  {
+    Log log;
+    Command cmd;
+
+    int64_t index = log.AdvanceLastIndex();
+    Instance i1{0, index, 0, InstanceState::kInProgress, cmd};
+    log.Append(std::move(i1));
+    EXPECT_FALSE(log.IsExecutable());
+
+    log.Commit(index);
+    EXPECT_TRUE(log.IsExecutable());
+  }
+  // if we append two instances in sequence and commit the second one, the log
+  // should not become executable; committing the first one should make the log
+  // executable again.
+  {
+    Log log;
+    Command cmd;
+
+    int64_t index1 = log.AdvanceLastIndex();
+    Instance i1{0, index1, 0, InstanceState::kInProgress, cmd};
+    log.Append(std::move(i1));
+
+    int64_t index2 = log.AdvanceLastIndex();
+    Instance i2{0, index2, 0, InstanceState::kInProgress, cmd};
+    log.Append(std::move(i2));
+
+    log.Commit(index2);
+    EXPECT_FALSE(log.IsExecutable());
+    log.Commit(index1);
+    EXPECT_TRUE(log.IsExecutable());
+  }
+  // if commit is called first on an index where there is no instance yet, it
+  // should still eventually succeed when append is called and the instance is
+  // put at index.
   {
     Log log;
     Command cmd;
     int64_t index = log.AdvanceLastIndex();
     std::thread commit([&log, index] { log.Commit(index); });
     Instance i1{0, index, 0, InstanceState::kInProgress, cmd};
+    std::this_thread::yield();
     log.Append(std::move(i1));
     commit.join();
     EXPECT_EQ(InstanceState::kCommitted, log[index]->state_);
+  }
+}
+
+TEST(LogTest, AppendCommitExecute) {
+  // simplest case: append an entry, commit it, and execute it.
+  {
+    Log log;
+    MemKVStore store;
+    Command cmd;
+    std::atomic<bool> done = false;
+
+    std::thread execute([&done, &log, &store] {
+      while (!done)
+        log.Execute(&store);
+    });
+
+    int64_t index = log.AdvanceLastIndex();
+    Instance i1{0, index, 0, InstanceState::kInProgress, cmd};
+    log.Append(std::move(i1));
+
+    done = true;
+    log.Commit(index);
+    execute.join();
+
+    EXPECT_EQ(InstanceState::kExecuted, log[index]->state_);
+    EXPECT_EQ(index, log.LastExecuted());
   }
 }
 
