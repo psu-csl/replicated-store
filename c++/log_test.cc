@@ -164,6 +164,17 @@ TEST(LogTest, Commit) {
 }
 
 TEST(LogTest, AppendCommit) {
+  // if we append and instance and commit it, the log should become executable
+  {
+    Log log;
+    Command cmd;
+    int64_t index = log.AdvanceLastIndex();
+    Instance i1{0, index, 0, InstanceState::kInProgress, cmd};
+    log.Append(std::move(i1));
+    EXPECT_FALSE(log.IsExecutable());
+    log.Commit(index);
+    EXPECT_TRUE(log.IsExecutable());
+  }
   // if commit is called first on an index where there is no instance yet, it
   // should still eventually succeed when append is called and the instance is
   // put at index.
