@@ -6,10 +6,37 @@ public class Instance {
 
   private Command command;
 
-  private long round;
+  private long ballot;
   private long index;
   private long clientId;
   private InstanceState state;
+
+  public Instance() {
+    ballot = 0;
+    index = 0;
+    clientId = 0;
+    state = InstanceState.kInProgress;
+  }
+
+  public boolean isInProgress() {
+    return state == InstanceState.kInProgress;
+  }
+
+  public boolean isCommited() {
+    return state == InstanceState.kCommitted;
+  }
+
+  public boolean isExecuted() {
+    return state == InstanceState.kExecuted;
+  }
+
+  public void setCommited() {
+    state = InstanceState.kCommitted;
+  }
+
+  public void setExecuted() {
+    state = InstanceState.kExecuted;
+  }
 
   public Command getCommand() {
     return command;
@@ -19,12 +46,12 @@ public class Instance {
     this.command = command;
   }
 
-  public long getRound() {
-    return round;
+  public long getBallot() {
+    return ballot;
   }
 
-  public void setRound(long round) {
-    this.round = round;
+  public void setBallot(long ballot) {
+    this.ballot = ballot;
   }
 
   public long getIndex() {
