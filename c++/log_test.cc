@@ -1,7 +1,9 @@
 #include <gtest/gtest.h>
+#include <atomic>
 #include <thread>
 
 #include "log.h"
+#include "memkvstore.h"
 
 TEST(LogTest, Constructor) {
   Log log;
@@ -210,6 +212,32 @@ TEST(LogTest, AppendCommit) {
     log.Append(std::move(i1));
     commit.join();
     EXPECT_EQ(InstanceState::kCommitted, log[index]->state_);
+  }
+}
+
+TEST(LogTest, AppendCommitExecute) {
+  // simplest case: append an entry, commit it, and execute it.
+  {
+    Log log;
+    MemKVStore store;
+    Command cmd;
+    std::atomic<bool> done = false;
+
+    std::thread execute([&done, &log, &store] {
+      while (!done)
+        log.Execute(&store);
+    });
+
+    int64_t index = log.AdvanceLastIndex();
+    Instance i1{0, index, 0, InstanceState::kInProgress, cmd};
+    log.Append(std::move(i1));
+
+    done = true;
+    log.Commit(index);
+    execute.join();
+
+    EXPECT_EQ(InstanceState::kExecuted, log[index]->state_);
+    EXPECT_EQ(index, log.LastExecuted());
   }
 }
 

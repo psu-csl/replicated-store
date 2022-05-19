@@ -74,7 +74,7 @@ enable_testing()
 
 include(GoogleTest)
 foreach(_target log memkvstore)
-  add_executable("${_target}_test" command.cc "${_target}.cc"
+  add_executable("${_target}_test" command.cc memkvstore.cc "${_target}.cc"
     "${_target}_test.cc")
   target_link_libraries("${_target}_test" gtest_main glog::glog)
   gtest_discover_tests("${_target}_test")
