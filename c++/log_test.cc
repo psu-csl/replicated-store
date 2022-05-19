@@ -168,11 +168,33 @@ TEST(LogTest, AppendCommit) {
   {
     Log log;
     Command cmd;
+
     int64_t index = log.AdvanceLastIndex();
     Instance i1{0, index, 0, InstanceState::kInProgress, cmd};
     log.Append(std::move(i1));
     EXPECT_FALSE(log.IsExecutable());
+
     log.Commit(index);
+    EXPECT_TRUE(log.IsExecutable());
+  }
+  // if we append two instances in sequence and commit the second one, the log
+  // should not become executable; committing the first one should make the log
+  // executable again.
+  {
+    Log log;
+    Command cmd;
+
+    int64_t index1 = log.AdvanceLastIndex();
+    Instance i1{0, index1, 0, InstanceState::kInProgress, cmd};
+    log.Append(std::move(i1));
+
+    int64_t index2 = log.AdvanceLastIndex();
+    Instance i2{0, index2, 0, InstanceState::kInProgress, cmd};
+    log.Append(std::move(i2));
+
+    log.Commit(index2);
+    EXPECT_FALSE(log.IsExecutable());
+    log.Commit(index1);
     EXPECT_TRUE(log.IsExecutable());
   }
   // if commit is called first on an index where there is no instance yet, it
