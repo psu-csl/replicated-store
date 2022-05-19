@@ -161,6 +161,9 @@ TEST(LogTest, Commit) {
     log.Commit(index);
     EXPECT_EQ(InstanceState::kCommitted, log[index]->state_);
   }
+}
+
+TEST(LogTest, AppendCommit) {
   // if commit is called first on an index where there is no instance yet, it
   // should still eventually succeed when append is called and the instance is
   // put at index.
