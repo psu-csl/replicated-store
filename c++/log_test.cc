@@ -42,7 +42,7 @@ TEST(LogTest, Append) {
     int64_t index = log.AdvanceLastIndex();
     Instance i1{0, index, 0, InstanceState::kExecuted, cmd};
     log.Append(std::move(i1));
-    EXPECT_EQ(InstanceState::kCommitted, log[index]->state_);
+    EXPECT_TRUE(log[index]->IsCommitted());
   }
   // when append an instance at an index higher than last_index_, last_index_
   // should be updated.
@@ -159,9 +159,9 @@ TEST(LogTest, Commit) {
     int64_t index = log.AdvanceLastIndex();
     Instance i1{0, index, 0, InstanceState::kInProgress, cmd};
     log.Append(std::move(i1));
-    EXPECT_EQ(InstanceState::kInProgress, log[index]->state_);
+    EXPECT_TRUE(log[index]->IsInProgress());
     log.Commit(index);
-    EXPECT_EQ(InstanceState::kCommitted, log[index]->state_);
+    EXPECT_TRUE(log[index]->IsCommitted());
   }
 }
 
@@ -211,7 +211,7 @@ TEST(LogTest, AppendCommit) {
     std::this_thread::yield();
     log.Append(std::move(i1));
     commit.join();
-    EXPECT_EQ(InstanceState::kCommitted, log[index]->state_);
+    EXPECT_TRUE(log[index]->IsCommitted());
   }
 }
 
@@ -236,7 +236,7 @@ TEST(LogTest, AppendCommitExecute) {
     log.Commit(index);
     execute.join();
 
-    EXPECT_EQ(InstanceState::kExecuted, log[index]->state_);
+    EXPECT_TRUE(log[index]->IsExecuted());
     EXPECT_EQ(index, log.LastExecuted());
   }
 }
