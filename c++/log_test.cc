@@ -239,6 +239,41 @@ TEST(LogTest, AppendCommitExecute) {
     EXPECT_TRUE(log[index]->IsExecuted());
     EXPECT_EQ(index, log.LastExecuted());
   }
+  // append entries out of order, commit them in reverse order, and ensure that
+  // all are executed.
+  {
+    Log log;
+    MemKVStore store;
+    Command cmd;
+
+    std::thread execute([&log, &store] {
+      log.Execute(&store);
+      log.Execute(&store);
+      log.Execute(&store);
+    });
+
+    int64_t index1 = log.AdvanceLastIndex();
+    Instance i1{0, index1, 0, InstanceState::kInProgress, cmd};
+    log.Append(std::move(i1));
+
+    int64_t index2 = log.AdvanceLastIndex();
+    Instance i2{0, index2, 0, InstanceState::kInProgress, cmd};
+    log.Append(std::move(i2));
+
+    int64_t index3 = log.AdvanceLastIndex();
+    Instance i3{0, index3, 0, InstanceState::kInProgress, cmd};
+    log.Append(std::move(i3));
+
+    log.Commit(index3);
+    log.Commit(index2);
+    log.Commit(index1);
+    execute.join();
+
+    EXPECT_TRUE(log[index1]->IsExecuted());
+    EXPECT_TRUE(log[index2]->IsExecuted());
+    EXPECT_TRUE(log[index3]->IsExecuted());
+    EXPECT_EQ(index3, log.LastExecuted());
+  }
 }
 
 TEST(LogDeathTest, Commit) {
