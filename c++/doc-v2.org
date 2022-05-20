@@ -196,101 +196,6 @@
       acquire mu_ and release on exit
       return ++last_index_
 
-    - execute(kv: KVStore) -> (client-id, result)
-      # As described above, this method acts as a consume method of a
-      # producer/consumer queue. Therefore, it sleeps until it is woken up by
-      # someone calling commit (i.e. produce) method of the queue. Once woken
-      # up, it executes one instance, sets the state of the instance to
-      # executed, increments last_executed_, and returns the result and the id
-      # of the client that originated the command.
-      mu_.lock()
-      while not is_executable():
-        cv_executable_.wait()
-
-      instance = &log_[last_executed_+1]
-      result = kv.execute(instance.cmd)
-      ++last_executed_
-      return (instance.client-id_, result)
-
-    - commit(index_: int)
-      # precondition: int > 0
-      # sets the state of the instance at index to committed and possibly wakes
-      # up the executor thread if the log is executable.
-
-      * # commit is called exclusively by the leader, after it sends out accept
-        # to all peers, including itself, and receiving ok responses from the
-        # quorum. the accept handler in every peer inserts an entry into the log
-        # and then responds with an ok if successful. most of the time, the
-        # leader will immediately receive an ok from its own rpc handler before
-        # receiving ok from the remote peers; therefore, by the time it calls
-        # commit, it is likely to have an entry at the index_, and calling
-        # commit is fine. in the rare cases when the leader receives ok
-        # responses from remote peers before itself, we wait on the condition
-        # variable that will eventually be signalled by append called from
-        # accept_handler.
-      mu.lock()
-      while log_[index] == empty
-        cv_commitable_.wait()
-
-      * # when running prepare, we will ask peers, including ourselves, to send us
-        # their log starting at their global_last_executed_ and merge it to our
-        # log. then we will run accept on all instances starting after
-        # global_last_executed_. hence, we may run accept on an instance that is
-        # already committed or even executed in our log. our accept handler will
-        # not touch log_ for such instances but it will respond with an accept
-        # and eventually, we may run commit for such instances, in which case we
-        # will end up here. for those instances, commit must be a no-op. hence,
-        # we will only update an instances state to committed only if it is in
-        # in-progress state.
-      if log_[index_].state == in-progress
-        log_[index_].state = committed
-
-      # we must do this check every time because it may be an entry that we
-      # merged into our log from a remote peer that was already in committed
-      # state. in this case, we should wake up the thread to execute the entry
-      # on our state machine.
-      if (executable())
-        cv_executable_.notify_one()
-      mu_.unlock()
-
-    - commit_until(last_executed: int, ballot_: int)
-      # sets the state of all the instances from last_executed_ until tail and
-      # wakes up the executor thread if necessary.
-      mu_.lock()
-      for (int i = last_executed_+1; i <= last_executed; ++i)
-        * # we may receive a heartbeat before we receive the accept message;
-          # therefore, the heartbeat handler will run this function while there is
-          # a gap in the log. when we see a gap, we break out of the loop and try
-          # committing the next time we receive heartbeat from the leader;
-          # hopefully, by that time, we will have received the accept message and
-          # the gap will disappear.
-        if (log_[index] == empty)
-          break
-        * # as a follower, we will usually have in-progress instances in our log;
-          # in the common case, we will receive a higher tail value from the
-          # leader and we will catch up by committing instances in our own log.
-          # however, it is possible that (1) we experience a partition, (2) a
-          # new leader emerges and establishes new commands for those instances,
-          # and (3) we reconnect. now, if we receive a heartbeat with a higher
-          # tail value then we shouldn't blindly commit instances in our log; we
-          # should commit them only if the ballot numbers match (which
-          # corresponds to the common case). otherwise, as a follower we will
-          # just get stuck here and prevent global_last_executed_ from
-          # advancing, until a new leader is elected and replays every instances
-          # since global_last_executed_ and we discover the new commands and
-          # update stale instances in our log.
-        if (log_[index].ballot_ == ballot_)
-          log_[i].state = committed
-      if (executable())
-        cv_executable_.notify_one()
-      mu_.unlock()
-
-    - trim_until(global_last_executed: int)
-      while global_last_executed_ < global_last_executed
-        ++global_last_executed_
-        assert(log_[global_last_executed_].state == executed)
-        del log_[global_last_executed_]
-
     - append(instance_: instance_t)
       * # log invariants: given that (1) the instances in the log must be
         # executed in order, (2) last_executed_ is the index of the last
@@ -389,6 +294,101 @@
         mu_.unlock()
         return
 
+    - commit(index_: int)
+      # precondition: int > 0
+      # sets the state of the instance at index to committed and possibly wakes
+      # up the executor thread if the log is executable.
+
+      * # commit is called exclusively by the leader, after it sends out accept
+        # to all peers, including itself, and receiving ok responses from the
+        # quorum. the accept handler in every peer inserts an entry into the log
+        # and then responds with an ok if successful. most of the time, the
+        # leader will immediately receive an ok from its own rpc handler before
+        # receiving ok from the remote peers; therefore, by the time it calls
+        # commit, it is likely to have an entry at the index_, and calling
+        # commit is fine. in the rare cases when the leader receives ok
+        # responses from remote peers before itself, we wait on the condition
+        # variable that will eventually be signalled by append called from
+        # accept_handler.
+      mu.lock()
+      while log_[index] == empty
+        cv_commitable_.wait()
+
+      * # when running prepare, we will ask peers, including ourselves, to send us
+        # their log starting at their global_last_executed_ and merge it to our
+        # log. then we will run accept on all instances starting after
+        # global_last_executed_. hence, we may run accept on an instance that is
+        # already committed or even executed in our log. our accept handler will
+        # not touch log_ for such instances but it will respond with an accept
+        # and eventually, we may run commit for such instances, in which case we
+        # will end up here. for those instances, commit must be a no-op. hence,
+        # we will only update an instances state to committed only if it is in
+        # in-progress state.
+      if log_[index_].state == in-progress
+        log_[index_].state = committed
+
+      # we must do this check every time because it may be an entry that we
+      # merged into our log from a remote peer that was already in committed
+      # state. in this case, we should wake up the thread to execute the entry
+      # on our state machine.
+      if (executable())
+        cv_executable_.notify_one()
+      mu_.unlock()
+
+    - execute(kv: KVStore) -> (client-id, result)
+      # As described above, this method acts as a consume method of a
+      # producer/consumer queue. Therefore, it sleeps until it is woken up by
+      # someone calling commit (i.e. produce) method of the queue. Once woken
+      # up, it executes one instance, sets the state of the instance to
+      # executed, increments last_executed_, and returns the result and the id
+      # of the client that originated the command.
+      mu_.lock()
+      while not is_executable():
+        cv_executable_.wait()
+
+      instance = &log_[last_executed_+1]
+      result = kv.execute(instance.cmd)
+      ++last_executed_
+      return (instance.client-id_, result)
+
+    - commit_until(last_executed: int, ballot_: int)
+      # sets the state of all the instances from last_executed_ until tail and
+      # wakes up the executor thread if necessary.
+      mu_.lock()
+      for (int i = last_executed_+1; i <= last_executed; ++i)
+      * # we may receive a heartbeat before we receive the accept message;
+        # therefore, the heartbeat handler will run this function while there is
+        # a gap in the log. when we see a gap, we break out of the loop and try
+        # committing the next time we receive heartbeat from the leader;
+        # hopefully, by that time, we will have received the accept message and
+        # the gap will disappear.
+      if (log_[index] == empty)
+        break
+      * # as a follower, we will usually have in-progress instances in our log;
+        # in the common case, we will receive a higher tail value from the
+        # leader and we will catch up by committing instances in our own log.
+        # however, it is possible that (1) we experience a partition, (2) a
+        # new leader emerges and establishes new commands for those instances,
+        # and (3) we reconnect. now, if we receive a heartbeat with a higher
+        # tail value then we shouldn't blindly commit instances in our log; we
+        # should commit them only if the ballot numbers match (which
+        # corresponds to the common case). otherwise, as a follower we will
+        # just get stuck here and prevent global_last_executed_ from
+        # advancing, until a new leader is elected and replays every instances
+        # since global_last_executed_ and we discover the new commands and
+        # update stale instances in our log.
+        if (log_[index].ballot_ == ballot_)
+          log_[i].state = committed
+      if (executable())
+        cv_executable_.notify_one()
+      mu_.unlock()
+
+    - trim_until(global_last_executed: int)
+      while global_last_executed_ < global_last_executed
+        ++global_last_executed_
+        assert(log_[global_last_executed_].state == executed)
+        del log_[global_last_executed_]
+
     - merge(logs: vector<instance_t[]>)
       for log in logs
         for instance in log
@@ -407,11 +407,11 @@
       return log_[last_executed_+1] != empty &&
         log_[last_executed_+1].state == committed
 
-   - test methods:
-     # these methods are used only in unit tests
+  - test methods:
+    # these methods are used only in unit tests
 
-     - at(index: int) -> pointer to instance
-       return a constant pointer to the instance
+    - at(index: int) -> pointer to instance
+      return a constant pointer to the instance
 
 
 
