@@ -351,33 +351,35 @@
       ++last_executed_
       return (instance.client-id_, result)
 
-    - commit_until(last_executed: int, ballot_: int)
-      # sets the state of all the instances from last_executed_ until tail and
-      # wakes up the executor thread if necessary.
+    - commit_until(leader_last_executed: int, ballot_: int)
+      # called from the heartbeat handler, after receiving last_executed from
+      # the leader (i.e. leader_last_executed). sets the state of all the
+      # instances from last_executed_ until leader_last_executed and wakes up
+      # the executor thread if necessary.
       mu_.lock()
-      for (int i = last_executed_+1; i <= last_executed; ++i)
+      for (int i = last_executed_ + 1; i <= leader_last_executed; ++i)
       * # we may receive a heartbeat before we receive the accept message;
-        # therefore, the heartbeat handler will run this function while there is
+        # therefore, the heartbeat handler may run this function while there is
         # a gap in the log. when we see a gap, we break out of the loop and try
         # committing the next time we receive heartbeat from the leader;
         # hopefully, by that time, we will have received the accept message and
         # the gap will disappear.
-      if (log_[index] == empty)
-        break
+        if (log_[i] == empty)
+          break
       * # as a follower, we will usually have in-progress instances in our log;
-        # in the common case, we will receive a higher tail value from the
-        # leader and we will catch up by committing instances in our own log.
-        # however, it is possible that (1) we experience a partition, (2) a
-        # new leader emerges and establishes new commands for those instances,
-        # and (3) we reconnect. now, if we receive a heartbeat with a higher
-        # tail value then we shouldn't blindly commit instances in our log; we
-        # should commit them only if the ballot numbers match (which
-        # corresponds to the common case). otherwise, as a follower we will
-        # just get stuck here and prevent global_last_executed_ from
-        # advancing, until a new leader is elected and replays every instances
-        # since global_last_executed_ and we discover the new commands and
-        # update stale instances in our log.
-        if (log_[index].ballot_ == ballot_)
+        # in the common case, we will receive a higher leader_last_executed
+        # value from the leader and we will catch up by committing instances in
+        # our own log. however, it is possible that (1) we experience a
+        # partition, (2) a new leader emerges and establishes new commands for
+        # those instances, and (3) we reconnect. now, if we receive a heartbeat
+        # with a leader_last_executed higher than last_executed_, we shouldn't
+        # blindly commit instances in our log; we should commit them only if the
+        # ballot numbers match (which corresponds to the common case).
+        # otherwise, as a follower we will just get stuck here and prevent
+        # global_last_executed_ from advancing, until a new leader is elected
+        # and replays every instances since global_last_executed_ and we
+        # discover the new commands and update stale instances in our log.
+        if (log_[i].ballot_ == ballot_)
           log_[i].state = committed
       if (executable())
         cv_executable_.notify_one()
