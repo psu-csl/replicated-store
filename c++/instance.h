@@ -24,4 +24,6 @@ struct Instance {
   void SetExecuted(void) { state_ = InstanceState::kExecuted; }
 };
 
+std::ostream& operator<<(std::ostream& os, Instance const& instance);
+
 #endif

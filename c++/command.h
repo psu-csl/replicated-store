@@ -13,6 +13,8 @@ struct Command {
 
 bool operator==(Command const& lhs, Command const& rhs);
 
+std::ostream& operator<<(std::ostream& os, Command const& cmd);
+
 struct Result {
   bool ok_ = false;
   std::string const* value_ = nullptr;
