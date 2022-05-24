@@ -38,6 +38,8 @@ class Log {
   void Commit(int64_t index);
   std::tuple<client_id_t, Result> Execute(KVStore* kv);
 
+  void CommitUntil(int64_t leader_last_executed, int64_t ballot);
+
   bool IsExecutable(void) const {
     auto it = log_.find(last_executed_ + 1);
     return it != log_.end() && it->second.IsCommitted();
