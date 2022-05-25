@@ -30,6 +30,17 @@
     - cv_commitable_: the condition variable on which the commit method sleeps
       on rare occasions and append method signals
 
+  - log invariants
+    # given that (1) the instances in the log must be executed in order, (2)
+    # last_executed_ is the index of the last executed instance, and (3)
+    # global_last_executed_ is the index of the last instance that was executed
+    # in all peers, our log has the following invariants:
+    #
+    # (i1) global_last_executed_ <= last_executed_
+    # (i2) there is no gap in [global_last_executed_, last_executed_]; all are executed
+    # (i3) there is no executed instance after last_executed_.
+    # (i4) there are no instances at indices < global_last_executed_
+
   - public methods
 
     - constructor()
@@ -50,17 +61,6 @@
       return ++last_index_
 
     - append(instance: instance_t)
-      * # log invariants: given that (1) the instances in the log must be
-        # executed in order, (2) last_executed_ is the index of the last
-        # executed instance, and (3) global_last_executed_ is the index of the
-        # last instance that was executed in all peers, our log has the
-        # following invariants:
-        #
-        # (i1) there is no gap before or at last_executed_
-        # (i2) there is no executed instance after last_executed_.
-        # (i3) global_last_executed_ <= last_executed_
-        # (i4) there are no instances at indices < global_last_executed_
-        #
         # we call append() in two call paths:
         #
         # (c1) when we are a follower and we receive an accept message, we call
@@ -82,7 +82,7 @@
 
       * # before we jump to the next case, now that we know the |instance| is
         # not stale, we need to see if it is in executed state and change it to
-        # committed to preserve (i2). that's because in call path (c2) append
+        # committed to preserve (i3). that's because in call path (c2) append
         # may be called with an instance in "executed" state: if we are a peer
         # that got partitioned and joined back, and we try to become a leader,
         # we will receive logs from other peers that have executed instances in
@@ -97,7 +97,7 @@
 
       * # case (2): log_[instance.index_] is empty
         #
-        # in that case, it must be that i > last_executed_ due to (i1); we
+        # in that case, it must be that i > last_executed_ due to (i3); we
         # assert this, insert instance to log_, update last_index_, and notify
         # the cv_commitable_ to possibly wake up the commit thread and return.
       if log_[i] == empty
@@ -205,21 +205,22 @@
       return (instance.client-id_, result)
 
     - commit_until(leader_last_executed: int, ballot: int)
-      # called from the heartbeat handler, after receiving last_executed from
-      # the leader (i.e. leader_last_executed). sets the state of all the
-      # instances from last_executed_ until leader_last_executed and wakes up
-      # the executor thread if necessary.
+      # called from the heartbeat handler after receiving last_executed from the
+      # leader (i.e. leader_last_executed). sets the state of all the instances
+      # from last_executed_ until leader_last_executed and wakes up the executor
+      # thread if necessary.
       mu_.lock()
       for (int i = last_executed_ + 1; i <= leader_last_executed; ++i)
       * # we may receive a heartbeat before we receive the accept message;
-        # therefore, the heartbeat handler may run this function while there is
-        # a gap in the log. when we see a gap, we break out of the loop and try
-        # committing the next time we receive heartbeat from the leader;
-        # hopefully, by that time, we will have received the accept message and
-        # the gap will disappear.
-        if (log_[i] == empty)
-          break
-      * # |ballot| will determine whether we will commit entries in the log.
+        # therefore, the heartbeat handler may run this function while there
+        # is a gap in the log. when we see a gap, we break out of the loop and
+        # try committing the next time we receive heartbeat from the leader;
+        # hopefully, by that time, we will have received the accept message
+        # and the gap will disappear.
+      if (log_[i] == empty)
+        break
+
+      * # |ballot| will determine whether we will commit instances in the log.
         # we can have three cases with respect to |ballot| and the ballot of
         # instances in the log after last_executed_:
         #
@@ -227,33 +228,39 @@
         # commit_until is always called from the heartbeat_handler, which will
         # reject heartbeats with a lower ballot number than ours. we assert this
         # impossiblity below.
-        assert(ballot >= log_[i].ballot_)
+      assert(ballot >= log_[i].ballot_)
 
-        # case (2) they are equal: this is the common case. as a follower, we
+      * # case (2) they are equal: this is the common case. as a follower, we
         # will usually have in-progress instances in our log; we will
-        # receive |leader_last_executed| that is larger than last_executed_, and
-        # we will catch up by committing instances in our own log.
-        if (log_[i].ballot_ == ballot)
-          log_[i].state = committed
+        # receive |leader_last_executed| that is larger than last_executed_,
+        # and we will catch up by committing instances in our own log.
+      if (log_[i].ballot_ == ballot)
+        log_[i].state = committed
 
-        # case (3) |ballot| is larger: this is the uncommon case, and it can
+      * # case (3) |ballot| is larger: this is the uncommon case, and it can
         # happen as follows: (a) we experience a partition, (b) a new leader
         # emerges and establishes new commands for the instances that are
         # already in our log, and (b) we reconnect. in this scenario, we will
         # have stale commands in our log and we cannot commit them because it
-        # will violate safety. in this scenario, we will do nothing and return,
-        # and as a result, prevent global_last_executed_ from advancing, until a
-        # new leader is elected, and it replays every instance since
-        # global_last_executed_ and we discover the new commands that we missed
-        # during the partition.
+        # will violate safety. in this scenario, we will do nothing and
+        # return, and as a result, prevent global_last_executed_ from
+        # advancing, until a new leader is elected, and it replays every
+        # instance since global_last_executed_ and we discover the new
+        # commands that we missed during the partition.
 
       if (executable())
         cv_executable_.notify_one()
       mu_.unlock()
 
-    - trim_until(global_last_executed: int)
-      while global_last_executed_ < global_last_executed
+    - trim_until(leader_global_last_executed: int)
+      # called from the heartbeat handler after receiving global_last_executed
+      # from the leader (i.e. |leader_global_last_executed|). removes all
+      # instances in [global_last_executed_+1, leader_global_last_executed] from
+      # the log_.
+
+      while global_last_executed_ < leader_global_last_executed
         ++global_last_executed_
+        # case (1): the following assertion follows from (i1) and (i2)
         assert(log_[global_last_executed_].state == executed)
         del log_[global_last_executed_]
 
@@ -346,9 +353,9 @@
       1 and 2 are committed and 3 is not, and the log is executable.
 
   - commit-until-higher-ballot
-    - append entries at indexes 1, 2, and 3, and call commit_until with a higher
-      ballot number and leader_last_executed = 3, ensure that none of the
-      entries committed and the log is not executable.
+    - append instances at indexes 1, 2, and 3, and call commit_until with a
+      higher ballot number and leader_last_executed = 3, ensure that none of the
+      instances committed and the log is not executable.
 
   - commit-until-case2 (death test)
     - see case 2 in the description of commit-until
@@ -361,3 +368,9 @@
   - append-commit-until-execute
     - append instances at indexes 1, 2, and 3, and call commit_until with
       leader_last_executed = 3, and ensure that all instances are executed.
+
+  - append-commit-until-execute-trim-until
+    - append instances at indexes 1, 2, and 3, and call commit_until with the
+      same ballot number and leader_last_executed = 3, and then call trim_until
+      with leader_global_last_executed = 3, and ensure that all of the instances
+      removed from the log.

@@ -85,6 +85,19 @@ void Log::CommitUntil(int64_t leader_last_executed, int64_t ballot) {
     cv_executable_.notify_one();
 }
 
+void Log::TrimUntil(int64_t leader_global_last_executed) {
+  CHECK(leader_global_last_executed >= global_last_executed_)
+      << "invalid leader_global_last_executed";
+
+  std::scoped_lock lock(mu_);
+  while (global_last_executed_ < leader_global_last_executed) {
+    ++global_last_executed_;
+    auto it = log_.find(global_last_executed_);
+    CHECK(it != log_.end() && it->second.IsExecuted()) << "TrimUntil case 1";
+    log_.erase(it);
+  }
+}
+
 Instance const* Log::operator[](std::size_t i) const {
   auto it = log_.find(i);
   return it == log_.end() ? nullptr : &it->second;

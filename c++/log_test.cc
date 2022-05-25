@@ -276,3 +276,29 @@ TEST_F(LogTest, AppendCommitUntilExecute) {
   EXPECT_TRUE(log_[index3]->IsExecuted());
   EXPECT_FALSE(log_.IsExecutable());
 }
+
+TEST_F(LogTest, AppendCommitUntilExecuteTrimUntil) {
+  std::thread execute_thread([this] {
+    log_.Execute(&store_);
+    log_.Execute(&store_);
+    log_.Execute(&store_);
+  });
+
+  auto ballot = 0;
+  auto index1 = 1;
+  log_.Append(MakeInstance(ballot, index1));
+  auto index2 = 2;
+  log_.Append(MakeInstance(ballot, index2));
+  auto index3 = 3;
+  log_.Append(MakeInstance(ballot, index3));
+
+  log_.CommitUntil(index3, ballot);
+  execute_thread.join();
+
+  log_.TrimUntil(index3);
+
+  EXPECT_EQ(nullptr, log_[index1]);
+  EXPECT_EQ(nullptr, log_[index2]);
+  EXPECT_EQ(nullptr, log_[index3]);
+  EXPECT_FALSE(log_.IsExecutable());
+}
