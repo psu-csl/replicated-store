@@ -14,7 +14,7 @@ void Log::Append(Instance instance) {
 
   auto it = log_.find(i);
   if (it == log_.end()) {
-    CHECK(i > last_executed_) << "case 2 violation";
+    CHECK(i > last_executed_) << "Append case 2";
     log_[i] = std::move(instance);
     last_index_ = std::max(last_index_, i);
     cv_commitable_.notify_all();
@@ -22,7 +22,7 @@ void Log::Append(Instance instance) {
   }
 
   if (it->second.IsCommitted() || it->second.IsExecuted()) {
-    CHECK(it->second.command_ == instance.command_) << "case 3 violation";
+    CHECK(it->second.command_ == instance.command_) << "Append case 3";
     return;
   }
 
@@ -32,7 +32,7 @@ void Log::Append(Instance instance) {
   }
 
   if (it->second.ballot_ == instance.ballot_)
-    CHECK(it->second.command_ == instance.command_) << "case 4 violation";
+    CHECK(it->second.command_ == instance.command_) << "Append case 4";
 }
 
 void Log::Commit(int64_t index) {
@@ -77,7 +77,7 @@ void Log::CommitUntil(int64_t leader_last_executed, int64_t ballot) {
     auto it = log_.find(i);
     if (it == log_.end())
       break;
-    CHECK(ballot >= it->second.ballot_);
+    CHECK(ballot >= it->second.ballot_) << "CommitUntil case 2";
     if (it->second.ballot_ == ballot)
       it->second.SetCommitted();
   }
