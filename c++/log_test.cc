@@ -91,7 +91,7 @@ TEST_F(LogDeathTest, AppendCase3Committed) {
   auto inst2 =
       MakeInstance(0, index, InstanceState::kInProgress, CommandType::kDel);
   log_.Append(std::move(inst1));
-  EXPECT_DEATH(log_.Append(std::move(inst2)), "case 3");
+  EXPECT_DEATH(log_.Append(std::move(inst2)), "Append case 3");
 }
 
 TEST_F(LogDeathTest, AppendCase3Executed) {
@@ -101,7 +101,7 @@ TEST_F(LogDeathTest, AppendCase3Executed) {
   auto inst2 =
       MakeInstance(0, index, InstanceState::kInProgress, CommandType::kDel);
   log_.Append(std::move(inst1));
-  EXPECT_DEATH(log_.Append(std::move(inst2)), "case 3");
+  EXPECT_DEATH(log_.Append(std::move(inst2)), "Append case 3");
 }
 
 TEST_F(LogDeathTest, AppendCase4) {
@@ -111,7 +111,7 @@ TEST_F(LogDeathTest, AppendCase4) {
   auto inst2 =
       MakeInstance(0, index, InstanceState::kInProgress, CommandType::kDel);
   log_.Append(std::move(inst1));
-  EXPECT_DEATH(log_.Append(std::move(inst2)), "case 4");
+  EXPECT_DEATH(log_.Append(std::move(inst2)), "Append case 4");
 }
 
 TEST_F(LogTest, Commit) {
