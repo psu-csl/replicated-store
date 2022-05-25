@@ -223,28 +223,29 @@
         # we can have three cases with respect to |ballot| and the ballot of
         # instances in the log after last_executed_:
         #
-        # case (1) they are equal: this is the common case. as a follower, we
+        # case (1) |ballot| is smaller: this is the impossible case because
+        # commit_until is always called from the heartbeat_handler, which will
+        # reject heartbeats with a lower ballot number than ours. we assert this
+        # impossiblity below.
+        assert(ballot >= log_[i].ballot_)
+
+        # case (2) they are equal: this is the common case. as a follower, we
         # will usually have in-progress instances in our log; we will
         # receive |leader_last_executed| that is larger than last_executed_, and
         # we will catch up by committing instances in our own log.
         if (log_[i].ballot_ == ballot)
           log_[i].state = committed
 
-        # case (2) |ballot| is larger: this is the uncommon case, and it can
+        # case (3) |ballot| is larger: this is the uncommon case, and it can
         # happen as follows: (a) we experience a partition, (b) a new leader
         # emerges and establishes new commands for the instances that are
         # already in our log, and (b) we reconnect. in this scenario, we will
         # have stale commands in our log and we cannot commit them because it
-        # will violate safety. in this scenario, we will get stuck here and
-        # prevent global_last_executed_ from advancing, until a new leader is
-        # elected, and it replays every instance since global_last_executed_ and
-        # we discover the new commands that we missed during the partition.
-        #
-        # case (3) |ballot| is smaller: this is the impossible case because
-        # commit_until is always called from the heartbeat_handler and that will
-        # reject heartbeats with a lower ballot number than ours. we check this
-        # with an assertion below.
-        assert(ballot >= log_[i].ballot_)
+        # will violate safety. in this scenario, we will do nothing and return,
+        # and as a result, prevent global_last_executed_ from advancing, until a
+        # new leader is elected, and it replays every instance since
+        # global_last_executed_ and we discover the new commands that we missed
+        # during the partition.
 
       if (executable())
         cv_executable_.notify_one()
