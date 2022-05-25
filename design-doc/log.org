@@ -356,7 +356,7 @@
   - commit-until-with-gap
     - append instances at indexes 1, 3, and 4, and call commit_until with the
       same ballot number and leader_last_executed = 4 and ensure that 1 is
-      committed and 3 and 4 aren't.
+      committed and 3 and 4 aren't, and the log is executable.
 
   - append-commit-until-execute
     - append instances at indexes 1, 2, and 3, and call commit_until with

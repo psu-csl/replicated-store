@@ -189,3 +189,90 @@ TEST_F(LogTest, AppendCommitExecuteOutOfOrder) {
   EXPECT_TRUE(log_[index3]->IsExecuted());
   EXPECT_EQ(index3, log_.LastExecuted());
 }
+
+TEST_F(LogTest, CommitUntil) {
+  auto ballot = 0;
+  auto index1 = 1;
+  log_.Append(MakeInstance(ballot, index1));
+  auto index2 = 2;
+  log_.Append(MakeInstance(ballot, index2));
+  auto index3 = 3;
+  log_.Append(MakeInstance(ballot, index3));
+
+  log_.CommitUntil(index2, ballot);
+
+  EXPECT_TRUE(log_[index1]->IsCommitted());
+  EXPECT_TRUE(log_[index2]->IsCommitted());
+  EXPECT_FALSE(log_[index3]->IsCommitted());
+  EXPECT_TRUE(log_.IsExecutable());
+}
+
+TEST_F(LogTest, CommitUntilHigherBallot) {
+  auto ballot = 0;
+  auto index1 = 1;
+  log_.Append(MakeInstance(ballot, index1));
+  auto index2 = 2;
+  log_.Append(MakeInstance(ballot, index2));
+  auto index3 = 3;
+  log_.Append(MakeInstance(ballot, index3));
+
+  log_.CommitUntil(index3, ballot + 1);
+
+  EXPECT_FALSE(log_[index1]->IsCommitted());
+  EXPECT_FALSE(log_[index2]->IsCommitted());
+  EXPECT_FALSE(log_[index3]->IsCommitted());
+  EXPECT_FALSE(log_.IsExecutable());
+}
+
+TEST_F(LogDeathTest, CommitUntilCase2) {
+  auto ballot = 5;
+  auto index1 = 1;
+  log_.Append(MakeInstance(ballot, index1));
+  auto index2 = 2;
+  log_.Append(MakeInstance(ballot, index2));
+  auto index3 = 3;
+  log_.Append(MakeInstance(ballot, index3));
+
+  EXPECT_DEATH(log_.CommitUntil(index3, ballot - 1), "CommitUntil case 2");
+}
+
+TEST_F(LogTest, CommitUntilWithGap) {
+  auto ballot = 0;
+  auto index1 = 1;
+  log_.Append(MakeInstance(ballot, index1));
+  auto index3 = 3;
+  log_.Append(MakeInstance(ballot, index3));
+  auto index4 = 4;
+  log_.Append(MakeInstance(ballot, index4));
+
+  log_.CommitUntil(index4, ballot);
+
+  EXPECT_TRUE(log_[index1]->IsCommitted());
+  EXPECT_FALSE(log_[index3]->IsCommitted());
+  EXPECT_FALSE(log_[index4]->IsCommitted());
+  EXPECT_TRUE(log_.IsExecutable());
+}
+
+TEST_F(LogTest, AppendCommitUntilExecute) {
+  std::thread execute_thread([this] {
+    log_.Execute(&store_);
+    log_.Execute(&store_);
+    log_.Execute(&store_);
+  });
+
+  auto ballot = 0;
+  auto index1 = 1;
+  log_.Append(MakeInstance(ballot, index1));
+  auto index2 = 2;
+  log_.Append(MakeInstance(ballot, index2));
+  auto index3 = 3;
+  log_.Append(MakeInstance(ballot, index3));
+
+  log_.CommitUntil(index3, ballot);
+  execute_thread.join();
+
+  EXPECT_TRUE(log_[index1]->IsExecuted());
+  EXPECT_TRUE(log_[index2]->IsExecuted());
+  EXPECT_TRUE(log_[index3]->IsExecuted());
+  EXPECT_FALSE(log_.IsExecutable());
+}
