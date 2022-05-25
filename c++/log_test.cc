@@ -137,11 +137,6 @@ TEST_F(LogTest, Commit) {
   EXPECT_TRUE(log_.IsExecutable());
 }
 
-TEST_F(LogDeathTest, Commit) {
-  EXPECT_DEATH(log_.Commit(0), "invalid index");
-  EXPECT_DEATH(log_.Commit(-1), "invalid index");
-}
-
 TEST_F(LogTest, CommitBeforeAppend) {
   auto index = 1;
   std::thread commit_thread([this, index] { log_.Commit(index); });
