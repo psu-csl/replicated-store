@@ -374,3 +374,11 @@
       same ballot number and leader_last_executed = 3, and then call trim_until
       with leader_global_last_executed = 3, and ensure that all of the instances
       removed from the log.
+
+  - append-at-trimmed-index
+    - append instances at indexes 1 and 2, and call commit_until with the same
+      ballot number and leader_global_last_executed = 2, and then call
+      trim_until with leader_global_last_executed = 2 to move the
+      global_last_executed_ to 2. append an instance at index 1 and 2 again and
+      ensure that it has no effect, i.e. there are no instances at index 1
+      and 2.

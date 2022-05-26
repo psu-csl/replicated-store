@@ -304,3 +304,32 @@ TEST_F(LogTest, AppendCommitUntilExecuteTrimUntil) {
   EXPECT_EQ(index3, log_.GlobalLastExecuted());
   EXPECT_FALSE(log_.IsExecutable());
 }
+
+TEST_F(LogTest, AppendAtTrimmedIndex) {
+  std::thread execute_thread([this] {
+    log_.Execute(&store_);
+    log_.Execute(&store_);
+  });
+
+  auto ballot = 0;
+  auto index1 = 1;
+  log_.Append(MakeInstance(ballot, index1));
+  auto index2 = 2;
+  log_.Append(MakeInstance(ballot, index2));
+
+  log_.CommitUntil(index2, ballot);
+  execute_thread.join();
+
+  log_.TrimUntil(index2);
+
+  EXPECT_EQ(nullptr, log_[index1]);
+  EXPECT_EQ(nullptr, log_[index2]);
+  EXPECT_EQ(index2, log_.LastExecuted());
+  EXPECT_EQ(index2, log_.GlobalLastExecuted());
+  EXPECT_FALSE(log_.IsExecutable());
+
+  log_.Append(MakeInstance(ballot, index1));
+  log_.Append(MakeInstance(ballot, index2));
+  EXPECT_EQ(nullptr, log_[index1]);
+  EXPECT_EQ(nullptr, log_[index2]);
+}
