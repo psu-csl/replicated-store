@@ -300,5 +300,7 @@ TEST_F(LogTest, AppendCommitUntilExecuteTrimUntil) {
   EXPECT_EQ(nullptr, log_[index1]);
   EXPECT_EQ(nullptr, log_[index2]);
   EXPECT_EQ(nullptr, log_[index3]);
+  EXPECT_EQ(index3, log_.LastExecuted());
+  EXPECT_EQ(index3, log_.GlobalLastExecuted());
   EXPECT_FALSE(log_.IsExecutable());
 }
