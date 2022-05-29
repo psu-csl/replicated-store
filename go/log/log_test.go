@@ -369,6 +369,75 @@ func TestAppendCommitUntilExecute(t *testing.T) {
 	assert.False(t, log_.IsExecutable())
 }
 
+func TestAppendCommitUntilExecuteTrimUntil(t *testing.T) {
+	setup()
+	const (
+		ballot int64 = iota
+		index1
+		index2
+		index3
+	)
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		log_.Execute(store_)
+		log_.Execute(store_)
+		log_.Execute(store_)
+		wg.Done()
+	}()
+
+	log_.Append(makeInstanceByIndex(ballot, index1))
+	log_.Append(makeInstanceByIndex(ballot, index2))
+	log_.Append(makeInstanceByIndex(ballot, index3))
+	log_.CommitUntil(index3, ballot)
+	wg.Wait()
+
+	log_.TrimUntil(index3)
+
+	assert.Nil(t, log_.log[index1])
+	assert.Nil(t, log_.log[index2])
+	assert.Nil(t, log_.log[index3])
+	assert.Equal(t, index3, log_.LastExecuted())
+	assert.Equal(t, index3, log_.GlobalLastExecuted())
+	assert.False(t, log_.IsExecutable())
+}
+
+func TestAppendAtTrimmedIndex(t *testing.T) {
+	setup()
+	const (
+		ballot int64 = iota
+		index1
+		index2
+	)
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		log_.Execute(store_)
+		log_.Execute(store_)
+		wg.Done()
+	}()
+
+	log_.Append(makeInstanceByIndex(ballot, index1))
+	log_.Append(makeInstanceByIndex(ballot, index2))
+	log_.CommitUntil(index2, ballot)
+	wg.Wait()
+
+	log_.TrimUntil(index2)
+
+	assert.Nil(t, log_.log[index1])
+	assert.Nil(t, log_.log[index2])
+	assert.Equal(t, index2, log_.LastExecuted())
+	assert.Equal(t, index2, log_.GlobalLastExecuted())
+	assert.False(t, log_.IsExecutable())
+
+	log_.Append(makeInstanceByIndex(ballot, index1))
+	log_.Append(makeInstanceByIndex(ballot, index2))
+	assert.Nil(t, log_.log[index1])
+	assert.Nil(t, log_.log[index2])
+}
+
 func expectDeath(t *testing.T, msg string) {
 	if r := recover(); r == nil {
 		t.Errorf(msg)

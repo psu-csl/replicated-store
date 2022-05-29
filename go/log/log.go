@@ -174,3 +174,16 @@ func (l *Log) CommitUntil(leaderLastExecuted int64, ballot int64) {
 		l.cvExecutable.Signal()
 	}
 }
+
+func (l *Log) TrimUntil(minTailLeader int64) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	for l.globalLastExecuted < minTailLeader {
+		l.globalLastExecuted += 1
+		if l.log[l.globalLastExecuted].State() != instance.Executed {
+			log.Panicf("Not Executed at Index %d\n", l.globalLastExecuted)
+		}
+		delete(l.log, l.globalLastExecuted)
+	}
+}
