@@ -253,6 +253,122 @@ func TestAppendCommitExecuteOutOfOrder(t *testing.T) {
 	assert.Equal(t, index3, log_.LastExecuted())
 }
 
+func TestCommitUntil(t *testing.T) {
+	setup()
+	const (
+		ballot int64 = iota
+		index1
+		index2
+		index3
+	)
+
+	log_.Append(makeInstanceByIndex(ballot, index1))
+	log_.Append(makeInstanceByIndex(ballot, index2))
+	log_.Append(makeInstanceByIndex(ballot, index3))
+
+	log_.CommitUntil(index2, ballot)
+
+	assert.True(t, log_.log[index1].IsCommitted())
+	assert.True(t, log_.log[index2].IsCommitted())
+	assert.False(t, log_.log[index3].IsCommitted())
+	assert.True(t, log_.IsExecutable())
+
+	log_.CommitUntil(index3, ballot)
+	assert.True(t, log_.log[index3].IsCommitted())
+	assert.True(t, log_.IsExecutable())
+}
+
+func TestCommitUntilHigherBallot(t *testing.T) {
+	setup()
+	const (
+		ballot int64 = iota
+		index1
+		index2
+		index3
+	)
+
+	log_.Append(makeInstanceByIndex(ballot, index1))
+	log_.Append(makeInstanceByIndex(ballot, index2))
+	log_.Append(makeInstanceByIndex(ballot, index3))
+
+	log_.CommitUntil(index3, ballot+1)
+
+	assert.False(t, log_.log[index1].IsCommitted())
+	assert.False(t, log_.log[index2].IsCommitted())
+	assert.False(t, log_.log[index3].IsCommitted())
+	assert.False(t, log_.IsExecutable())
+}
+
+func TestCommitUntilCase2(t *testing.T) {
+	setup()
+	const (
+		index1 int64 = iota
+		index2
+		index3
+		ballot
+	)
+
+	log_.Append(makeInstanceByIndex(ballot, index1))
+	log_.Append(makeInstanceByIndex(ballot, index2))
+	log_.Append(makeInstanceByIndex(ballot, index3))
+
+	defer expectDeath(t, "Commit until test2 - no panic")
+	log_.CommitUntil(index3, ballot-1)
+}
+
+func TestCommitUntilWithGap(t *testing.T) {
+	setup()
+	const (
+		ballot int64 = iota
+		index1
+		_
+		index3
+		index4
+	)
+
+	log_.Append(makeInstanceByIndex(ballot, index1))
+	log_.Append(makeInstanceByIndex(ballot, index3))
+	log_.Append(makeInstanceByIndex(ballot, index4))
+
+	log_.CommitUntil(index4, ballot)
+
+	assert.True(t, log_.log[index1].IsCommitted())
+	assert.False(t, log_.log[index3].IsCommitted())
+	assert.False(t, log_.log[index4].IsCommitted())
+	assert.True(t, log_.IsExecutable())
+}
+
+func TestAppendCommitUntilExecute(t *testing.T) {
+	setup()
+	const (
+		ballot int64 = iota
+		index1
+		index2
+		index3
+	)
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		log_.Execute(store_)
+		log_.Execute(store_)
+		log_.Execute(store_)
+		wg.Done()
+	}()
+
+	log_.Append(makeInstanceByIndex(ballot, index1))
+	log_.Append(makeInstanceByIndex(ballot, index2))
+	log_.Append(makeInstanceByIndex(ballot, index3))
+	log_.CommitUntil(index3, ballot)
+	wg.Wait()
+
+	assert.True(t, log_.log[index1].IsExecuted())
+	assert.True(t, log_.log[index2].IsExecuted())
+	assert.True(t, log_.log[index3].IsExecuted())
+	assert.Equal(t, index3, log_.LastExecuted())
+	assert.False(t, log_.IsExecutable())
+}
+
 func expectDeath(t *testing.T, msg string) {
 	if r := recover(); r == nil {
 		t.Errorf(msg)

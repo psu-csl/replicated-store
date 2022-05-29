@@ -146,3 +146,31 @@ func (l *Log) Execute(kv *store.MemKVStore) (int64, command.Result) {
 	l.mu.Unlock()
 	return 0, result
 }
+
+func (l *Log) CommitUntil(leaderLastExecuted int64, ballot int64) {
+	if leaderLastExecuted <=0 {
+		log.Panic("invalid leader_last_executed in commit_until")
+	}
+	if ballot < 0 {
+		log.Panic("invalid ballot in commit_until")
+	}
+
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	for i := l.lastExecuted + 1; i <= leaderLastExecuted; i++ {
+		inst, ok := l.log[i]
+		if !ok {
+			break
+		}
+		if ballot < inst.Ballot() {
+			log.Panic("CommitUntil case 2 - a smaller ballot")
+		}
+		if inst.Ballot() == ballot {
+			inst.SetCommitted()
+		}
+	}
+	if l.IsExecutable() {
+		l.cvExecutable.Signal()
+	}
+}
