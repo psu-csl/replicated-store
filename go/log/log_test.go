@@ -5,7 +5,10 @@ import (
 	inst "github.com/psu-csl/replicated-store/go/instance"
 	"github.com/psu-csl/replicated-store/go/store"
 	"github.com/stretchr/testify/assert"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 var (
@@ -150,6 +153,104 @@ func TestAppendCase4(t *testing.T)  {
 
 	defer expectDeath(t, "Append case 4")
 	log_.Append(inst2)
+}
+
+func TestCommit(t *testing.T) {
+	setup()
+
+	var index1 int64 = 1
+	log_.Append(makeInstanceByIndex(0, index1))
+	var index2 int64 = 2
+	log_.Append(makeInstanceByIndex(0, index2))
+	assert.True(t, log_.log[index1].IsInProgress())
+	assert.True(t, log_.log[index2].IsInProgress())
+	assert.False(t, log_.IsExecutable())
+
+	log_.Commit(index2)
+	assert.True(t, log_.log[index1].IsInProgress())
+	assert.True(t, log_.log[index2].IsCommitted())
+	assert.False(t, log_.IsExecutable())
+
+	log_.Commit(index1)
+	assert.True(t, log_.log[index1].IsCommitted())
+	assert.True(t, log_.log[index2].IsCommitted())
+	assert.True(t, log_.IsExecutable())
+}
+
+func TestCommitBeforeAppend(t *testing.T) {
+	setup()
+
+	var index1 int64 = 1
+	var wg sync.WaitGroup
+	wg.Add(1)
+	// Do commit first
+	go func(wg *sync.WaitGroup) {
+		log_.Commit(index1)
+		wg.Done()
+	}(&wg)
+	// Give sufficient time to run the go routine
+	time.Sleep(50 * time.Millisecond)
+	log_.Append(makeInstance(0))
+	wg.Wait()
+	assert.True(t, log_.log[index1].IsCommitted())
+}
+
+func TestAppendCommitExecute(t *testing.T) {
+	setup()
+	var index int64 = 1
+	var done int64 = 0
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	go func(wg *sync.WaitGroup) {
+		for atomic.LoadInt64(&done) != 1 {
+			log_.Execute(store_)
+		}
+		wg.Done()
+	}(&wg)
+	time.Sleep(50 * time.Millisecond)
+
+	log_.Append(makeInstanceByIndex(0, index))
+	atomic.AddInt64(&done, 1)
+	log_.Commit(index)
+	wg.Wait()
+
+	assert.True(t, log_.log[index].IsExecuted())
+	assert.Equal(t, index, log_.LastExecuted())
+}
+
+func TestAppendCommitExecuteOutOfOrder(t *testing.T) {
+	setup()
+
+	const (
+		index1 int64 = iota + 1
+		index2
+		index3
+	)
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	go func() {
+		log_.Execute(store_)
+		log_.Execute(store_)
+		log_.Execute(store_)
+		wg.Done()
+	}()
+
+	log_.Append(makeInstanceByIndex(0, index1))
+	log_.Append(makeInstanceByIndex(0, index2))
+	log_.Append(makeInstanceByIndex(0, index3))
+
+	log_.Commit(index3)
+	log_.Commit(index2)
+	log_.Commit(index1)
+
+	wg.Wait()
+
+	assert.True(t, log_.log[index1].IsExecuted())
+	assert.True(t, log_.log[index2].IsExecuted())
+	assert.True(t, log_.log[index3].IsExecuted())
+	assert.Equal(t, index3, log_.LastExecuted())
 }
 
 func expectDeath(t *testing.T, msg string) {

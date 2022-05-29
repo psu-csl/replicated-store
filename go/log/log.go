@@ -109,6 +109,28 @@ func (l *Log) Append(inst instance.Instance) {
 	}
 }
 
+func (l *Log) Commit(index int64) {
+	if index <= 0 {
+		log.Panicf("Index %v < 0\n", index)
+	}
+
+	l.mu.Lock()
+
+	_, ok := l.log[index]
+	for !ok {
+		l.cvCommitable.Wait()
+		_, ok = l.log[index]
+	}
+
+	if l.log[index].State() == instance.InProgress {
+		l.log[index].SetCommitted()
+	}
+	if l.IsExecutable() {
+		l.cvExecutable.Signal()
+	}
+	l.mu.Unlock()
+}
+
 func (l *Log) Execute(kv *store.MemKVStore) (int64, command.Result) {
 	l.mu.Lock()
 	for !l.IsExecutable() {
