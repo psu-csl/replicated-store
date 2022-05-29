@@ -1,7 +1,10 @@
 package log
 
 import (
+	"github.com/psu-csl/replicated-store/go/command"
 	"github.com/psu-csl/replicated-store/go/instance"
+	"github.com/psu-csl/replicated-store/go/store"
+	"log"
 	"sync"
 )
 
@@ -56,4 +59,68 @@ func (l *Log) IsExecutable() bool {
 		return true
 	}
 	return false
+}
+
+func (l *Log) Append(inst instance.Instance) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	// Case 1
+	i := inst.Index()
+	if i <= l.globalLastExecuted {
+		return
+	}
+
+	if inst.State() == instance.Executed {
+		inst.SetCommitted()
+	}
+
+	// Case 2
+	if _, ok := l.log[i]; !ok {
+		if i <= l.lastExecuted {
+			log.Panicf("i <= lastExecuted in append\n")
+		}
+		l.log[i] = &inst
+		if i > l.lastIndex {
+			l.lastIndex = i
+		}
+		l.cvCommitable.Broadcast()
+		return
+	}
+
+	// Case 3
+	if l.log[i].State() == instance.Committed || l.log[i].State() == instance.Executed {
+		if l.log[i].Command() != inst.Command() {
+			log.Panicf("case 3 violation\n")
+		}
+		return
+	}
+
+	// Case 4
+	if l.log[i].Ballot() < inst.Ballot() {
+		l.log[i] = &inst
+		return
+	}
+
+	if l.log[i].Ballot() == inst.Ballot() {
+		if l.log[i].Command() != inst.Command() {
+			log.Panicf("case 4 violation\n")
+		}
+	}
+}
+
+func (l *Log) Execute(kv *store.MemKVStore) (int64, command.Result) {
+	l.mu.Lock()
+	for !l.IsExecutable() {
+		l.cvExecutable.Wait()
+	}
+	inst, ok := l.log[l.lastExecuted+ 1]
+	if !ok {
+		log.Panicf("Instance at Index %v empty\n", l.lastExecuted+ 1)
+	}
+	result := kv.Execute(inst.Command())
+	l.log[l.lastExecuted+ 1].SetExecuted()
+	l.lastExecuted += 1
+	l.mu.Unlock()
+	return 0, result
 }
