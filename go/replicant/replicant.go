@@ -20,7 +20,7 @@ type Replicant struct {
 func NewReplicant(servers []string, me int) *Replicant {
 	reactor := Replicant{}
 	reactor.me = me
-	store := store.NewStore()
+	store := store.NewMemKVStore()
 	reactor.px = paxos.NewPaxos(servers, me, store)
 	listener, err := net.Listen("tcp", ":8888")
 	if err != nil {
@@ -47,8 +47,8 @@ func (r *Replicant) handleClientRequest(conn net.Conn) {
 		//buffer := make([]byte, 1056)
 		buffer, err := reader.ReadLineBytes()
 		if err != nil {
-			reply := command.CommandResult{
-				IsSuccess: false,
+			reply := command.Result{
+				Ok: false,
 				Value:     "",
 			}
 			replyByte, err := json.Marshal(reply)
@@ -67,7 +67,7 @@ func (r *Replicant) handleClientRequest(conn net.Conn) {
 			continue
 		}
 		go func() {
-			cmdResult := r.px.AgreeAndExecute(*cmd)
+			var cmdResult command.Result
 			// Socket writes back command result
 			respByte, err := json.Marshal(cmdResult)
 			if err != nil {
