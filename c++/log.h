@@ -6,6 +6,7 @@
 #include <mutex>
 #include <tuple>
 #include <unordered_map>
+#include <vector>
 
 #include "command.h"
 #include "instance.h"
@@ -44,6 +45,8 @@ class Log {
 
   void CommitUntil(int64_t leader_last_executed, int64_t ballot);
   void TrimUntil(int64_t leader_global_last_executed);
+
+  std::vector<Instance> InstancesForPrepare(void) const;
 
   bool IsExecutable(void) const {
     auto it = log_.find(last_executed_ + 1);

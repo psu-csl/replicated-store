@@ -246,8 +246,11 @@
         assert(log_[global_last_executed_].state == executed)
         del log_[global_last_executed_]
 
-    - new_instances() -> Instance[]
-      # return instances since global_last_executed_
+    - instances_for_prepare() -> Instance[]
+      # description: return instances for a response to a prepare message; these
+      # are instances since global_last_executed_.
+      # precondition:
+      # postcondition:
       mu_.lock()
       instances = Instance[]
       for i = global_last_executed_ + 1; i < last_index_; ++i
