@@ -108,7 +108,7 @@
       acquire mu_ and release on exit
       return ++last_index_
 
-    - append(instance: instance_t)
+    - append(instance: Instance)
       # description: appends an instance to the log; called from the
       # accept_handler.
       # precondition:
@@ -246,7 +246,7 @@
         assert(log_[global_last_executed_].state == executed)
         del log_[global_last_executed_]
 
-    - new_instances() -> instance_t[]
+    - new_instances() -> Instance[]
       # return instances since global_last_executed_
 
   - private methods:
