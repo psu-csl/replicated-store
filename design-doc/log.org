@@ -246,11 +246,6 @@
         assert(log_[global_last_executed_].state == executed)
         del log_[global_last_executed_]
 
-    - merge(logs: vector<instance_t[]>)
-      for log in logs
-        for instance in log
-          append(instance)
-
     - new_instances() -> instance_t[]
       # return instances since global_last_executed_
 
