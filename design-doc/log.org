@@ -8,9 +8,13 @@
   # executed quickly; therefore, wake up happens only one way: the thread that
   # commits wakes up the executor thread to execute instances.
 
+  - types:
+
+    log_t: a map from int to Instance
+
   - members
 
-    - log_: a map from int to an instance_t
+    - log_t: log
 
     - last_index_: index of the highest-numbered instance in the log. the log
       starts at index 1; therefore, last_index_ is initialized to 0, signifying
@@ -41,6 +45,50 @@
     # (i3) there is no executed instance after last_executed_.
     # (i4) there are no instances at indices < global_last_executed_
 
+
+  - non-members functions
+
+    - insert(log: *log_t, instance: Instance) -> bool
+      # description: given a log and instance, inserts the instance to the log
+      # if possible and returns true if an instance was inserted to an empty
+      # slot; also checks for safety violations.
+      # precondition:
+      # postcondition:
+
+      # case (1): |log| doesn't have an instance at instance.index_, in which
+      # case we simply insert the instance to |log|.
+      i = instance.index_
+      if log[i] == empty
+        log[i] = instance
+        return true
+
+      # case (2): |log| has a committed/executed instance at |instance.index_|,
+      # in which case insert should be a no-op, and the command in |log| should
+      # match the command in |instance|.
+      if log[i].state_ == (committed or executed)
+        assert(log[i].command_ == instance.command_) << "case2"
+        return false
+
+      # case (3): |log| has an in-progress instance at |instance.index_|, in
+      # which case insert should examine the ballot numbers of both instances.
+      #
+      # if |instance.ballot_| > |log[i].ballot_| insert replaces the instance
+      # in |log| with |instance|.
+      #
+      # if |instance.ballot_| == |log[i].ballot_| it must be the case that
+      # |instance.command_| == |log[i].command_| and insert is a no-op.
+      #
+      # if |instance.ballot_| < |log[i].ballot_| insert ignores instance because
+      # it is stale.
+      if instance.ballot_ > log[i].ballot_
+        log[i] = instance
+        return false
+
+      if instance.ballot_ == log[i].ballot_
+        assert(log[i].command_ == instance.command_) << "case3"
+
+      return false
+
   - public methods
 
     - constructor()
@@ -61,13 +109,10 @@
       return ++last_index_
 
     - append(instance: instance_t)
-        # we call append() in two call paths:
-        #
-        # (c1) when we are a follower and we receive an accept message, we call
-        #      append() in accept_handler()
-        # (c2) when we are a leader candidate and we send out prepare request
-        #      and receive logs from the quorum, we call append() in
-        #      log_.merge() to merge the received logs.
+      # description: appends an instance to the log; called from the
+      # accept_handler.
+      # precondition:
+      # postcondition:
 
       * # case (1): instance.index is pruned from log
         #
@@ -80,72 +125,9 @@
         mu_.unlock()
         return
 
-      * # before we jump to the next case, now that we know the |instance| is
-        # not stale, we need to see if it is in executed state and change it to
-        # committed to preserve (i3). that's because in call path (c2) append
-        # may be called with an instance in "executed" state: if we are a peer
-        # that got partitioned and joined back, and we try to become a leader,
-        # we will receive logs from other peers that have executed instances in
-        # their logs. we need to reset the state of such instances back to
-        # "committed" to ensure that such instances will be executed on our
-        # state machine. we don't need to do anything to an instance that is in
-        # in-progress or committed states: if it is committed, then it will
-        # eventually get executed, or if it is in-progress, it will either be
-        # committed or updated.
-      if instance.state == executed
-        instance.state = committed
-
-      * # case (2): log_[instance.index_] is empty
-        #
-        # in that case, it must be that i > last_executed_ due to (i3); we
-        # assert this, insert instance to log_, update last_index_, and notify
-        # the cv_commitable_ to possibly wake up the commit thread and return.
-      if log_[i] == empty
-        assert(i > last_executed_)
-        log_[i] = instance
+      if insert(&log_, instance)
         last_index_ = max(last_index_, i)
-        cv_commitable_.notify_one()
-        mu_.unlock()
-        return
-
-      * # case (3): log_[instance.index_] is committed/executed
-        #
-        # append() must be a no-op if we call it with an instance that is
-        # already a committed or executed in our log; furthermore, |instance|'s
-        # command must match the command in our log, *independent of
-        # what |instance|'s state is*: if |instance|'s state is in-progress,
-        # i.e. append() is being called in (c1), then it must have learned the
-        # command from the quorum; if |instance|'s state is committed or
-        # executed, i.e. append() is being called in (c2), then logs from other
-        # peers must contain the same command.
-      if log_[i].state_ == (committed or executed)
-        assert(log_[i].command_ == instance.command_)
-        mu_.unlock()
-        return
-
-      * # case (4): log_[instance.index_] is in-progress
-        #
-        # in this case, we should decide based on the value of ballot_; we only
-        # consider the case of |instance|'s ballot being larger or equal to
-        # log_[instance.index_]'s ballot. if instance's ballot is smaller than
-        # the log_[instance.index_]'s ballot, we ignore it because it's stale.
-        #
-        # if log_[instance.index].ballot_ < instance.ballot_, we must update our
-        # log because we may have a stale instance; such a scenario may happen
-        # in (c2) when we receive a newer log from a peer.
-        #
-        # if log_[instance.index].ballot_ == instance.ballot_, it must be the
-        # case that both instances have the same command. this may happen in
-        # scenario (c1) when somehow we receive the same accept command twice.
-      if log_[i].ballot_ < instance.ballot_
-        log_[i] = instance
-        mu_.unlock()
-        return
-
-      if log_[i].ballot_ == instance.ballot_
-        assert(log_[i].command_ == instance.command_)
-        mu_.unlock()
-        return
+        cv_commitable_.notify_all()
 
     - commit(index_: int)
       # precondition: int > 0
@@ -293,12 +275,17 @@
   - constructor
     - ensure that class members are initialized properly
 
+  - insert-case2-committed (death test)
+    - see case 2 in the description of insert
+
+  - insert-case2-executed (death test)
+    - see case 2 in the description of insert
+
+  - insert-case3 (death test)
+    - see case 3 in the description of insert
+
   - append
     - common case test: appended members appear in the log at correct indexes.
-
-  - append-executed
-    - when an instance in executed state is appended to the log, its state
-      should change to committed (see append description above for explanation)
 
   - append-with-gap
     - if we leave a gap in the log by appending an instance at last_index_ + m,
@@ -319,15 +306,6 @@
     - if log_[m] contains an instance with ballot = n and we append an instance
       at log_[m] with ballot = o, where o < n, then append should have no
       effect.
-
-  - append-case3-committed (death test)
-    - see case 3 in the description of append
-
-  - append-case3-executed (death test)
-    - see case 3 in the description of append
-
-  - append-case4 (death test)
-    - see case 4 in the description of append
 
   - commit
     - committing an instance should change its state to committed; if there is a

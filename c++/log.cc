@@ -2,6 +2,26 @@
 
 #include "log.h"
 
+bool Insert(log_t* log, Instance instance) {
+  auto i = instance.index_;
+  auto it = log->find(i);
+  if (it == log->end()) {
+    (*log)[i] = std::move(instance);
+    return true;
+  }
+  if (it->second.IsCommitted() || it->second.IsExecuted()) {
+    CHECK(it->second.command_ == instance.command_) << "Insert case2";
+    return false;
+  }
+  if (instance.ballot_ > it->second.ballot_) {
+    (*log)[i] = std::move(instance);
+    return false;
+  }
+  if (instance.ballot_ == it->second.ballot_)
+    CHECK(it->second.command_ == instance.command_) << "Insert case3";
+  return false;
+}
+
 void Log::Append(Instance instance) {
   std::scoped_lock lock(mu_);
 
@@ -9,30 +29,10 @@ void Log::Append(Instance instance) {
   if (i <= global_last_executed_)
     return;
 
-  if (instance.IsExecuted())
-    instance.SetCommitted();
-
-  auto it = log_.find(i);
-  if (it == log_.end()) {
-    CHECK(i > last_executed_) << "Append case 2";
-    log_[i] = std::move(instance);
+  if (Insert(&log_, std::move(instance))) {
     last_index_ = std::max(last_index_, i);
     cv_commitable_.notify_all();
-    return;
   }
-
-  if (it->second.IsCommitted() || it->second.IsExecuted()) {
-    CHECK(it->second.command_ == instance.command_) << "Append case 3";
-    return;
-  }
-
-  if (it->second.ballot_ < instance.ballot_) {
-    log_[i] = std::move(instance);
-    return;
-  }
-
-  if (it->second.ballot_ == instance.ballot_)
-    CHECK(it->second.command_ == instance.command_) << "Append case 4";
 }
 
 void Log::Commit(int64_t index) {

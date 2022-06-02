@@ -11,6 +11,10 @@
 #include "instance.h"
 #include "kvstore.h"
 
+using log_t = std::unordered_map<int64_t, Instance>;
+
+bool Insert(log_t* log, Instance instance);
+
 class Log {
  public:
   Log() = default;
@@ -49,7 +53,7 @@ class Log {
   Instance const* operator[](std::size_t i) const;
 
  private:
-  std::unordered_map<int64_t, Instance> log_;
+  log_t log_;
   int64_t last_index_ = 0;
   int64_t last_executed_ = 0;
   int64_t global_last_executed_ = 0;

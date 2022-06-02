@@ -44,16 +44,44 @@ TEST_F(LogTest, Constructor) {
   EXPECT_EQ(nullptr, log_[3]);
 }
 
+TEST_F(LogDeathTest, InsertCase2Committed) {
+  auto index = 1;
+  auto inst1 =
+      MakeInstance(0, index, InstanceState::kCommitted, CommandType::kPut);
+  auto inst2 =
+      MakeInstance(0, index, InstanceState::kInProgress, CommandType::kDel);
+  log_t log;
+  Insert(&log, std::move(inst1));
+  EXPECT_DEATH(Insert(&log, std::move(inst2)), "Insert case2");
+}
+
+TEST_F(LogDeathTest, InsertCase2Executed) {
+  auto index = 1;
+  auto inst1 =
+      MakeInstance(0, index, InstanceState::kExecuted, CommandType::kPut);
+  auto inst2 =
+      MakeInstance(0, index, InstanceState::kInProgress, CommandType::kDel);
+  log_t log;
+  Insert(&log, std::move(inst1));
+  EXPECT_DEATH(Insert(&log, std::move(inst2)), "Insert case2");
+}
+
+TEST_F(LogDeathTest, InsertCase3) {
+  auto index = 1;
+  auto inst1 =
+      MakeInstance(0, index, InstanceState::kInProgress, CommandType::kPut);
+  auto inst2 =
+      MakeInstance(0, index, InstanceState::kInProgress, CommandType::kDel);
+  log_t log;
+  Insert(&log, std::move(inst1));
+  EXPECT_DEATH(Insert(&log, std::move(inst2)), "Insert case3");
+}
+
 TEST_F(LogTest, Append) {
   log_.Append(MakeInstance(0));
   log_.Append(MakeInstance(0));
   EXPECT_EQ(1, log_[1]->index_);
   EXPECT_EQ(2, log_[2]->index_);
-}
-
-TEST_F(LogTest, AppendExecuted) {
-  log_.Append(MakeInstance(0, InstanceState::kExecuted));
-  EXPECT_TRUE(log_[1]->IsCommitted());
 }
 
 TEST_F(LogTest, AppendWithGap) {
@@ -82,36 +110,6 @@ TEST_F(LogTest, AppendLowBallotNoEffect) {
   log_.Append(MakeInstance(hi_ballot, index, CommandType::kPut));
   log_.Append(MakeInstance(lo_ballot, index, CommandType::kDel));
   EXPECT_EQ(CommandType::kPut, log_[index]->command_.type_);
-}
-
-TEST_F(LogDeathTest, AppendCase3Committed) {
-  auto index = 1;
-  auto inst1 =
-      MakeInstance(0, index, InstanceState::kCommitted, CommandType::kPut);
-  auto inst2 =
-      MakeInstance(0, index, InstanceState::kInProgress, CommandType::kDel);
-  log_.Append(std::move(inst1));
-  EXPECT_DEATH(log_.Append(std::move(inst2)), "Append case 3");
-}
-
-TEST_F(LogDeathTest, AppendCase3Executed) {
-  auto index = 1;
-  auto inst1 =
-      MakeInstance(0, index, InstanceState::kExecuted, CommandType::kPut);
-  auto inst2 =
-      MakeInstance(0, index, InstanceState::kInProgress, CommandType::kDel);
-  log_.Append(std::move(inst1));
-  EXPECT_DEATH(log_.Append(std::move(inst2)), "Append case 3");
-}
-
-TEST_F(LogDeathTest, AppendCase4) {
-  auto index = 1;
-  auto inst1 =
-      MakeInstance(0, index, InstanceState::kInProgress, CommandType::kPut);
-  auto inst2 =
-      MakeInstance(0, index, InstanceState::kInProgress, CommandType::kDel);
-  log_.Append(std::move(inst1));
-  EXPECT_DEATH(log_.Append(std::move(inst2)), "Append case 4");
 }
 
 TEST_F(LogTest, Commit) {
