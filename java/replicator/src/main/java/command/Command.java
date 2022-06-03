@@ -6,6 +6,9 @@ public class Command {
   private String key;
   private String value;
 
+  public Command() {
+  }
+
   public Command(CommandType type, String key, String value) {
     this.key = key;
     this.value = value;
