@@ -101,7 +101,7 @@ void Log::TrimUntil(int64_t leader_global_last_executed) {
 std::vector<Instance> Log::InstancesForPrepare(void) const {
   std::scoped_lock lock(mu_);
   std::vector<Instance> instances;
-  for (auto i = global_last_executed_ + 1; i < last_index_; ++i)
+  for (auto i = global_last_executed_ + 1; i <= last_index_; ++i)
     if (auto it = log_.find(i); it != log_.end())
       instances.push_back(it->second);
   return instances;
