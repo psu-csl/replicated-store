@@ -375,7 +375,14 @@
   - append-at-trimmed-index
     - append instances at indexes 1 and 2, and call commit_until with the same
       ballot number and leader_global_last_executed = 2, and then call
-      trim_until with leader_global_last_executed = 2 to move the
+      trim_until with leader_global_last_executed = 2 to move
       global_last_executed_ to 2. append an instance at index 1 and 2 again and
       ensure that it has no effect, i.e. there are no instances at index 1
       and 2.
+
+  - instances-for-prepare
+    - append instances at indexes 1, 2, 3; call instances_for_prepare and ensure
+      that all instances are returned; call commit_until with the same ballot
+      number and leader_last_executed = 2, and then call trim_until with
+      leader_global_last_executed = 2 to move global_last_executed_ to 2. call
+      instances_for_prepare again, and ensure that only instance 3 is returned.

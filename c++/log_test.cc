@@ -367,3 +367,30 @@ TEST_F(LogTest, AppendAtTrimmedIndex) {
   EXPECT_EQ(nullptr, log_[index1]);
   EXPECT_EQ(nullptr, log_[index2]);
 }
+
+TEST_F(LogTest, InstancesForPrepare) {
+  std::thread execute_thread([this] {
+    log_.Execute(&store_);
+    log_.Execute(&store_);
+  });
+
+  auto ballot = 0;
+  std::vector<Instance> expected;
+
+  expected.emplace_back(MakeInstance(ballot));
+  log_.Append(expected.back());
+  expected.emplace_back(MakeInstance(ballot));
+  log_.Append(expected.back());
+  expected.emplace_back(MakeInstance(ballot));
+  log_.Append(expected.back());
+
+  EXPECT_EQ(expected, log_.InstancesForPrepare());
+
+  auto index = 2;
+  log_.CommitUntil(index, ballot);
+  execute_thread.join();
+  log_.TrimUntil(index);
+
+  expected.erase(expected.begin(), expected.begin() + index);
+  EXPECT_EQ(expected, log_.InstancesForPrepare());
+}
