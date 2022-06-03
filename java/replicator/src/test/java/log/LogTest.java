@@ -111,9 +111,7 @@ class LogTest {
     var inst1 = MakeInstance(0, index, InstanceState.kCommitted, CommandType.kPut);
     var inst2 = MakeInstance(0, index, InstanceState.kInProgress, CommandType.kDel);
     log_.append(inst1);
-    var thrown = assertThrows(AssertionError.class, () -> {
-      log_.append(inst2);
-    });
+    var thrown = assertThrows(AssertionError.class, () -> log_.append(inst2));
     assertEquals("Append case 3", thrown.getMessage());
   }
 
@@ -123,9 +121,7 @@ class LogTest {
     var inst1 = MakeInstance(0, index, InstanceState.kExecuted, CommandType.kPut);
     var inst2 = MakeInstance(0, index, InstanceState.kInProgress, CommandType.kDel);
     log_.append(inst1);
-    var thrown = assertThrows(AssertionError.class, () -> {
-      log_.append(inst2);
-    });
+    var thrown = assertThrows(AssertionError.class, () -> log_.append(inst2));
     assertEquals("Append case 3", thrown.getMessage());
   }
 
@@ -135,9 +131,7 @@ class LogTest {
     var inst1 = MakeInstance(0, index, InstanceState.kInProgress, CommandType.kPut);
     var inst2 = MakeInstance(0, index, InstanceState.kInProgress, CommandType.kDel);
     log_.append(inst1);
-    var thrown = assertThrows(AssertionError.class, () -> {
-      log_.append(inst2);
-    });
+    var thrown = assertThrows(AssertionError.class, () -> log_.append(inst2));
     assertEquals("Append case 4", thrown.getMessage());
   }
 
@@ -168,9 +162,7 @@ class LogTest {
   void CommitBeforeAppend() {
     long index = 1;
     ExecutorService service = Executors.newFixedThreadPool(1);
-    var f = service.submit(() -> {
-      log_.commit(index);
-    });
+    var f = service.submit(() -> log_.commit(index));
     Thread.yield();
     log_.append(MakeInstance(0));
     try {
@@ -197,9 +189,7 @@ class LogTest {
 
     try {
       assertNull(f.get());
-    } catch (InterruptedException e) {
-      throw new RuntimeException(e);
-    } catch (ExecutionException e) {
+    } catch (InterruptedException | ExecutionException e) {
       throw new RuntimeException(e);
     }
     assertTrue(log_.get(index).isExecuted());
