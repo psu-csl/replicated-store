@@ -76,7 +76,7 @@ public class Log {
         assert (i > lastExecuted) : "case 2 violation";
         log.put(i, instance);
         lastIndex = max(lastIndex, i);
-        cvCommitable.notifyAll();
+        cvCommitable.signalAll();
         return;
       }
 
@@ -102,14 +102,14 @@ public class Log {
     try {
       var it = log.get(index);
       while (it == null) {
-        cvCommitable.wait();
+        cvCommitable.await();
         it = log.get(index);
       }
       if (it.isInProgress()) {
         it.setCommited();
       }
       if (isExecutable()) {
-        cvExecutable.notify();
+        cvExecutable.signal();
       }
     } catch (InterruptedException e) {
       throw new RuntimeException(e);
@@ -122,7 +122,7 @@ public class Log {
     mu.lock();
     try {
       while (!isExecutable()) {
-        cvExecutable.wait();
+        cvExecutable.await();
       }
       var it = log.get(lastExecuted + 1);
       assert it != null;
