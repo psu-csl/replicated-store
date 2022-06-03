@@ -24,6 +24,8 @@ struct Instance {
   void SetExecuted(void) { state_ = InstanceState::kExecuted; }
 };
 
+bool operator==(Instance const& lhs, Instance const& rhs);
+
 std::ostream& operator<<(std::ostream& os, Instance const& instance);
 
 #endif
