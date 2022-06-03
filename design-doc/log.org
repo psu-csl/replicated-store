@@ -253,7 +253,7 @@
       # postcondition:
       mu_.lock()
       instances = Instance[]
-      for i = global_last_executed_ + 1; i < last_index_; ++i
+      for i = global_last_executed_ + 1; i <= last_index_; ++i
         if log_[i] != empty
           instances.append(log_[i])
       return instances
