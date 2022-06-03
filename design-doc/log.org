@@ -49,9 +49,9 @@
   - non-members functions
 
     - insert(log: *log_t, instance: Instance) -> bool
-      # description: given a log and instance, inserts the instance to the log
-      # if possible and returns true if an instance was inserted to an empty
-      # slot; also checks for safety violations.
+      # description: given |log| and |instance|, inserts |instance| to |log| if
+      # possible, and returns true if an instance was inserted to an empty slot;
+      # also checks for safety violations.
       # precondition:
       # postcondition:
 
