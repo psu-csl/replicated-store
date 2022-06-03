@@ -73,7 +73,7 @@ public class Log {
 
       var it = log.get(i);
       if (it == null) {
-        assert (i > lastExecuted) : "case 2 violation";
+        assert (i > lastExecuted) : "Append case 2";
         log.put(i, instance);
         lastIndex = max(lastIndex, i);
         cvCommitable.signalAll();
@@ -81,7 +81,7 @@ public class Log {
       }
 
       if (it.isCommited() || it.isExecuted()) {
-        assert (it.getCommand() == instance.getCommand()) : "case 3 violation";
+        assert (it.getCommand() == instance.getCommand()) : "Append case 3";
         return;
       }
       if (it.getBallot() < instance.getBallot()) {
@@ -89,7 +89,7 @@ public class Log {
         return;
       }
       assert it.getBallot() != instance.getBallot() || (it.getCommand()
-          == instance.getCommand()) : "case 4 violation";
+          == instance.getCommand()) : "Append case 4";
     } finally {
       mu.unlock();
     }
