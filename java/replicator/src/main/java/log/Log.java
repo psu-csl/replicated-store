@@ -139,5 +139,17 @@ public class Log {
     }
   }
 
+  public Instance get(Long index) {
+    return log.get(index);
+  }
 
+  @Override
+  public String toString() {
+    StringBuilder str = new StringBuilder();
+    var values = log.values();
+    for (var v : values) {
+      str.append(v.toString());
+    }
+    return str.toString();
+  }
 }
