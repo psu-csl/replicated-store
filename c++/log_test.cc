@@ -1,5 +1,4 @@
 #include <gtest/gtest.h>
-#include <atomic>
 #include <thread>
 
 #include "instance.h"
@@ -188,16 +187,10 @@ TEST_F(LogTest, CommitBeforeAppend) {
 }
 
 TEST_F(LogTest, AppendCommitExecute) {
+  std::thread execute_thread([this] { log_.Execute(&store_); });
+
   auto index = 1;
-  std::atomic<bool> done = false;
-
-  std::thread execute_thread([this, &done] {
-    while (!done)
-      log_.Execute(&store_);
-  });
-
   log_.Append(MakeInstance(0, index));
-  done = true;
   log_.Commit(index);
   execute_thread.join();
 
