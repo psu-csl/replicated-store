@@ -18,6 +18,14 @@ public class Instance {
     state = InstanceState.kInProgress;
   }
 
+  public Instance(long ballot, long index, long clientId, InstanceState state, Command command) {
+    this.ballot = ballot;
+    this.index = index;
+    this.clientId = clientId;
+    this.state = state;
+    this.command = command;
+  }
+
   public boolean isInProgress() {
     return state == InstanceState.kInProgress;
   }
@@ -78,8 +86,13 @@ public class Instance {
     this.state = state;
   }
 
+  @Override
+  public String toString() {
+    return "ballot : " + ballot + " index : " + index + " clientId : " + clientId + " state : "
+        + state + "\n";
+  }
+
   public enum InstanceState {
     kInProgress, kCommitted, kExecuted
   }
-
 }
