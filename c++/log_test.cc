@@ -44,6 +44,49 @@ TEST_F(LogTest, Constructor) {
   EXPECT_EQ(nullptr, log_[3]);
 }
 
+TEST_F(LogTest, Insert) {
+  log_t log;
+  auto index = 1;
+  auto ballot = 1;
+  EXPECT_TRUE(Insert(&log, MakeInstance(ballot, index, CommandType::kPut)));
+  EXPECT_EQ(CommandType::kPut, log[index].command_.type_);
+  EXPECT_FALSE(Insert(&log, MakeInstance(ballot, index, CommandType::kPut)));
+}
+
+TEST_F(LogTest, InsertUpdateInProgress) {
+  log_t log;
+  auto index = 1;
+  auto ballot = 1;
+  EXPECT_TRUE(Insert(&log, MakeInstance(ballot, index, CommandType::kPut)));
+  EXPECT_EQ(CommandType::kPut, log[index].command_.type_);
+  EXPECT_FALSE(
+      Insert(&log, MakeInstance(ballot + 1, index, CommandType::kDel)));
+  EXPECT_EQ(CommandType::kDel, log[index].command_.type_);
+}
+
+TEST_F(LogTest, InsertUpdateCommitted) {
+  log_t log;
+  auto index = 1;
+  auto ballot = 1;
+  EXPECT_TRUE(
+      Insert(&log, MakeInstance(ballot, index, InstanceState::kCommitted,
+                                CommandType::kPut)));
+  EXPECT_FALSE(
+      Insert(&log, MakeInstance(ballot, index, InstanceState::kInProgress,
+                                CommandType::kPut)));
+}
+
+TEST_F(LogTest, InsertStale) {
+  log_t log;
+  auto index = 1;
+  auto ballot = 1;
+  EXPECT_TRUE(Insert(&log, MakeInstance(ballot, index, CommandType::kPut)));
+  EXPECT_EQ(CommandType::kPut, log[index].command_.type_);
+  EXPECT_FALSE(
+      Insert(&log, MakeInstance(ballot - 1, index, CommandType::kDel)));
+  EXPECT_EQ(CommandType::kPut, log[index].command_.type_);
+}
+
 TEST_F(LogDeathTest, InsertCase2Committed) {
   auto index = 1;
   auto inst1 =

@@ -279,6 +279,21 @@
   - constructor
     - ensure that class members are initialized properly
 
+  - insert
+    - inserting a new instance in in-progress state returns true, and inserting
+      an instance with the same ballot, command, and state at the same index, is
+      a no-op and returns false
+
+  - insert-update-in-progress
+    - updating an in-progress instance with a higher ballot updates the instance
+      and returns false
+
+  - insert-update-committed
+    - updating a committed instance is a no-op and returns false.
+
+  - insert-stale
+    - inserting a stale instance is a no-op returns false
+
   - insert-case2-committed (death test)
     - see case 2 in the description of insert
 
