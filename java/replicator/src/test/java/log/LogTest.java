@@ -8,10 +8,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import command.Command;
 import command.Command.CommandType;
+import command.Result;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import kvstore.MemKVStore;
 import log.Instance.InstanceState;
 import org.junit.jupiter.api.BeforeEach;
@@ -286,7 +291,7 @@ class LogTest {
     for (index = 1; index < 10; index++) {
       log_.append(MakeInstance(ballot, index));
     }
-    log_.commitUntil(index, ballot + 1);
+    log_.commitUntil(index - 1, ballot + 1);
 
     for (long i = 1; i < index; i++) {
       assertFalse(log_.get(i).isCommited());
@@ -302,7 +307,7 @@ class LogTest {
       log_.append(MakeInstance(ballot, index));
     }
 
-    long finalIndex = index;
+    long finalIndex = index - 1;
     var thrown = assertThrows(AssertionError.class, () -> log_.commitUntil(finalIndex, ballot - 1));
     assertEquals("CommitUntil case 2", thrown.getMessage());
   }
@@ -317,7 +322,7 @@ class LogTest {
       log_.append(MakeInstance(ballot, index));
     }
     // will only commitUntil 3(exclusively)
-    log_.commitUntil(index, ballot);
+    log_.commitUntil(index - 1, ballot);
     long i;
     for (i = 1; i < index; i++) {
       if (i % 3 == 0) {
@@ -333,4 +338,132 @@ class LogTest {
     }
     assertTrue(log_.isExecutable());
   }
+
+  @Test
+  void AppendCommitUntilExecute() {
+    ExecutorService executor = Executors.newFixedThreadPool(1);
+    List<Future<Map.Entry<Long, Result>>> futures = new ArrayList<>();
+    for (int i = 0; i < 10; i++) {
+      futures.add(executor.submit(() -> log_.execute(store_)));
+    }
+    long ballot = 0, index;
+    for (index = 1; index < 11; index++) {
+      log_.append(MakeInstance(ballot, index));
+    }
+    index--;
+    log_.commitUntil(index, ballot);
+    try {
+      for (Future<Map.Entry<Long, Result>> future : futures) {
+        future.get();
+      }
+    } catch (InterruptedException | ExecutionException e) {
+      throw new RuntimeException(e);
+    }
+    for (long i = 1; i < 11; i++) {
+      assertTrue(log_.get(i).isExecuted());
+    }
+    assertFalse(log_.isExecutable());
+  }
+
+  @Test
+  void AppendCommitUntilExecuteTrimUntil() {
+    ExecutorService executor = Executors.newFixedThreadPool(1);
+    List<Future<Map.Entry<Long, Result>>> futures = new ArrayList<>();
+    for (int i = 0; i < 10; i++) {
+      futures.add(executor.submit(() -> log_.execute(store_)));
+    }
+    long ballot = 0, index;
+    for (index = 1; index < 11; index++) {
+      log_.append(MakeInstance(ballot, index));
+    }
+    index--;
+    log_.commitUntil(index, ballot);
+    try {
+      for (Future<Map.Entry<Long, Result>> future : futures) {
+        future.get();
+      }
+    } catch (InterruptedException | ExecutionException e) {
+      throw new RuntimeException(e);
+    }
+    log_.trimUntil(index);
+    for (long i = 1; i < 11; i++) {
+      assertNull(log_.get(i));
+    }
+    assertEquals(index, log_.getLastExecuted());
+    assertEquals(index, log_.getGlobalLastExecuted());
+    assertFalse(log_.isExecutable());
+  }
+
+  @Test
+  void AppendAtTrimmedIndex() {
+    ExecutorService executor = Executors.newFixedThreadPool(1);
+    List<Future<Map.Entry<Long, Result>>> futures = new ArrayList<>();
+    for (int i = 0; i < 10; i++) {
+      futures.add(executor.submit(() -> log_.execute(store_)));
+    }
+
+    long ballot = 0, index;
+    for (index = 1; index < 11; index++) {
+      log_.append(MakeInstance(ballot, index));
+    }
+    index--;
+    log_.commitUntil(index, ballot);
+    try {
+      for (Future<Map.Entry<Long, Result>> future : futures) {
+        future.get();
+      }
+    } catch (ExecutionException | InterruptedException e) {
+      throw new RuntimeException(e);
+    }
+    log_.trimUntil(index);
+
+    for (long i = 1; i < 11; i++) {
+      assertNull(log_.get(i));
+    }
+    assertEquals(index, log_.getGlobalLastExecuted());
+    assertEquals(index, log_.getLastExecuted());
+    assertFalse(log_.isExecutable());
+
+    for (long i = 1; i < 11; i++) {
+      log_.append(MakeInstance(ballot, i));
+    }
+    for (long i = 1; i < 11; i++) {
+      assertNull(log_.get(i));
+    }
+  }
+
+  @Test
+  void InstancesForPrepare() {
+    ExecutorService executor = Executors.newFixedThreadPool(1);
+    List<Future<Map.Entry<Long, Result>>> futures = new ArrayList<>();
+    for (int i = 0; i < 5; i++) {
+      futures.add(executor.submit(() -> log_.execute(store_)));
+    }
+    ArrayList<Instance> expected = new ArrayList<>();
+    long ballot = 0;
+    for (int i = 0; i < 10; i++) {
+      expected.add(MakeInstance(ballot));
+      log_.append(expected.get(expected.size() - 1));
+    }
+    assertEquals(expected, log_.instancesForPrepare());
+
+    long index = 5;
+    log_.commitUntil(index, ballot);
+    try {
+      for (Future<Map.Entry<Long, Result>> future : futures) {
+        future.get();
+      }
+    } catch (ExecutionException | InterruptedException e) {
+      throw new RuntimeException(e);
+    }
+
+    log_.trimUntil(index);
+    for (int i = 0; i < index; i++) {
+      expected.remove(0);
+    }
+    assertEquals(expected, log_.instancesForPrepare());
+
+  }
+
+
 }
