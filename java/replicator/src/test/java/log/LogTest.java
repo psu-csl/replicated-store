@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import command.Command;
 import command.Command.CommandType;
+import java.util.HashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -60,17 +61,84 @@ class LogTest {
   }
 
   @Test
+  void Insert() {
+    HashMap<Long, Instance> log = new HashMap<>();
+    long index = 1, ballot = 1;
+    assertTrue(Log.insert(log, MakeInstance(ballot, index, CommandType.kPut)));
+    assertEquals(CommandType.kPut, log.get(index).getCommand().getCommandType());
+    assertFalse(Log.insert(log, MakeInstance(ballot, index, CommandType.kPut)));
+  }
+
+  @Test
+  void InsertUpdateInProgress() {
+    HashMap<Long, Instance> log = new HashMap<>();
+    long index = 1, ballot = 1;
+    assertTrue(Log.insert(log, MakeInstance(ballot, index, CommandType.kPut)));
+    assertEquals(CommandType.kPut, log.get(index).getCommand().getCommandType());
+    assertFalse(Log.insert(log, MakeInstance(ballot, index, CommandType.kPut)));
+  }
+
+  @Test
+  void InsertUpdateCommitted() {
+    HashMap<Long, Instance> log = new HashMap<>();
+    long index = 1, ballot = 1;
+    assertTrue(
+        Log.insert(log, MakeInstance(ballot, index, InstanceState.kCommitted, CommandType.kPut)));
+    assertFalse(
+        Log.insert(log, MakeInstance(ballot, index, InstanceState.kInProgress, CommandType.kPut)));
+
+  }
+
+  @Test
+  void InsertStale() {
+    HashMap<Long, Instance> log = new HashMap<>();
+    long index = 1, ballot = 1;
+    assertTrue(Log.insert(log, MakeInstance(ballot, index, CommandType.kPut)));
+    assertEquals(CommandType.kPut, log.get(index).getCommand().getCommandType());
+    // 0 = ballot - 1
+    assertFalse(Log.insert(log, MakeInstance(0, index, CommandType.kDel)));
+    assertEquals(CommandType.kPut, log.get(index).getCommand().getCommandType());
+  }
+
+  @Test
+  void InsertCase2Committed() {
+    HashMap<Long, Instance> log = new HashMap<>();
+    long index = 1;
+    var inst1 = MakeInstance(0, index, InstanceState.kCommitted, CommandType.kPut);
+    var inst2 = MakeInstance(0, index, InstanceState.kInProgress, CommandType.kDel);
+    Log.insert(log, inst1);
+    var thrown = assertThrows(AssertionError.class, () -> Log.insert(log, inst2));
+    assertEquals("Insert case2", thrown.getMessage());
+  }
+
+  @Test
+  void InsertCase2Executed() {
+    HashMap<Long, Instance> log = new HashMap<>();
+    long index = 1;
+    var inst1 = MakeInstance(0, index, InstanceState.kExecuted, CommandType.kPut);
+    var inst2 = MakeInstance(0, index, InstanceState.kInProgress, CommandType.kDel);
+    Log.insert(log, inst1);
+    var thrown = assertThrows(AssertionError.class, () -> Log.insert(log, inst2));
+    assertEquals("Insert case2", thrown.getMessage());
+  }
+
+  @Test
+  void InsertCase3() {
+    HashMap<Long, Instance> log = new HashMap<>();
+    long index = 1;
+    var inst1 = MakeInstance(0, index, InstanceState.kInProgress, CommandType.kPut);
+    var inst2 = MakeInstance(0, index, InstanceState.kInProgress, CommandType.kDel);
+    Log.insert(log, inst1);
+    var thrown = assertThrows(AssertionError.class, () -> Log.insert(log, inst2));
+    assertEquals("Insert case3", thrown.getMessage());
+  }
+
+  @Test
   void Append() {
     log_.append(MakeInstance(0));
     log_.append(MakeInstance(0));
     assertEquals(1, log_.get(1L).getIndex());
     assertEquals(2, log_.get(2L).getIndex());
-  }
-
-  @Test
-  void AppendExecuted() {
-    log_.append(MakeInstance(0, InstanceState.kExecuted));
-    assertTrue(log_.get(1L).isCommited());
   }
 
   @Test
@@ -103,36 +171,6 @@ class LogTest {
     log_.append(MakeInstance(hi_ballot, index, CommandType.kPut));
     log_.append(MakeInstance(lo_ballot, index, CommandType.kDel));
     assertEquals(CommandType.kPut, log_.get(index).getCommand().getCommandType());
-  }
-
-  @Test
-  void AppendCase3Committed() {
-    long index = 1;
-    var inst1 = MakeInstance(0, index, InstanceState.kCommitted, CommandType.kPut);
-    var inst2 = MakeInstance(0, index, InstanceState.kInProgress, CommandType.kDel);
-    log_.append(inst1);
-    var thrown = assertThrows(AssertionError.class, () -> log_.append(inst2));
-    assertEquals("Append case 3", thrown.getMessage());
-  }
-
-  @Test
-  void AppendCase3Executed() {
-    long index = 1;
-    var inst1 = MakeInstance(0, index, InstanceState.kExecuted, CommandType.kPut);
-    var inst2 = MakeInstance(0, index, InstanceState.kInProgress, CommandType.kDel);
-    log_.append(inst1);
-    var thrown = assertThrows(AssertionError.class, () -> log_.append(inst2));
-    assertEquals("Append case 3", thrown.getMessage());
-  }
-
-  @Test
-  void AppendCase4() {
-    long index = 1;
-    var inst1 = MakeInstance(0, index, InstanceState.kInProgress, CommandType.kPut);
-    var inst2 = MakeInstance(0, index, InstanceState.kInProgress, CommandType.kDel);
-    log_.append(inst1);
-    var thrown = assertThrows(AssertionError.class, () -> log_.append(inst2));
-    assertEquals("Append case 4", thrown.getMessage());
   }
 
   @Test
