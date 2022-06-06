@@ -262,4 +262,75 @@ class LogTest {
     assertTrue(log_.get(index3).isExecuted());
     assertEquals(index3, log_.getLastExecuted());
   }
+
+  @Test
+  void CommitUntil() {
+    long ballot = 0, index;
+
+    for (index = 1; index < 10; index++) {
+      log_.append(MakeInstance(ballot, index));
+    }
+    log_.append(MakeInstance(ballot, index));
+    log_.commitUntil(index - 1, ballot);
+
+    for (long i = 1; i < index; i++) {
+      assertTrue(log_.get(i).isCommited());
+    }
+    assertFalse(log_.get(index).isCommited());
+    assertTrue(log_.isExecutable());
+  }
+
+  @Test
+  void CommitUntilHigherBallot() {
+    long ballot = 0, index;
+    for (index = 1; index < 10; index++) {
+      log_.append(MakeInstance(ballot, index));
+    }
+    log_.commitUntil(index, ballot + 1);
+
+    for (long i = 1; i < index; i++) {
+      assertFalse(log_.get(i).isCommited());
+    }
+
+    assertFalse(log_.isExecutable());
+  }
+
+  @Test
+  void CommitUntilCase2() {
+    long ballot = 5, index;
+    for (index = 1; index < 10; index++) {
+      log_.append(MakeInstance(ballot, index));
+    }
+
+    long finalIndex = index;
+    var thrown = assertThrows(AssertionError.class, () -> log_.commitUntil(finalIndex, ballot - 1));
+    assertEquals("CommitUntil case 2", thrown.getMessage());
+  }
+
+  @Test
+  void CommitUntilWithGap() {
+    long ballot = 0, index;
+    for (index = 1; index < 10; index++) {
+      if (index % 3 == 0) { // 3, 6, 9 are gaps
+        continue;
+      }
+      log_.append(MakeInstance(ballot, index));
+    }
+    // will only commitUntil 3(exclusively)
+    log_.commitUntil(index, ballot);
+    long i;
+    for (i = 1; i < index; i++) {
+      if (i % 3 == 0) {
+        break;
+      }
+      assertTrue(log_.get(i).isCommited());
+    }
+    for (; i < index; i++) {
+      if (i % 3 == 0) {
+        continue;
+      }
+      assertFalse(log_.get(i).isCommited());
+    }
+    assertTrue(log_.isExecutable());
+  }
 }
