@@ -28,6 +28,27 @@ public class Log {
     cvCommitable = mu.newCondition();
   }
 
+  public static boolean insert(HashMap<Long, Instance> log, Instance instance) {
+    var i = instance.getIndex();
+    var it = log.get(i);
+    if (it == null) {
+      log.put(i, instance);
+      return true;
+    }
+    if (it.isCommited() || it.isExecuted()) {
+      assert (it.getCommand().equals(instance.getCommand())) : "Insert case2";
+      return false;
+    }
+    if (instance.getBallot() > it.getBallot()) {
+      log.put(i, instance);
+      return false;
+    }
+    assert
+        instance.getBallot() != it.getBallot() || (it.getCommand()
+            .equals(instance.getCommand())) : "Insert case3";
+    return false;
+  }
+
   public long getLastExecuted() {
     mu.lock();
     try {
@@ -60,7 +81,11 @@ public class Log {
     return found != null && found.getState() == InstanceState.kCommitted;
   }
 
-  public void append(Instance instance) {
+  public Instance get(Long index) {
+    return log.get(index);
+  }
+
+  /*public void append(Instance instance) {
     mu.lock();
     try {
       long i = instance.getIndex();
@@ -90,6 +115,22 @@ public class Log {
       }
       assert it.getBallot() != instance.getBallot() || (it.getCommand()
           == instance.getCommand()) : "Append case 4";
+    } finally {
+      mu.unlock();
+    }
+  }*/
+
+  public void append(Instance instance) {
+    mu.lock();
+    try {
+      long i = instance.getIndex();
+      if (i <= globalLastExecuted) {
+        return;
+      }
+      if (insert(log, instance)) {
+        lastIndex = max(lastIndex, i);
+        cvCommitable.signalAll();
+      }
     } finally {
       mu.unlock();
     }
@@ -137,10 +178,6 @@ public class Log {
     } finally {
       mu.unlock();
     }
-  }
-
-  public Instance get(Long index) {
-    return log.get(index);
   }
 
   @Override
