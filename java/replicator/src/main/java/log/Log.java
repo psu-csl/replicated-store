@@ -13,11 +13,11 @@ import log.Instance.InstanceState;
 
 public class Log {
 
-  private final long globalLastExecuted = 0;
   private final ReentrantLock mu;
   private final Condition cvExecutable;
   private final Condition cvCommitable;
   private final HashMap<Long, Instance> log;
+  private long globalLastExecuted = 0;
   private long lastIndex = 0;
   private long lastExecuted = 0;
 
@@ -167,6 +167,23 @@ public class Log {
     } finally {
       mu.unlock();
     }
+  }
+
+  void trimUntil(long leaderGlobalLastExecuted) {
+    assert (leaderGlobalLastExecuted >= globalLastExecuted) : "invalid leader_global_last_executed";
+
+    mu.lock();
+    try {
+      while (globalLastExecuted < leaderGlobalLastExecuted) {
+        var current = globalLastExecuted++;
+        var inst = log.get(globalLastExecuted);
+        assert (inst != null && inst.isExecuted()) : "TrimUntil case 1";
+        log.remove(current, inst);
+      }
+    } finally {
+      mu.unlock();
+    }
+
   }
 
   @Override
