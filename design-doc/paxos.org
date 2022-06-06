@@ -50,7 +50,7 @@
 
   - methods
 
-    - constructor(id: int, log: *Log, cfg: config)
+    - constructor(log: *Log, cfg: config)
 
     - next_ballot() -> int
       # description: gets the next ballot number by incrementing the round
