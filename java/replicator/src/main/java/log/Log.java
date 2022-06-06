@@ -84,7 +84,7 @@ public class Log {
   public Instance get(Long index) {
     return log.get(index);
   }
-  
+
   public void append(Instance instance) {
     mu.lock();
     try {
@@ -140,6 +140,30 @@ public class Log {
       return new SimpleEntry<>(it.getClientId(), result);
     } catch (InterruptedException e) {
       throw new RuntimeException(e);
+    } finally {
+      mu.unlock();
+    }
+  }
+
+  public void commitUntil(long leaderLastExecuted, long ballot) {
+    assert (leaderLastExecuted > 0) : "invalid leader_last_executed";
+    assert (ballot >= 0) : "invalid ballot";
+
+    mu.lock();
+    try {
+      for (long i = lastExecuted + 1; i <= leaderLastExecuted; i++) {
+        var inst = log.get(i);
+        if (inst == null) {
+          break;
+        }
+        assert (ballot >= inst.getBallot()) : "CommitUntil case 2";
+        if (inst.getBallot() == ballot) {
+          inst.setCommited();
+        }
+      }
+      if (isExecutable()) {
+        cvExecutable.signal();
+      }
     } finally {
       mu.unlock();
     }
