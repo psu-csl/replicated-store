@@ -39,6 +39,19 @@ public class Command {
     this.value = value;
   }
 
+  @Override
+  public boolean equals(Object o) {
+    if (o == this) {
+      return true;
+    }
+
+    if (!(o instanceof Command c)) {
+      return false;
+    }
+    return c.getCommandType() == this.type && c.getKey().equals(this.key) && c.getValue()
+        .equals(this.value);
+  }
+
   public enum CommandType {
     kGet, kPut, kDel
   }
