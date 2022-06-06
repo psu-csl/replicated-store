@@ -1,4 +1,4 @@
-- Paxos
+- MultiPaxos
   # The Paxos module that contains the consensus logic for phase1 and phase2 of
   # the MultiPaxos protocol.
 
@@ -36,9 +36,9 @@
     - heartbeat_interval_: milliseconds; interval between heartbeats.
       initialized from the configuration file.
 
-    - mu_: mutex; paxos is a concurrent object -- multiple threads may
+    - mu_: mutex; MultiPaxos is a concurrent object -- multiple threads may
       concurrently call its |decide| method. |mu_| protects shared data in
-      paxos.
+      MultiPaxos.
 
   - constants
 
@@ -46,7 +46,7 @@
       the current leader. we also add value to |ballot_| to increment the round
       portion of |ballot_| by one.
 
-    - max_num_peers_ = 0xf: maximum number of paxos peers.
+    - max_num_peers_ = 0xf: maximum number of peers.
 
   - methods
 
@@ -62,6 +62,7 @@
       mu_.lock()
       ballot_ += id_bits_
       ballot_ = (ballot_ & ~id_bits_) | id_
+      return ballot_
 
     - leader() -> int
       # description: returns current leader's id
@@ -84,3 +85,8 @@
       # postconditions:
       id = leader();
       return id != id_ && id < max_num_peers_
+
+- unit tests
+
+  - constructor
+    - ensure that class members are initialized correctly.

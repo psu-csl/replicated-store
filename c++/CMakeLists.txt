@@ -45,8 +45,8 @@ target_link_libraries(grpc_proto
 
 set(CMAKE_CXX_STANDARD 17)
 add_compile_options(-Wall -Wextra -pedantic -Werror -g -ggdb -fsanitize=thread)
-add_executable(replicant replicant.cc paxos.cc paxosrpc.cc memkvstore.cc
-  command.cc instance.cc main.cc)
+add_executable(replicant replicant.cc paxos.cc paxosrpc.cc multipaxos.cc
+  memkvstore.cc command.cc instance.cc main.cc)
 
 add_link_options(-fsanitize=thread)
 
@@ -73,9 +73,9 @@ FetchContent_MakeAvailable(googletest)
 enable_testing()
 
 include(GoogleTest)
-foreach(_target log memkvstore)
-  add_executable("${_target}_test" command.cc instance.cc memkvstore.cc "${_target}.cc"
-    "${_target}_test.cc")
+foreach(_target memkvstore log multipaxos)
+  add_executable("${_target}_test" command.cc instance.cc memkvstore.cc log.cc
+    "${_target}.cc" "${_target}_test.cc")
   target_link_libraries("${_target}_test" gtest_main glog::glog)
   gtest_discover_tests("${_target}_test")
 endforeach()
