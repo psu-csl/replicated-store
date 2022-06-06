@@ -52,8 +52,8 @@
       # description: given |log| and |instance|, inserts |instance| to |log| if
       # possible, and returns true if an instance was inserted to an empty slot;
       # also checks for safety violations.
-      # precondition:
-      # postcondition:
+      # preconditions:
+      # postconditions:
 
       # case (1): |log| doesn't have an instance at instance.index_, in which
       # case we simply insert the instance to |log|.
@@ -111,8 +111,8 @@
     - append(instance: Instance)
       # description: appends an instance to the log; called from the
       # accept_handler.
-      # precondition:
-      # postcondition:
+      # preconditions:
+      # postconditions:
 
       * # case (1): instance.index is pruned from log
         #
@@ -130,7 +130,7 @@
         cv_commitable_.notify_all()
 
     - commit(index_: int)
-      # precondition: int > 0
+      # preconditions: int > 0
       # sets the state of the instance at index to committed and possibly wakes
       # up the executor thread if the log is executable.
 
@@ -249,8 +249,8 @@
     - instances_for_prepare() -> Instance[]
       # description: return instances for a response to a prepare message; these
       # are instances since global_last_executed_.
-      # precondition:
-      # postcondition:
+      # preconditions:
+      # postconditions:
       mu_.lock()
       instances = Instance[]
       for i = global_last_executed_ + 1; i <= last_index_; ++i
