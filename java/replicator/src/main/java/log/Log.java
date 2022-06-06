@@ -84,42 +84,7 @@ public class Log {
   public Instance get(Long index) {
     return log.get(index);
   }
-
-  /*public void append(Instance instance) {
-    mu.lock();
-    try {
-      long i = instance.getIndex();
-      if (i <= globalLastExecuted) {
-        return;
-      }
-      if (instance.isExecuted()) {
-        instance.setCommited();
-      }
-
-      var it = log.get(i);
-      if (it == null) {
-        assert (i > lastExecuted) : "Append case 2";
-        log.put(i, instance);
-        lastIndex = max(lastIndex, i);
-        cvCommitable.signalAll();
-        return;
-      }
-
-      if (it.isCommited() || it.isExecuted()) {
-        assert (it.getCommand() == instance.getCommand()) : "Append case 3";
-        return;
-      }
-      if (it.getBallot() < instance.getBallot()) {
-        log.put(i, instance);
-        return;
-      }
-      assert it.getBallot() != instance.getBallot() || (it.getCommand()
-          == instance.getCommand()) : "Append case 4";
-    } finally {
-      mu.unlock();
-    }
-  }*/
-
+  
   public void append(Instance instance) {
     mu.lock();
     try {
