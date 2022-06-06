@@ -4,6 +4,7 @@ import static java.lang.Math.max;
 
 import command.Result;
 import java.util.AbstractMap.SimpleEntry;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.locks.Condition;
@@ -175,7 +176,7 @@ public class Log {
     mu.lock();
     try {
       while (globalLastExecuted < leaderGlobalLastExecuted) {
-        var current = globalLastExecuted++;
+        var current = ++globalLastExecuted;
         var inst = log.get(globalLastExecuted);
         assert (inst != null && inst.isExecuted()) : "TrimUntil case 1";
         log.remove(current, inst);
@@ -183,7 +184,22 @@ public class Log {
     } finally {
       mu.unlock();
     }
+  }
 
+  public ArrayList<Instance> instancesForPrepare() {
+    mu.lock();
+    try {
+      ArrayList<Instance> instances = new ArrayList<>();
+      for (long i = globalLastExecuted + 1; i <= lastIndex; i++) {
+        var inst = log.get(i);
+        if (inst != null) {
+          instances.add(inst);
+        }
+      }
+      return instances;
+    } finally {
+      mu.unlock();
+    }
   }
 
   @Override
