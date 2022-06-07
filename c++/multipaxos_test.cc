@@ -20,3 +20,20 @@ TEST_F(MultiPaxosTest, Constructor) {
   EXPECT_FALSE(multi_paxos_.IsLeader());
   EXPECT_FALSE(multi_paxos_.IsSomeoneElseLeader());
 }
+
+TEST_F(MultiPaxosTest, NextBallot) {
+  for (int id = 0; id < kMaxNumPeers; ++id) {
+    json config = json::parse("{ \"id\": " + std::to_string(id) + " }");
+    MultiPaxos mp(&log_, config);
+    int64_t ballot = id;
+
+    ballot += kRoundIncrement;
+    EXPECT_EQ(ballot, mp.NextBallot());
+    ballot += kRoundIncrement;
+    EXPECT_EQ(ballot, mp.NextBallot());
+
+    EXPECT_TRUE(mp.IsLeader());
+    EXPECT_FALSE(mp.IsSomeoneElseLeader());
+    EXPECT_EQ(id, mp.Leader());
+  }
+}

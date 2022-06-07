@@ -10,6 +10,7 @@
 #include "log.h"
 
 static const int64_t kIdBits = 0xff;
+static const int64_t kRoundIncrement = kIdBits + 1;
 static const int64_t kMaxNumPeers = 0xf;
 
 using nlohmann::json;
@@ -24,7 +25,7 @@ class MultiPaxos {
 
   int64_t NextBallot(void) {
     std::scoped_lock lock(mu_);
-    ballot_ += kIdBits;
+    ballot_ += kRoundIncrement;
     ballot_ = (ballot_ & ~kIdBits) | id_;
     return ballot_;
   }
