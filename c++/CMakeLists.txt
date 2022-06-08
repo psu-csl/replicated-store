@@ -13,14 +13,14 @@ endif()
 include(cmake/common.cmake)
 
 # Proto file
-get_filename_component(proto "paxosrpc.proto" ABSOLUTE)
+get_filename_component(proto "multipaxosrpc.proto" ABSOLUTE)
 get_filename_component(proto_path "${proto}" PATH)
 
 # Generated sources
-set(proto_srcs "${CMAKE_CURRENT_BINARY_DIR}/paxosrpc.pb.cc")
-set(proto_hdrs "${CMAKE_CURRENT_BINARY_DIR}/paxosrpc.pb.h")
-set(grpc_srcs "${CMAKE_CURRENT_BINARY_DIR}/paxosrpc.grpc.pb.cc")
-set(grpc_hdrs "${CMAKE_CURRENT_BINARY_DIR}/paxosrpc.grpc.pb.h")
+set(proto_srcs "${CMAKE_CURRENT_BINARY_DIR}/multipaxosrpc.pb.cc")
+set(proto_hdrs "${CMAKE_CURRENT_BINARY_DIR}/multipaxosrpc.pb.h")
+set(grpc_srcs "${CMAKE_CURRENT_BINARY_DIR}/multipaxosrpc.grpc.pb.cc")
+set(grpc_hdrs "${CMAKE_CURRENT_BINARY_DIR}/multipaxosrpc.grpc.pb.h")
 add_custom_command(
       OUTPUT "${proto_srcs}" "${proto_hdrs}" "${grpc_srcs}" "${grpc_hdrs}"
       COMMAND ${_PROTOBUF_PROTOC}
@@ -45,7 +45,8 @@ target_link_libraries(grpc_proto
 
 set(CMAKE_CXX_STANDARD 17)
 add_compile_options(-Wall -Wextra -pedantic -Werror -g -ggdb -fsanitize=thread)
-add_executable(replicant replicant.cc paxos.cc paxosrpc.cc multipaxos.cc
+add_executable(replicant replicant.cc
+  multipaxos.cc multipaxosrpc.cc
   memkvstore.cc command.cc instance.cc main.cc)
 
 add_link_options(-fsanitize=thread)

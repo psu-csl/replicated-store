@@ -6,8 +6,9 @@
 #include <optional>
 
 #include "json_fwd.h"
+#include "log.h"
 #include "memkvstore.h"
-#include "paxos.h"
+#include "multipaxos.h"
 
 using asio::ip::tcp;
 using nlohmann::json;
@@ -24,7 +25,8 @@ class Replicant {
   std::optional<Command> ReadCommand(tcp::socket* cli);
   std::string ReadLine(tcp::socket* cli);
 
-  std::unique_ptr<Consensus> consensus_;
+  Log log_;
+  MultiPaxos mp_;
   asio::io_context io_;
   tcp::acceptor acceptor_;
   asio::thread_pool tp_;

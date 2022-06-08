@@ -12,10 +12,8 @@
 #include "json.h"
 #include "replicant.h"
 
-Replicant::Replicant(const json& config)
-    : consensus_(new Paxos(new MemKVStore(), config)),
-      acceptor_(io_),
-      tp_(config["threadpool_size"]) {
+Replicant::Replicant(json const& config)
+    : mp_(&log_, config), acceptor_(io_), tp_(config["threadpool_size"]) {
   // determine port number for clients, which is 1 more than the port for paxos
   // peers; allows us to run multiple paxos peers on the same host for testing
   int id = config["id"];
@@ -82,18 +80,18 @@ std::string Replicant::ReadLine(tcp::socket* cli) {
   return line;
 }
 
-void Replicant::HandleCommand(tcp::socket* cli, Command cmd) {
-  bool is_get = cmd.type_ == CommandType::kGet;
-  auto r = consensus_->AgreeAndExecute(std::move(cmd));
+void Replicant::HandleCommand(tcp::socket* /* cli */, Command /* cmd */) {
+  // bool is_get = cmd.type_ == CommandType::kGet;
+  // auto r = consensus_->AgreeAndExecute(std::move(cmd));
 
-  static const std::string success = "success\n";
-  static const std::string failure = "failure\n";
+  // static const std::string success = "success\n";
+  // static const std::string failure = "failure\n";
 
-  if (r.ok_) {
-    asio::write(*cli, asio::buffer(success));
-    if (is_get)
-      asio::write(*cli, asio::buffer(*r.value_));
-  } else {
-    asio::write(*cli, asio::buffer(failure));
-  }
+  // if (r.ok_) {
+  //   asio::write(*cli, asio::buffer(success));
+  //   if (is_get)
+  //     asio::write(*cli, asio::buffer(*r.value_));
+  // } else {
+  //   asio::write(*cli, asio::buffer(failure));
+  // }
 }
