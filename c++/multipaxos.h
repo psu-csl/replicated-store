@@ -30,10 +30,9 @@ class MultiPaxos {
     return ballot_;
   }
 
+  int64_t id(void) const { return id_; }
   int64_t Leader(void) const { return ballot_ & kIdBits; }
-
   bool IsLeader(void) const { return Leader() == id_; }
-
   bool IsSomeoneElseLeader() const {
     auto id = Leader();
     return id != id_ && id < kMaxNumPeers;
