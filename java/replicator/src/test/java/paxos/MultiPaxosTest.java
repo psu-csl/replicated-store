@@ -23,14 +23,14 @@ class MultiPaxosTest {
   }
 
   @Test
-  void Constructor() {
+  void constructor() {
     assertEquals(MultiPaxos.kMaxNumPeers, multiPaxos.leader());
     assertFalse(multiPaxos.isLeader());
     assertFalse(multiPaxos.isSomeoneElseLeader());
   }
 
   @Test
-  void NextBallot() {
+  void nextBallot() {
     for (long id = 0; id < MultiPaxos.kMaxNumPeers; id++) {
       Configuration config = new Configuration();
       config.setId(id);
