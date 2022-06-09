@@ -31,11 +31,21 @@ public class MultiPaxos {
   }
 
   public long leader() {
-    return ballot.get() & kIdBits;
+    mu.lock();
+    try {
+      return ballot.get() & kIdBits;
+    } finally {
+      mu.unlock();
+    }
   }
 
   public boolean isLeader() {
-    return leader() == id;
+    mu.lock();
+    try {
+      return leader() == id;
+    } finally {
+      mu.unlock();
+    }
   }
 
   public boolean isSomeoneElseLeader() {
