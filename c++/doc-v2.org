@@ -62,14 +62,6 @@
   - log_: instances since global_last_executed_ in the corresponding prepareRPC
     request (valid only if type_ == ok}
 
-- message heartbeat_rpc_request
-  - ballot_: local ballot
-  - last_executed_: int
-  - global_last_executed_: int
-
-- message heartbeat_rpc_response
-  - last_executed_: int (local last_executed_)
-
 * OBJECTS
 
 - Replicant
@@ -323,15 +315,6 @@
           sleep(heartbeat_interval_)
         }
       }
-
-    - heartbeat_handler(message: heartbeat_rpc_request):
-      if message.ballot >= ballot_:
-        last_heartbeat_ = time::now()
-        ballot_ = message.ballot_
-        log_.commit_until(message_.last_executed_, ballot_)
-        log_.trim_until(message_.global_last_executed_)
-      # stale message
-      return heartbeat_rpc_response{last_executed_: log_.last_executed()}
 
 == TODO ========================================================================
 

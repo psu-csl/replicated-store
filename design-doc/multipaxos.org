@@ -50,6 +50,16 @@
 
     - max_num_peers_ = 0xf: maximum number of peers.
 
+  - types
+
+    - heartbeat_rpc_request
+      - ballot_: ballot of the leader sending the heartbeat RPC
+      - last_executed_: last_executed_ of the leader sending the heartbeat RPC
+      - global_last_executed_: global_last_executed of the leader sending the heartbeat RPC
+    - heartbeat_rpc_response
+      - last_executed_: last_executed_ of the follower responding to the
+        heartbeat RPC
+
   - methods
 
     - constructor(log: *Log, cfg: config)
@@ -87,6 +97,17 @@
       # postconditions:
       id = leader();
       return id != id_ && id < max_num_peers_
+
+    - heartbeat_handler(message: heartbeat_rpc_request)
+      # description: handler for the heartbeat RPC
+      # preconditions:
+      # postconditions:
+      if message.ballot_ >= ballot_:
+        last_heartbeat_ = time::now()
+        ballot_ = message.ballot_
+        log_.commit_until(message_.last_executed_, ballot_)
+        log_.trim_until(message_.global_last_executed)
+      return heartbeat_rpc_response{last_executed_: log_.last_executed()}
 
 - unit tests
 
