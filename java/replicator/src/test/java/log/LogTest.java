@@ -56,7 +56,7 @@ class LogTest {
   }
 
   @Test
-  void Constructor() {
+  void constructor() {
     assertEquals(log_.getLastExecuted(), 0);
     assertEquals(log_.getGlobalLastExecuted(), 0);
     assertFalse(log_.isExecutable());
@@ -66,7 +66,7 @@ class LogTest {
   }
 
   @Test
-  void Insert() {
+  void insert() {
     HashMap<Long, Instance> log = new HashMap<>();
     long index = 1, ballot = 1;
     assertTrue(Log.insert(log, MakeInstance(ballot, index, CommandType.kPut)));
@@ -75,7 +75,7 @@ class LogTest {
   }
 
   @Test
-  void InsertUpdateInProgress() {
+  void insertUpdateInProgress() {
     HashMap<Long, Instance> log = new HashMap<>();
     long index = 1, ballot = 1;
     assertTrue(Log.insert(log, MakeInstance(ballot, index, CommandType.kPut)));
@@ -84,7 +84,7 @@ class LogTest {
   }
 
   @Test
-  void InsertUpdateCommitted() {
+  void insertUpdateCommitted() {
     HashMap<Long, Instance> log = new HashMap<>();
     long index = 1, ballot = 1;
     assertTrue(
@@ -95,7 +95,7 @@ class LogTest {
   }
 
   @Test
-  void InsertStale() {
+  void insertStale() {
     HashMap<Long, Instance> log = new HashMap<>();
     long index = 1, ballot = 1;
     assertTrue(Log.insert(log, MakeInstance(ballot, index, CommandType.kPut)));
@@ -106,7 +106,7 @@ class LogTest {
   }
 
   @Test
-  void InsertCase2Committed() {
+  void insertCase2Committed() {
     HashMap<Long, Instance> log = new HashMap<>();
     long index = 1;
     var inst1 = MakeInstance(0, index, InstanceState.kCommitted, CommandType.kPut);
@@ -117,7 +117,7 @@ class LogTest {
   }
 
   @Test
-  void InsertCase2Executed() {
+  void insertCase2Executed() {
     HashMap<Long, Instance> log = new HashMap<>();
     long index = 1;
     var inst1 = MakeInstance(0, index, InstanceState.kExecuted, CommandType.kPut);
@@ -128,7 +128,7 @@ class LogTest {
   }
 
   @Test
-  void InsertCase3() {
+  void insertCase3() {
     HashMap<Long, Instance> log = new HashMap<>();
     long index = 1;
     var inst1 = MakeInstance(0, index, InstanceState.kInProgress, CommandType.kPut);
@@ -139,7 +139,7 @@ class LogTest {
   }
 
   @Test
-  void Append() {
+  void append() {
     log_.append(MakeInstance(0));
     log_.append(MakeInstance(0));
     assertEquals(1, log_.get(1L).getIndex());
@@ -147,7 +147,7 @@ class LogTest {
   }
 
   @Test
-  void AppendWithGap() {
+  void appendWithGap() {
     long index = 42;
     log_.append(MakeInstance(0, index));
     assertEquals(index, log_.get(index).getIndex());
@@ -155,7 +155,7 @@ class LogTest {
   }
 
   @Test
-  void AppendFillGaps() {
+  void appendFillGaps() {
     long index = 42;
     log_.append(MakeInstance(0, index));
     log_.append(MakeInstance(0, index - 10));
@@ -163,7 +163,7 @@ class LogTest {
   }
 
   @Test
-  void AppendHighBallotOverride() {
+  void appendHighBallotOverride() {
     long index = 1, lo_ballot = 0, hi_ballot = 1;
     log_.append(MakeInstance(lo_ballot, index, CommandType.kPut));
     log_.append(MakeInstance(hi_ballot, index, CommandType.kDel));
@@ -171,7 +171,7 @@ class LogTest {
   }
 
   @Test
-  void AppendLowBallotNoEffect() {
+  void appendLowBallotNoEffect() {
     long index = 1, lo_ballot = 0, hi_ballot = 1;
     log_.append(MakeInstance(hi_ballot, index, CommandType.kPut));
     log_.append(MakeInstance(lo_ballot, index, CommandType.kDel));
@@ -179,7 +179,7 @@ class LogTest {
   }
 
   @Test
-  void Commit() {
+  void commit() {
     long index1 = 1, index2 = 2;
     log_.append(MakeInstance(0, index1));
     log_.append(MakeInstance(0, index2));
@@ -202,7 +202,7 @@ class LogTest {
   }
 
   @Test
-  void CommitBeforeAppend() {
+  void commitBeforeAppend() {
     long index = 1;
     ExecutorService service = Executors.newFixedThreadPool(1);
     var f = service.submit(() -> log_.commit(index));
@@ -218,7 +218,7 @@ class LogTest {
 
 
   @Test
-  void AppendCommitExecute() {
+  void appendCommitExecute() {
     long index = 1;
 
     ExecutorService service = Executors.newFixedThreadPool(1);
@@ -240,7 +240,7 @@ class LogTest {
   }
 
   @Test
-  void AppendCommitExecuteOutOfOrder() {
+  void appendCommitExecuteOutOfOrder() {
     ExecutorService service = Executors.newFixedThreadPool(1);
     var f = service.submit(() -> {
       log_.execute(store_);
@@ -269,7 +269,7 @@ class LogTest {
   }
 
   @Test
-  void CommitUntil() {
+  void commitUntil() {
     long ballot = 0, index;
 
     for (index = 1; index < 10; index++) {
@@ -286,7 +286,7 @@ class LogTest {
   }
 
   @Test
-  void CommitUntilHigherBallot() {
+  void commitUntilHigherBallot() {
     long ballot = 0, index;
     for (index = 1; index < 10; index++) {
       log_.append(MakeInstance(ballot, index));
@@ -301,7 +301,7 @@ class LogTest {
   }
 
   @Test
-  void CommitUntilCase2() {
+  void commitUntilCase2() {
     long ballot = 5, index;
     for (index = 1; index < 10; index++) {
       log_.append(MakeInstance(ballot, index));
@@ -313,7 +313,7 @@ class LogTest {
   }
 
   @Test
-  void CommitUntilWithGap() {
+  void commitUntilWithGap() {
     long ballot = 0, index;
     for (index = 1; index < 10; index++) {
       if (index % 3 == 0) { // 3, 6, 9 are gaps
@@ -340,7 +340,7 @@ class LogTest {
   }
 
   @Test
-  void AppendCommitUntilExecute() {
+  void appendCommitUntilExecute() {
     ExecutorService executor = Executors.newFixedThreadPool(1);
     List<Future<Map.Entry<Long, Result>>> futures = new ArrayList<>();
     for (int i = 0; i < 10; i++) {
@@ -366,7 +366,7 @@ class LogTest {
   }
 
   @Test
-  void AppendCommitUntilExecuteTrimUntil() {
+  void appendCommitUntilExecuteTrimUntil() {
     ExecutorService executor = Executors.newFixedThreadPool(1);
     List<Future<Map.Entry<Long, Result>>> futures = new ArrayList<>();
     for (int i = 0; i < 10; i++) {
@@ -395,7 +395,7 @@ class LogTest {
   }
 
   @Test
-  void AppendAtTrimmedIndex() {
+  void appendAtTrimmedIndex() {
     ExecutorService executor = Executors.newFixedThreadPool(1);
     List<Future<Map.Entry<Long, Result>>> futures = new ArrayList<>();
     for (int i = 0; i < 10; i++) {
@@ -433,7 +433,7 @@ class LogTest {
   }
 
   @Test
-  void InstancesForPrepare() {
+  void instancesForPrepare() {
     ExecutorService executor = Executors.newFixedThreadPool(1);
     List<Future<Map.Entry<Long, Result>>> futures = new ArrayList<>();
     for (int i = 0; i < 5; i++) {
