@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package multipaxosrpc;
+
+service MultiPaxosRPC {
+  rpc Heartbeat (HeartbeatRequest) returns (HeartbeatResponse) {}
+}
+
+message HeartbeatRequest {
+  int64 ballot = 1;
+  int64 last_executed = 2;
+  int64 global_last_executed = 3;
+}
+
+message HeartbeatResponse {
+  int32 last_executed = 1;
+}
