@@ -1,8 +1,11 @@
 package paxos;
 
+import java.time.Instant;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
 import log.Log;
+import multipaxosrpc.HeartbeatRequest;
+import multipaxosrpc.HeartbeatResponse;
 
 public class MultiPaxos {
 
@@ -11,12 +14,17 @@ public class MultiPaxos {
   protected static long kMaxNumPeers = 0xf;
   private final AtomicLong ballot;
   private final ReentrantLock mu;
+  private final Log log;
+  private final MultiPaxosGRPC multiPaxosGRPC;
   private long id;
+  private Instant lastHeartbeat;
 
   public MultiPaxos(Log log, Configuration config) {
     this.id = config.getId();
     this.ballot = new AtomicLong(kMaxNumPeers);
+    this.log = log;
     mu = new ReentrantLock();
+    multiPaxosGRPC = new MultiPaxosGRPC(this);
   }
 
   public long nextBallot() {
@@ -53,6 +61,20 @@ public class MultiPaxos {
     return id != this.id && id < kMaxNumPeers;
   }
 
+  public HeartbeatResponse heartbeatHandler(HeartbeatRequest msg) {
+    mu.lock();
+    try {
+      if (msg.getBallot() >= ballot.get()) {
+        lastHeartbeat = Instant.now();
+        ballot.set(msg.getBallot());
+        log.commitUntil(msg.getLastExecuted(), ballot.get());
+        log.trimUntil(msg.getGlobalLastExecuted());
+      }
+      return HeartbeatResponse.newBuilder().setLastExecuted(log.getLastExecuted()).build();
+    } finally {
+      mu.unlock();
+    }
+  }
 
   public long getId() {
     return id;
@@ -61,4 +83,6 @@ public class MultiPaxos {
   public void setId(long id) {
     this.id = id;
   }
+
+
 }
