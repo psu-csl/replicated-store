@@ -15,7 +15,7 @@ public class MultiPaxos {
   private final AtomicLong ballot;
   private final ReentrantLock mu;
   private final Log log;
-  private final MultiPaxosGRPC multiPaxosGRPC;
+  private final MultiPaxosGRPCServer multiPaxosGRPC;
   private long id;
   private Instant lastHeartbeat;
 
@@ -24,7 +24,7 @@ public class MultiPaxos {
     this.ballot = new AtomicLong(kMaxNumPeers);
     this.log = log;
     mu = new ReentrantLock();
-    multiPaxosGRPC = new MultiPaxosGRPC(this);
+    multiPaxosGRPC = new MultiPaxosGRPCServer(config.getPort(), this);
   }
 
   public long nextBallot() {
