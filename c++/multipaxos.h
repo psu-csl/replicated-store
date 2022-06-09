@@ -23,6 +23,8 @@ class MultiPaxos {
   MultiPaxos(MultiPaxos&& log) = delete;
   MultiPaxos& operator=(MultiPaxos&& log) = delete;
 
+  int64_t id(void) const { return id_; }
+
   int64_t NextBallot(void) {
     std::scoped_lock lock(mu_);
     ballot_ += kRoundIncrement;
@@ -30,9 +32,16 @@ class MultiPaxos {
     return ballot_;
   }
 
-  int64_t id(void) const { return id_; }
-  int64_t Leader(void) const { return ballot_ & kIdBits; }
-  bool IsLeader(void) const { return Leader() == id_; }
+  int64_t Leader(void) const {
+    std::scoped_lock lock(mu_);
+    return ballot_ & kIdBits;
+  }
+
+  bool IsLeader(void) const {
+    std::scoped_lock lock(mu_);
+    return (ballot_ & kIdBits) == id_;
+  }
+
   bool IsSomeoneElseLeader() const {
     auto id = Leader();
     return id != id_ && id < kMaxNumPeers;
@@ -40,8 +49,8 @@ class MultiPaxos {
 
  private:
   int64_t id_;
-  std::atomic<int64_t> ballot_;
-  std::mutex mu_;
+  int64_t ballot_;
+  mutable std::mutex mu_;
 };
 
 #endif

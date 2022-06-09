@@ -1,3 +1,6 @@
+- explore the overhead of locking ballot_; replace NextBallot with CAS loop,
+  remove the lock, and change ballot to atomic and measure the overhead.
+
 - make a debug and release build targets
 
 - reimplement concurrency stuff using C++20 features.
