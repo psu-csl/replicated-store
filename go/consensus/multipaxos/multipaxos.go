@@ -1,7 +1,9 @@
 package multipaxos
 
 import (
+	"context"
 	"github.com/psu-csl/replicated-store/go/config"
+	pb "github.com/psu-csl/replicated-store/go/consensus/multipaxos/comm"
 	consensusLog "github.com/psu-csl/replicated-store/go/log"
 	"sync"
 	"time"
@@ -60,6 +62,20 @@ func (p *Multipaxos) IsLeader() bool {
 func (p *Multipaxos) IsSomeoneElseLeader() bool {
 	id := p.Leader()
 	return id != p.id && id < MaxNumPeers
+}
+
+func (p *Multipaxos) HeartbeatHandler(ctx context.Context,
+	msg *pb.HeartbeatRequest) (pb.HeartbeatResponse, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if msg.Ballot >= p.ballot {
+		p.lastHeartbeat = time.Now()
+		p.ballot = msg.Ballot
+		p.log.CommitUntil(msg.LastExecuted, msg.Ballot)
+		p.log.TrimUntil(msg.GlobalLastExecuted)
+	}
+	return pb.HeartbeatResponse{LastExecuted: p.log.LastExecuted()}, nil
 }
 
 // Testing helper functions
