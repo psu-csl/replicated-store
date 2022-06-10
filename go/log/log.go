@@ -65,48 +65,49 @@ func (l *Log) Append(inst instance.Instance) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	// Case 1
 	i := inst.Index()
 	if i <= l.globalLastExecuted {
 		return
 	}
 
-	if inst.State() == instance.Executed {
-		inst.SetCommitted()
-	}
-
-	// Case 2
-	if _, ok := l.log[i]; !ok {
-		if i <= l.lastExecuted {
-			log.Panicf("i <= lastExecuted in append\n")
-		}
-		l.log[i] = &inst
+	if l.Insert(l.log, inst) {
+		l.cvCommitable.Broadcast()
 		if i > l.lastIndex {
 			l.lastIndex = i
 		}
-		l.cvCommitable.Broadcast()
-		return
+	}
+}
+
+func (l *Log) Insert(log1 map[int64]*instance.Instance,
+	inst instance.Instance) bool {
+	// Case 1
+	i := inst.Index()
+	if _, ok := log1[i]; !ok {
+		log1[i] = &inst
+		return true
+	}
+
+	// Case 2
+	if log1[i].State() == instance.Committed || log1[i].State() == instance.
+		Executed {
+		if log1[i].Command() != inst.Command() {
+			log.Panicf("case 3 violation\n")
+		}
+		return false
 	}
 
 	// Case 3
-	if l.log[i].State() == instance.Committed || l.log[i].State() == instance.Executed {
-		if l.log[i].Command() != inst.Command() {
-			log.Panicf("case 3 violation\n")
-		}
-		return
-	}
-
-	// Case 4
-	if l.log[i].Ballot() < inst.Ballot() {
+	if log1[i].Ballot() < inst.Ballot() {
 		l.log[i] = &inst
-		return
+		return false
 	}
 
-	if l.log[i].Ballot() == inst.Ballot() {
-		if l.log[i].Command() != inst.Command() {
+	if log1[i].Ballot() == inst.Ballot() {
+		if log1[i].Command() != inst.Command() {
 			log.Panicf("case 4 violation\n")
 		}
 	}
+	return false
 }
 
 func (l *Log) Commit(index int64) {
@@ -186,4 +187,15 @@ func (l *Log) TrimUntil(minTailLeader int64) {
 		}
 		delete(l.log, l.globalLastExecuted)
 	}
+}
+
+func (l *Log) InstancesForPrepare() []instance.Instance {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	instances := make([]instance.Instance, 0, len(l.log))
+	for index := l.globalLastExecuted + 1; index <= l.lastIndex; index++ {
+		instances = append(instances, *l.log[index])
+	}
+	return instances
 }

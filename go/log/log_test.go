@@ -68,13 +68,6 @@ func TestAppend(t *testing.T) {
 	assert.Equal(t, int64(2), log_.log[2].Index())
 }
 
-func TestAppendExecuted(t *testing.T) {
-	setup()
-
-	log_.Append(makeInstanceByState(0, inst.Executed))
-	assert.True(t, log_.log[1].IsCommitted())
-}
-
 func TestAppendWithGap(t *testing.T) {
 	setup()
 
@@ -436,6 +429,42 @@ func TestAppendAtTrimmedIndex(t *testing.T) {
 	log_.Append(makeInstanceByIndex(ballot, index2))
 	assert.Nil(t, log_.log[index1])
 	assert.Nil(t, log_.log[index2])
+}
+
+func TestLog_InstancesForPrepare(t *testing.T) {
+	setup()
+	var ballot int64 = 0
+
+	var wg sync.WaitGroup
+
+	expect := make([]inst.Instance, 0)
+	assert.Equal(t, expect, log_.InstancesForPrepare())
+
+	expect = append(expect, makeInstance(ballot))
+	log_.Append(expect[len(expect)-1])
+	expect = append(expect, makeInstance(ballot))
+	log_.Append(expect[len(expect)-1])
+	expect = append(expect, makeInstance(ballot))
+	log_.Append(expect[len(expect)-1])
+
+	instances := log_.InstancesForPrepare()
+	assert.Equal(t, expect, instances)
+
+	var index int64 = 2
+	log_.CommitUntil(index, ballot)
+	assert.Equal(t, expect, instances)
+
+	wg.Add(1)
+	go func() {
+		log_.Execute(store_)
+		log_.Execute(store_)
+		wg.Done()
+	}()
+	wg.Wait()
+
+	log_.TrimUntil(index)
+	expect = expect[index:]
+	assert.Equal(t, expect, log_.InstancesForPrepare())
 }
 
 func expectDeath(t *testing.T, msg string) {
