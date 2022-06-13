@@ -38,8 +38,9 @@ func setupBatchPeers(numPeers int64) []*Multipaxos {
 	return peers
 }
 
-func initConn(ctx context.Context) (*grpc.ClientConn, error) {
+func initConn(t *testing.T) (*grpc.ClientConn, context.Context) {
 	setup()
+	ctx := context.Background()
 	// Create a server
 	listener := bufconn.Listen(BufSize)
 	server := grpc.NewServer()
@@ -53,7 +54,10 @@ func initConn(ctx context.Context) (*grpc.ClientConn, error) {
 			return listener.Dial()
 		}),
 		grpc.WithTransportCredentials(insecure.NewCredentials()))
-	return conn, err
+	if err != nil {
+		t.Fatalf("Failed to init connection to grpc server\n")
+	}
+	return conn, ctx
 }
 
 func TestNewMultipaxos(t *testing.T) {
@@ -120,15 +124,10 @@ func TestHeartbeatHandlerBallot(t *testing.T) {
 		staleBallot  = MaxNumPeers + 1
 		leaderId = MaxNumPeers - 1
 	)
-	ctx := context.Background()
-	conn, err := initConn(ctx)
-	if err != nil {
-		t.Fatalf("Failed to init connection to grpc server\n")
-	}
+	conn, ctx := initConn(t)
 	defer conn.Close()
 	client := pb.NewMultiPaxosRPCClient(conn)
-	leader := NewMultipaxos(config.Config{Id: leaderId}, log.NewLog())
-	ballot := leader.NextBallot()
+	ballot := MaxNumPeers - 1 + RoundIncrement
 
 	// Higher Ballot number
 	request := pb.HeartbeatRequest{
@@ -136,9 +135,8 @@ func TestHeartbeatHandlerBallot(t *testing.T) {
 		LastExecuted:       1,
 		GlobalLastExecuted: 0,
 	}
-	_, err = client.HeartbeatHandler(context.Background(), &request)
+	_, err := client.HeartbeatHandler(ctx, &request)
 	ts := multiPaxos.LastHeartbeat()
-	// maybe useful for grpc testing
 	assert.Nil(t, err)
 	assert.Equal(t, ballot, multiPaxos.Ballot())
 	assert.True(t, multiPaxos.IsSomeoneElseLeader())
@@ -150,13 +148,13 @@ func TestHeartbeatHandlerBallot(t *testing.T) {
 		LastExecuted:       1,
 		GlobalLastExecuted: 0,
 	}
-	_, err = client.HeartbeatHandler(context.Background(), &request2)
+	_, err = client.HeartbeatHandler(ctx, &request2)
 	assert.Nil(t, err)
 	assert.Equal(t, ballot, multiPaxos.Ballot())
 	assert.Equal(t, ts, multiPaxos.LastHeartbeat())
 
 	// The repeated heartbeat from the same leader
-	_, err = client.HeartbeatHandler(context.Background(), &request)
+	_, err = client.HeartbeatHandler(ctx, &request)
 	assert.Nil(t, err)
 	assert.Equal(t, ballot, multiPaxos.Ballot())
 	assert.True(t, multiPaxos.LastHeartbeat().After(ts))
