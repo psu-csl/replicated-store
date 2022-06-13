@@ -5,6 +5,8 @@ import (
 	"github.com/psu-csl/replicated-store/go/config"
 	pb "github.com/psu-csl/replicated-store/go/consensus/multipaxos/comm"
 	consensusLog "github.com/psu-csl/replicated-store/go/log"
+	"google.golang.org/grpc"
+	"net"
 	"sync"
 	"time"
 )
@@ -24,6 +26,7 @@ type Multipaxos struct {
 	lastHeartbeat     time.Time
 	heartbeatInterval int64
 	mu                sync.Mutex
+	pb.UnimplementedMultiPaxosRPCServer
 }
 
 func NewMultipaxos(config config.Config, log *consensusLog.Log) *Multipaxos {
@@ -65,7 +68,7 @@ func (p *Multipaxos) IsSomeoneElseLeader() bool {
 }
 
 func (p *Multipaxos) HeartbeatHandler(ctx context.Context,
-	msg *pb.HeartbeatRequest) (pb.HeartbeatResponse, error) {
+	msg *pb.HeartbeatRequest) (*pb.HeartbeatResponse, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -75,7 +78,18 @@ func (p *Multipaxos) HeartbeatHandler(ctx context.Context,
 		p.log.CommitUntil(msg.LastExecuted, msg.Ballot)
 		p.log.TrimUntil(msg.GlobalLastExecuted)
 	}
-	return pb.HeartbeatResponse{LastExecuted: p.log.LastExecuted()}, nil
+	return &pb.HeartbeatResponse{LastExecuted: p.log.LastExecuted()}, nil
+}
+
+func (p *Multipaxos) Run() {
+	// Create grpc server
+	listener, err := net.Listen("tcp", ":8888")
+	if err != nil {
+		panic(err)
+	}
+	grpcServer := grpc.NewServer()
+	pb.RegisterMultiPaxosRPCServer(grpcServer, p)
+	go grpcServer.Serve(listener)
 }
 
 // Testing helper functions
