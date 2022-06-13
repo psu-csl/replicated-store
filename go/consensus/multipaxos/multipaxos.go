@@ -79,7 +79,7 @@ func (p *Multipaxos) AcceptHandler(ctx context.Context,
 		cmd := command.Command{
 			Key:   msg.GetCommand().GetKey(),
 			Value: msg.GetCommand().GetValue(),
-			Type:  msg.GetCommand().GetType(),
+			Type:  command.Type(msg.GetCommand().GetType()),
 		}
 		instance := inst.MakeInstance(msg.GetBallot(), cmd, 
 			msg.GetIndex(), inst.InProgress, msg.GetClientId())

@@ -1,6 +1,6 @@
 package command
 
-type Type int
+type Type int64
 
 const (
 	Get Type = iota

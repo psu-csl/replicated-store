@@ -39,6 +39,7 @@ func setupBatchPeers(numPeers int64) []*Multipaxos {
 }
 
 func initConn(ctx context.Context) (*grpc.ClientConn, error) {
+	setup()
 	// Create a server
 	listener := bufconn.Listen(BufSize)
 	server := grpc.NewServer()
@@ -83,9 +84,38 @@ func TestNextBallot(t *testing.T) {
 	}
 }
 
-func TestHeartbeatHandlerBallot(t *testing.T) {
-	setup()
+func TestNextBallotFromFollower(t *testing.T) {
+	log_ := log.NewLog()
+	ctx := context.Background()
+	for id := int64(0); id <= MaxNumPeers; id++ {
+		config := config.Config{
+			Id: id,
+		}
+		mp := NewMultipaxos(config, log_)
+		ballot := id
 
+		ballot += RoundIncrement
+		heartbeatRequest := pb.HeartbeatRequest{
+			Ballot:             ballot + 1,
+			LastExecuted:       1,
+			GlobalLastExecuted: 0,
+		}
+		_, _ = mp.HeartbeatHandler(ctx, &heartbeatRequest)
+		assert.NotEqual(t, ballot, mp.Ballot())
+		ballot += RoundIncrement
+		assert.Equal(t, ballot, mp.NextBallot())
+
+		ballot += RoundIncrement
+		ballot += RoundIncrement
+		heartbeatRequest.Ballot = ballot + 1
+		_, _ = mp.HeartbeatHandler(ctx, &heartbeatRequest)
+		assert.NotEqual(t, ballot, mp.Ballot())
+		ballot += RoundIncrement
+		assert.Equal(t, ballot, mp.NextBallot())
+	}
+}
+
+func TestHeartbeatHandlerBallot(t *testing.T) {
 	const (
 		staleBallot  = MaxNumPeers + 1
 		leaderId = MaxNumPeers - 1
