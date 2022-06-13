@@ -2,14 +2,17 @@ package multipaxos
 
 import (
 	"context"
+	"github.com/psu-csl/replicated-store/go/command"
 	"github.com/psu-csl/replicated-store/go/config"
 	pb "github.com/psu-csl/replicated-store/go/consensus/multipaxos/comm"
 	"github.com/psu-csl/replicated-store/go/log"
+	"github.com/psu-csl/replicated-store/go/store"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
 	"net"
+	"sync"
 	"testing"
 )
 
@@ -62,13 +65,13 @@ func initConn(t *testing.T) (pb.MultiPaxosRPCClient, context.Context) {
 }
 
 func makeAcceptRequest(ballot int64) *pb.AcceptRequest {
-	return &pb.AcceptRequest{Ballot: ballot, Command: &pb.Command{},
-		Index: multiPaxos.log.AdvanceLastIndex(), ClientId: 0}
+	return &pb.AcceptRequest{Ballot: ballot, Command: &pb.Command{Type: pb.
+		Command_Put}, Index: multiPaxos.log.AdvanceLastIndex(), ClientId: 0}
 }
 
 func makeAcceptRequestByIndex(ballot int64, index int64) *pb.AcceptRequest {
-	return &pb.AcceptRequest{Ballot: ballot, Command: &pb.Command{},
-		Index: index, ClientId: 0}
+	return &pb.AcceptRequest{Ballot: ballot, Command: &pb.Command{Type: pb.
+		Command_Put}, Index: index, ClientId: 0}
 }
 
 func TestNewMultipaxos(t *testing.T) {
@@ -141,11 +144,12 @@ func TestAcceptHandler(t *testing.T) {
 	resp, err := client.AcceptHandler(ctx, makeAcceptRequestByIndex(ballot, index1))
 	assert.Nil(t, err)
 	assert.Equal(t, pb.AcceptResponse_ok, resp.GetType())
-	// Maybe validate the command as well, especially the command type
+	assert.Equal(t, command.Put, multiPaxos.log.Find(index1).Command().Type)
 
 	resp, err = client.AcceptHandler(ctx, makeAcceptRequestByIndex(ballot, index2))
 	assert.Nil(t, err)
 	assert.Equal(t, pb.AcceptResponse_ok, resp.GetType())
+	assert.Equal(t, command.Put, multiPaxos.log.Find(index1).Command().Type)
 }
 
 func TestAcceptHandlerWithGap(t *testing.T) {
@@ -159,11 +163,12 @@ func TestAcceptHandlerWithGap(t *testing.T) {
 	resp, err := client.AcceptHandler(ctx, makeAcceptRequestByIndex(ballot, index1))
 	assert.Nil(t, err)
 	assert.Equal(t, pb.AcceptResponse_ok, resp.GetType())
-	// Maybe validate the command as well, especially the command type
+	assert.Equal(t, command.Put, multiPaxos.log.Find(index1).Command().Type)
 
 	resp, err = client.AcceptHandler(ctx, makeAcceptRequestByIndex(ballot, index2))
 	assert.Nil(t, err)
 	assert.Equal(t, pb.AcceptResponse_ok, resp.GetType())
+	assert.Equal(t, command.Put, multiPaxos.log.Find(index2).Command().Type)
 }
 
 func TestAcceptHandlerDuplicatedIndex(t *testing.T) {
@@ -264,4 +269,33 @@ func TestHeartbeatHandlerBallot(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Equal(t, ballot, multiPaxos.Ballot())
 	assert.True(t, multiPaxos.LastHeartbeat().After(ts))
+}
+
+func TestHeartbeatHandlerLastExecuted(t *testing.T) {
+	client, ctx := initConn(t)
+	ballot := MaxNumPeers - 1 + RoundIncrement
+	var index1 int64 = 1
+	var wg sync.WaitGroup
+
+	_, _ = client.AcceptHandler(ctx, makeAcceptRequestByIndex(ballot, index1))
+
+	request := pb.HeartbeatRequest{
+		Ballot:             ballot,
+		LastExecuted:       1,
+		GlobalLastExecuted: 0,
+	}
+	_, _ = client.HeartbeatHandler(ctx, &request)
+	assert.True(t, multiPaxos.log.Find(index1).IsCommitted())
+
+	wg.Add(1)
+	go func() {
+		store_ := store.NewMemKVStore()
+		multiPaxos.log.Execute(store_)
+		wg.Done()
+	}()
+	wg.Wait()
+
+	resp, err := client.HeartbeatHandler(ctx, &request)
+	assert.Nil(t, err)
+	assert.Equal(t, index1, resp.GetLastExecuted())
 }

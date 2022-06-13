@@ -115,7 +115,7 @@ func (p *Multipaxos) Run() {
 	pb.RegisterMultiPaxosRPCServer(grpcServer, p)
 	go grpcServer.Serve(listener)
 
-	// Setup connections to other severs
+	//TODO: Setup connections to other severs
 }
 
 // Testing helper functions
