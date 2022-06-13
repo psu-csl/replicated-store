@@ -2,8 +2,10 @@ package multipaxos
 
 import (
 	"context"
+	"github.com/psu-csl/replicated-store/go/command"
 	"github.com/psu-csl/replicated-store/go/config"
 	pb "github.com/psu-csl/replicated-store/go/consensus/multipaxos/comm"
+	inst "github.com/psu-csl/replicated-store/go/instance"
 	consensusLog "github.com/psu-csl/replicated-store/go/log"
 	"google.golang.org/grpc"
 	"net"
@@ -67,16 +69,38 @@ func (p *Multipaxos) IsSomeoneElseLeader() bool {
 	return id != p.id && id < MaxNumPeers
 }
 
+func (p *Multipaxos) AcceptHandler(ctx context.Context, 
+	msg *pb.AcceptRequest) (*pb.AcceptResponse, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	
+	if msg.GetBallot() >= p.ballot {
+		p.ballot = msg.GetBallot()
+		cmd := command.Command{
+			Key:   msg.GetCommand().GetKey(),
+			Value: msg.GetCommand().GetValue(),
+			Type:  msg.GetCommand().GetType(),
+		}
+		instance := inst.MakeInstance(msg.GetBallot(), cmd, 
+			msg.GetIndex(), inst.InProgress, msg.GetClientId())
+		p.log.Append(instance)
+		return &pb.AcceptResponse{Type: pb.AcceptResponse_ok,
+			Ballot: p.ballot}, nil
+	}
+	return &pb.AcceptResponse{Type: pb.AcceptResponse_reject,
+		Ballot: p.ballot}, nil
+}
+
 func (p *Multipaxos) HeartbeatHandler(ctx context.Context,
 	msg *pb.HeartbeatRequest) (*pb.HeartbeatResponse, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if msg.Ballot >= p.ballot {
+	if msg.GetBallot() >= p.ballot {
 		p.lastHeartbeat = time.Now()
 		p.ballot = msg.Ballot
-		p.log.CommitUntil(msg.LastExecuted, msg.Ballot)
-		p.log.TrimUntil(msg.GlobalLastExecuted)
+		p.log.CommitUntil(msg.GetLastExecuted(), msg.GetBallot())
+		p.log.TrimUntil(msg.GetGlobalLastExecuted())
 	}
 	return &pb.HeartbeatResponse{LastExecuted: p.log.LastExecuted()}, nil
 }
@@ -90,6 +114,8 @@ func (p *Multipaxos) Run() {
 	grpcServer := grpc.NewServer()
 	pb.RegisterMultiPaxosRPCServer(grpcServer, p)
 	go grpcServer.Serve(listener)
+
+	// Setup connections to other severs
 }
 
 // Testing helper functions
