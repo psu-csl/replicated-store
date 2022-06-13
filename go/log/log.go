@@ -199,3 +199,13 @@ func (l *Log) InstancesForPrepare() []instance.Instance {
 	}
 	return instances
 }
+
+// Helper functions for testing
+func (l *Log) Find(index int64) *instance.Instance {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if inst, ok := l.log[index]; ok {
+		return inst
+	}
+	return nil
+}

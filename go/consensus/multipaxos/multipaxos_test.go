@@ -38,7 +38,7 @@ func setupBatchPeers(numPeers int64) []*Multipaxos {
 	return peers
 }
 
-func initConn(t *testing.T) (*grpc.ClientConn, context.Context) {
+func initConn(t *testing.T) (pb.MultiPaxosRPCClient, context.Context) {
 	setup()
 	ctx := context.Background()
 	// Create a server
@@ -57,7 +57,18 @@ func initConn(t *testing.T) (*grpc.ClientConn, context.Context) {
 	if err != nil {
 		t.Fatalf("Failed to init connection to grpc server\n")
 	}
-	return conn, ctx
+	client := pb.NewMultiPaxosRPCClient(conn)
+	return client, ctx
+}
+
+func makeAcceptRequest(ballot int64) *pb.AcceptRequest {
+	return &pb.AcceptRequest{Ballot: ballot, Command: &pb.Command{},
+		Index: multiPaxos.log.AdvanceLastIndex(), ClientId: 0}
+}
+
+func makeAcceptRequestByIndex(ballot int64, index int64) *pb.AcceptRequest {
+	return &pb.AcceptRequest{Ballot: ballot, Command: &pb.Command{},
+		Index: index, ClientId: 0}
 }
 
 func TestNewMultipaxos(t *testing.T) {
@@ -119,14 +130,109 @@ func TestNextBallotFromFollower(t *testing.T) {
 	}
 }
 
+func TestAcceptHandler(t *testing.T) {
+	client, ctx := initConn(t)
+
+	const(
+		index1 int64 = iota + 1
+		index2
+	)
+	ballot := MaxNumPeers - 1 + RoundIncrement
+	resp, err := client.AcceptHandler(ctx, makeAcceptRequestByIndex(ballot, index1))
+	assert.Nil(t, err)
+	assert.Equal(t, pb.AcceptResponse_ok, resp.GetType())
+	// Maybe validate the command as well, especially the command type
+
+	resp, err = client.AcceptHandler(ctx, makeAcceptRequestByIndex(ballot, index2))
+	assert.Nil(t, err)
+	assert.Equal(t, pb.AcceptResponse_ok, resp.GetType())
+}
+
+func TestAcceptHandlerWithGap(t *testing.T) {
+	client, ctx := initConn(t)
+
+	var(
+		index1 int64 = 41
+		index2 int64 = 2
+	)
+	ballot := MaxNumPeers - 1 + RoundIncrement
+	resp, err := client.AcceptHandler(ctx, makeAcceptRequestByIndex(ballot, index1))
+	assert.Nil(t, err)
+	assert.Equal(t, pb.AcceptResponse_ok, resp.GetType())
+	// Maybe validate the command as well, especially the command type
+
+	resp, err = client.AcceptHandler(ctx, makeAcceptRequestByIndex(ballot, index2))
+	assert.Nil(t, err)
+	assert.Equal(t, pb.AcceptResponse_ok, resp.GetType())
+}
+
+func TestAcceptHandlerDuplicatedIndex(t *testing.T) {
+	client, ctx := initConn(t)
+
+	const(
+		index1 int64 = iota + 1
+		index2
+		highBallot = MaxNumPeers -1 + RoundIncrement
+	)
+	ballot := MaxNumPeers + 1
+	_, _ = client.AcceptHandler(ctx, makeAcceptRequestByIndex(ballot, index1))
+	_, _ = client.AcceptHandler(ctx, makeAcceptRequestByIndex(ballot, index2))
+	multiPaxos.log.Commit(index1)
+	expected1 := multiPaxos.log.Find(index1)
+	expected2 := multiPaxos.log.Find(index2)
+
+	resp, err := client.AcceptHandler(ctx, makeAcceptRequestByIndex(highBallot,
+		index1))
+	assert.Nil(t, err)
+	assert.Equal(t, pb.AcceptResponse_ok, resp.GetType())
+	assert.Equal(t, expected1, multiPaxos.log.Find(index1))
+
+	resp, err = client.AcceptHandler(ctx, makeAcceptRequestByIndex(highBallot,
+		index2))
+	assert.Nil(t, err)
+	assert.Equal(t, pb.AcceptResponse_ok, resp.GetType())
+	assert.NotEqual(t, expected2, multiPaxos.log.Find(index2))
+}
+
+func TestAcceptHandlerBallot(t *testing.T) {
+	client, ctx := initConn(t)
+	const (
+		index1 int64 = iota + 1
+		index2
+		index3
+		leaderId = MaxNumPeers - 1
+		highBallot = MaxNumPeers -1 + RoundIncrement
+		lowBallot  = MaxNumPeers + 1
+	)
+
+	// Higher ballot number
+	resp, err := client.AcceptHandler(ctx, makeAcceptRequestByIndex(highBallot, index1))
+	assert.Nil(t, err)
+	assert.Equal(t, pb.AcceptResponse_ok, resp.GetType())
+	assert.Equal(t, highBallot, multiPaxos.Ballot())
+	assert.Equal(t, leaderId, multiPaxos.Leader())
+
+	// Lower ballot number
+	resp, err = client.AcceptHandler(ctx, makeAcceptRequestByIndex(lowBallot, index2))
+	assert.Nil(t, err)
+	assert.Equal(t, pb.AcceptResponse_reject, resp.GetType())
+	assert.Equal(t, highBallot, multiPaxos.Ballot())
+	assert.Equal(t, leaderId, multiPaxos.Leader())
+
+	// Same ballot number
+	resp, err = client.AcceptHandler(ctx, makeAcceptRequestByIndex(highBallot, index3))
+	assert.Nil(t, err)
+	assert.Equal(t, pb.AcceptResponse_ok, resp.GetType())
+	assert.Equal(t, highBallot, multiPaxos.Ballot())
+	assert.Equal(t, leaderId, multiPaxos.Leader())
+}
+
 func TestHeartbeatHandlerBallot(t *testing.T) {
 	const (
-		staleBallot  = MaxNumPeers + 1
 		leaderId = MaxNumPeers - 1
+		staleBallot  = MaxNumPeers + 1
 	)
-	conn, ctx := initConn(t)
-	defer conn.Close()
-	client := pb.NewMultiPaxosRPCClient(conn)
+	client, ctx := initConn(t)
 	ballot := MaxNumPeers - 1 + RoundIncrement
 
 	// Higher Ballot number

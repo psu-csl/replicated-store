@@ -124,9 +124,13 @@ func (p *Multipaxos) Id() int64 {
 }
 
 func (p *Multipaxos) Ballot() int64 {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	return p.ballot
 }
 
 func (p *Multipaxos) LastHeartbeat() time.Time {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	return p.lastHeartbeat
 }
