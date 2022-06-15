@@ -1,21 +1,32 @@
 #ifndef MULTI_PAXOS_H_
 #define MULTI_PAXOS_H_
 
-#include <atomic>
+#include <glog/logging.h>
+#include <grpcpp/grpcpp.h>
 #include <cstdint>
 #include <mutex>
 
 #include "json_fwd.h"
 #include "kvstore.h"
 #include "log.h"
+#include "multipaxosrpc.grpc.pb.h"
+
+using grpc::Channel;
+using grpc::ClientContext;
+using grpc::ServerContext;
+using grpc::Status;
+
+using multipaxosrpc::HeartbeatRequest;
+using multipaxosrpc::HeartbeatResponse;
+using multipaxosrpc::MultiPaxosRPC;
+
+using nlohmann::json;
 
 static const int64_t kIdBits = 0xff;
 static const int64_t kRoundIncrement = kIdBits + 1;
 static const int64_t kMaxNumPeers = 0xf;
 
-using nlohmann::json;
-
-class MultiPaxos {
+class MultiPaxos : public MultiPaxosRPC::Service {
  public:
   MultiPaxos(Log* log, json const& config);
   MultiPaxos(Log const& log) = delete;
@@ -48,6 +59,10 @@ class MultiPaxos {
   }
 
  private:
+  Status Heartbeat(ServerContext*,
+                   const HeartbeatRequest*,
+                   HeartbeatResponse*) override;
+
   int64_t id_;
   int64_t ballot_;
   mutable std::mutex mu_;
