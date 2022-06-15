@@ -1,13 +1,19 @@
 package paxos;
 
+import io.grpc.Server;
+import io.grpc.ServerBuilder;
+import io.grpc.stub.StreamObserver;
+import java.io.IOException;
 import java.time.Instant;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
 import log.Log;
 import multipaxosrpc.HeartbeatRequest;
 import multipaxosrpc.HeartbeatResponse;
+import multipaxosrpc.MultiPaxosRPCGrpc;
 
-public class MultiPaxos {
+public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
 
   protected static final long kIdBits = 0xff;
   protected static final long kRoundIncrement = kIdBits + 1;
@@ -15,7 +21,7 @@ public class MultiPaxos {
   private final AtomicLong ballot;
   private final ReentrantLock mu;
   private final Log log;
-  private final MultiPaxosGRPCServer multiPaxosGRPC;
+  private final Server server;
   private long id;
   private Instant lastHeartbeat;
 
@@ -24,7 +30,7 @@ public class MultiPaxos {
     this.ballot = new AtomicLong(kMaxNumPeers);
     this.log = log;
     mu = new ReentrantLock();
-    multiPaxosGRPC = new MultiPaxosGRPCServer(config.getPort(), this);
+    server = ServerBuilder.forPort(config.getPort()).addService(this).build();
   }
 
   public long nextBallot() {
@@ -61,27 +67,65 @@ public class MultiPaxos {
     return id != this.id && id < kMaxNumPeers;
   }
 
-  public HeartbeatResponse heartbeatHandler(HeartbeatRequest msg) {
-    mu.lock();
-    try {
-      if (msg.getBallot() >= ballot.get()) {
-        lastHeartbeat = Instant.now();
-        ballot.set(msg.getBallot());
-        log.commitUntil(msg.getLastExecuted(), ballot.get());
-        log.trimUntil(msg.getGlobalLastExecuted());
-      }
-      return HeartbeatResponse.newBuilder().setLastExecuted(log.getLastExecuted()).build();
-    } finally {
-      mu.unlock();
-    }
-  }
-
   public long getId() {
     return id;
   }
 
   public void setId(long id) {
     this.id = id;
+  }
+
+  public void startServer() {
+    try {
+      server.start();
+    } catch (IOException e) {
+      e.printStackTrace();
+    }
+    System.out.println("Server started listening on port: " + server.getPort());
+    Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+      stopServer();
+      System.out.println("Server is successfully shut down");
+    }));
+  }
+
+  public void blockUntilShutDown() {
+    if (server != null) {
+      try {
+        server.awaitTermination();
+      } catch (InterruptedException e) {
+        e.printStackTrace();
+      }
+    }
+  }
+
+  public void stopServer() {
+    if (server != null) {
+      try {
+        server.shutdown().awaitTermination(30, TimeUnit.SECONDS);
+      } catch (InterruptedException e) {
+        e.printStackTrace();
+      }
+    }
+  }
+
+  @Override
+  public void heartbeat(HeartbeatRequest heartbeatRequest,
+      StreamObserver<HeartbeatResponse> responseObserver) {
+    mu.lock();
+
+    if (heartbeatRequest.getBallot() >= ballot.get()) {
+      lastHeartbeat = Instant.now();
+      ballot.set(heartbeatRequest.getBallot());
+      log.commitUntil(heartbeatRequest.getLastExecuted(), ballot.get());
+      log.trimUntil(heartbeatRequest.getGlobalLastExecuted());
+    }
+    HeartbeatResponse response = HeartbeatResponse.newBuilder()
+        .setLastExecuted(log.getLastExecuted()).build();
+
+    mu.unlock();
+
+    responseObserver.onNext(response);
+    responseObserver.onCompleted();
   }
 
 
