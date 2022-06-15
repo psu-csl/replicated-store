@@ -9,7 +9,7 @@
 #include "json_fwd.h"
 #include "kvstore.h"
 #include "log.h"
-#include "multipaxosrpc.grpc.pb.h"
+#include "multipaxos.grpc.pb.h"
 
 using grpc::Channel;
 using grpc::ClientContext;
