@@ -34,21 +34,21 @@ class MultiPaxos : public MultiPaxosRPC::Service {
   MultiPaxos(MultiPaxos&& log) = delete;
   MultiPaxos& operator=(MultiPaxos&& log) = delete;
 
-  int64_t id(void) const { return id_; }
+  int64_t id() const { return id_; }
 
-  int64_t NextBallot(void) {
+  int64_t NextBallot() {
     std::scoped_lock lock(mu_);
     ballot_ += kRoundIncrement;
     ballot_ = (ballot_ & ~kIdBits) | id_;
     return ballot_;
   }
 
-  int64_t Leader(void) const {
+  int64_t Leader() const {
     std::scoped_lock lock(mu_);
     return ballot_ & kIdBits;
   }
 
-  bool IsLeader(void) const {
+  bool IsLeader() const {
     std::scoped_lock lock(mu_);
     return (ballot_ & kIdBits) == id_;
   }

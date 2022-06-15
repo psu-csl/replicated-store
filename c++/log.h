@@ -24,17 +24,17 @@ class Log {
   Log(Log&& log) = delete;
   Log& operator=(Log&& log) = delete;
 
-  int64_t LastExecuted(void) const {
+  int64_t LastExecuted() const {
     std::scoped_lock lock(mu_);
     return last_executed_;
   }
 
-  int64_t GlobalLastExecuted(void) const {
+  int64_t GlobalLastExecuted() const {
     std::scoped_lock lock(mu_);
     return global_last_executed_;
   }
 
-  int64_t AdvanceLastIndex(void) {
+  int64_t AdvanceLastIndex() {
     std::scoped_lock lock(mu_);
     return ++last_index_;
   }
@@ -46,9 +46,9 @@ class Log {
   void CommitUntil(int64_t leader_last_executed, int64_t ballot);
   void TrimUntil(int64_t leader_global_last_executed);
 
-  std::vector<Instance> InstancesForPrepare(void) const;
+  std::vector<Instance> InstancesForPrepare() const;
 
-  bool IsExecutable(void) const {
+  bool IsExecutable() const {
     auto it = log_.find(last_executed_ + 1);
     return it != log_.end() && it->second.IsCommitted();
   }
