@@ -1,32 +1,35 @@
 #include <gtest/gtest.h>
-#include "json.h"
 
+#include "json.h"
 #include "log.h"
 #include "multipaxos.h"
 
-class MultiPaxosTest : public testing::Test {
- public:
-  MultiPaxosTest()
-      : config_("{ \"id\": 0 }"_json), multi_paxos_(&log_, config_) {}
-
- protected:
-  json config_;
-  Log log_;
-  MultiPaxos multi_paxos_;
-};
-
-TEST_F(MultiPaxosTest, Constructor) {
-  EXPECT_EQ(kMaxNumPeers, multi_paxos_.Leader());
-  EXPECT_FALSE(multi_paxos_.IsLeader());
-  EXPECT_FALSE(multi_paxos_.IsSomeoneElseLeader());
+std::string MakeConfig(int64_t id) {
+  return R"({ "id": )" + std::to_string(id) + R"(,
+              "peers": [ "127.0.0.1:3000",
+                         "127.0.0.1:3001",
+                         "127.0.0.1:3002",
+                         "127.0.0.1:3003",
+                         "127.0.0.1:3004"]
+            })";
 }
 
-TEST_F(MultiPaxosTest, NextBallot) {
-  for (int id = 0; id < kMaxNumPeers; ++id) {
-    json config = json::parse("{ \"id\": " + std::to_string(id) + " }");
-    MultiPaxos mp(&log_, config);
-    int64_t ballot = id;
+TEST(MultiPaxosTest, Constructor) {
+  Log log;
+  MultiPaxos mp(&log, json::parse(MakeConfig(0)));
 
+  EXPECT_EQ(kMaxNumPeers, mp.Leader());
+  EXPECT_FALSE(mp.IsLeader());
+  EXPECT_FALSE(mp.IsSomeoneElseLeader());
+}
+
+TEST(MultiPaxosTest, NextBallot) {
+  const int kNumPeers = 5;
+  for (auto id = 0; id < kNumPeers; ++id) {
+    Log log;
+    MultiPaxos mp(&log, json::parse(MakeConfig(id)));
+
+    int64_t ballot = id;
     ballot += kRoundIncrement;
     EXPECT_EQ(ballot, mp.NextBallot());
     ballot += kRoundIncrement;
