@@ -3,6 +3,7 @@
 
 #include <glog/logging.h>
 #include <grpcpp/grpcpp.h>
+#include <chrono>
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -72,6 +73,8 @@ class MultiPaxos : public MultiPaxosRPC::Service {
   int64_t id_;
   std::string port_;
   int64_t ballot_;
+  std::chrono::time_point<std::chrono::steady_clock> last_heartbeat_;
+  Log* log_;
   std::unique_ptr<Server> server_;
   mutable std::mutex mu_;
 };

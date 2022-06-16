@@ -46,7 +46,7 @@ target_link_libraries(grpc_proto
 set(CMAKE_CXX_STANDARD 17)
 add_compile_options(-Wall -Wextra -pedantic -Werror -g -ggdb -fsanitize=thread)
 add_executable(replicant replicant.cc multipaxos.cc memkvstore.cc command.cc
-  instance.cc main.cc)
+  log.cc instance.cc main.cc)
 
 add_link_options(-fsanitize=thread)
 
