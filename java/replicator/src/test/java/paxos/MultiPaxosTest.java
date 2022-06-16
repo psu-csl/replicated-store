@@ -80,7 +80,7 @@ class MultiPaxosTest {
   }
 
   @Test
-  void acceptHandler() {
+  void heartbeatHandlerSameBallot() {
 
     log.append(MakeInstance(17, 1, InstanceState.kExecuted, CommandType.kPut));
     log.append(MakeInstance(17, 2, InstanceState.kInProgress, CommandType.kGet));
@@ -98,6 +98,32 @@ class MultiPaxosTest {
 
     assertEquals(1, response.getLastExecuted());
     assertEquals(log.get(2L).getState(), InstanceState.kCommitted);
+    assertNull(log.get(1L));
+
+  }
+
+  @Test
+  void heartbeatHandlerHigherBallot() {
+    var inst1 = MakeInstance(17, 1, InstanceState.kExecuted, CommandType.kPut);
+    var inst2 = MakeInstance(17, 2, InstanceState.kInProgress, CommandType.kGet);
+    var inst3 = MakeInstance(17, 3, InstanceState.kInProgress, CommandType.kDel);
+    log.append(inst1);
+    log.append(inst2);
+    log.append(inst3);
+    log.setLastExecuted(1);
+
+    ManagedChannel channel = ManagedChannelBuilder.forAddress("localhost", 8080).usePlaintext()
+        .build();
+    var blockingStub = MultiPaxosRPCGrpc.newBlockingStub(channel);
+
+    HeartbeatRequest request = HeartbeatRequest.newBuilder().setBallot(18).setLastExecuted(3)
+        .setGlobalLastExecuted(1)
+        .build();
+    HeartbeatResponse response = blockingStub.heartbeat(request);
+
+    assertEquals(1, response.getLastExecuted());
+    assertEquals(log.get(2L).getState(), InstanceState.kInProgress);
+    assertEquals(log.get(3L).getState(), InstanceState.kInProgress);
     assertNull(log.get(1L));
 
   }
