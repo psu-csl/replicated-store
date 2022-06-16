@@ -111,18 +111,24 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
   @Override
   public void heartbeat(HeartbeatRequest heartbeatRequest,
       StreamObserver<HeartbeatResponse> responseObserver) {
+
+    boolean staleRpc = true;
+
     mu.lock();
 
     if (heartbeatRequest.getBallot() >= ballot.get()) {
+      staleRpc = false;
       lastHeartbeat = Instant.now();
       ballot.set(heartbeatRequest.getBallot());
+    }
+    mu.unlock();
+    if (!staleRpc) {
       log.commitUntil(heartbeatRequest.getLastExecuted(), ballot.get());
       log.trimUntil(heartbeatRequest.getGlobalLastExecuted());
+
     }
     HeartbeatResponse response = HeartbeatResponse.newBuilder()
         .setLastExecuted(log.getLastExecuted()).build();
-
-    mu.unlock();
 
     responseObserver.onNext(response);
     responseObserver.onCompleted();
