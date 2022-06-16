@@ -4,6 +4,7 @@
 #include <glog/logging.h>
 #include <grpcpp/grpcpp.h>
 #include <cstdint>
+#include <memory>
 #include <mutex>
 
 #include "json_fwd.h"
@@ -13,6 +14,8 @@
 
 using grpc::Channel;
 using grpc::ClientContext;
+using grpc::Server;
+using grpc::ServerBuilder;
 using grpc::ServerContext;
 using grpc::Status;
 
@@ -58,13 +61,18 @@ class MultiPaxos : public MultiPaxosRPC::Service {
     return id != id_ && id < kMaxNumPeers;
   }
 
+  void Start();
+  void Shutdown();
+
  private:
   Status Heartbeat(ServerContext*,
                    const HeartbeatRequest*,
                    HeartbeatResponse*) override;
 
   int64_t id_;
+  std::string port_;
   int64_t ballot_;
+  std::unique_ptr<Server> server_;
   mutable std::mutex mu_;
 };
 
