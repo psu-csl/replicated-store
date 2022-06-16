@@ -2,6 +2,7 @@ package paxos;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import command.Command;
@@ -10,7 +11,6 @@ import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import kvstore.MemKVStore;
 import log.Instance;
 import log.Instance.InstanceState;
 import log.Log;
@@ -81,27 +81,24 @@ class MultiPaxosTest {
 
   @Test
   void acceptHandler() {
-    MemKVStore store = new MemKVStore();
 
     log.append(MakeInstance(17, 1, InstanceState.kExecuted, CommandType.kPut));
     log.append(MakeInstance(17, 2, InstanceState.kInProgress, CommandType.kGet));
-    ExecutorService executorService = Executors.newSingleThreadExecutor();
-    executorService.submit(() -> {
-      log.execute(store);
-      log.execute(store);
-    });
+    log.setLastExecuted(1);
+
     ManagedChannel channel = ManagedChannelBuilder.forAddress("localhost", 8080).usePlaintext()
         .build();
     var blockingStub = MultiPaxosRPCGrpc.newBlockingStub(channel);
 
-    HeartbeatRequest request = HeartbeatRequest.newBuilder().setBallot(18).setLastExecuted(2)
+    HeartbeatRequest request = HeartbeatRequest.newBuilder().setBallot(17).setLastExecuted(2)
         .setGlobalLastExecuted(1)
         .build();
-
     HeartbeatResponse response = blockingStub.heartbeat(request);
     // System.out.println("Response is " + response.getLastExecuted());
-    assertEquals(log.getLastExecuted(), response.getLastExecuted());
 
+    assertEquals(1, response.getLastExecuted());
+    assertEquals(log.get(2L).getState(), InstanceState.kCommitted);
+    assertNull(log.get(1L));
 
   }
 }
