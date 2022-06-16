@@ -59,6 +59,15 @@ public class Log {
     }
   }
 
+  public void setLastExecuted(long lastExecuted) {
+    mu.lock();
+    try {
+      this.lastExecuted = lastExecuted;
+    } finally {
+      mu.unlock();
+    }
+  }
+
   public long getGlobalLastExecuted() {
     mu.lock();
     try {
