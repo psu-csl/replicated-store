@@ -69,7 +69,7 @@ std::tuple<client_id_t, Result> Log::Execute(KVStore* kv) {
 }
 
 void Log::CommitUntil(int64_t leader_last_executed, int64_t ballot) {
-  CHECK(leader_last_executed > 0) << "invalid leader_last_executed";
+  CHECK(leader_last_executed >= 0) << "invalid leader_last_executed";
   CHECK(ballot >= 0) << "invalid ballot";
 
   std::unique_lock lock(mu_);
