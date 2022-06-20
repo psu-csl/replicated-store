@@ -5,13 +5,14 @@ MultiPaxos::MultiPaxos(Log* log, json const& config)
     : id_(config["id"]),
       port_(config["peers"][id_]),
       ballot_(kMaxNumPeers),
-      log_(log) {}
-
-void MultiPaxos::Start(void) {
+      log_(log) {
   ServerBuilder builder;
   builder.AddListeningPort(port_, grpc::InsecureServerCredentials());
   builder.RegisterService(this);
   server_ = builder.BuildAndStart();
+}
+
+void MultiPaxos::Start(void) {
   CHECK(server_);
   DLOG(INFO) << "starting rpc server at " << port_;
   server_->Wait();
