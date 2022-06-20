@@ -14,26 +14,33 @@
     </extensions>
     <plugins>
       <plugin>
+        <groupId>org.xolstice.maven.plugins</groupId>
         <artifactId>protobuf-maven-plugin</artifactId>
+        <version>0.6.1</version>
         <configuration>
-          <pluginArtifact>
-            io.grpc:protoc-gen-grpc-java:1.43.1:exe:${os.detected.classifier}
-          </pluginArtifact>
+          <protocArtifact>com.google.protobuf:protoc:3.7.1:exe:${os.detected.classifier}</protocArtifact>
           <pluginId>grpc-java</pluginId>
-          <protocArtifact>
-            com.google.protobuf:protoc:3.19.1:exe:${os.detected.classifier}
-          </protocArtifact>
+          <pluginArtifact>io.grpc:protoc-gen-grpc-java:1.21.0:exe:${os.detected.classifier}</pluginArtifact>
+          <clearOutputDirectory>false</clearOutputDirectory>
+          <outputDirectory>${project.build.directory}/generated-sources/protobuf/java</outputDirectory>
         </configuration>
         <executions>
           <execution>
+            <id>protobuf-compile</id>
             <goals>
               <goal>compile</goal>
+              <goal>test-compile</goal>
+            </goals>
+          </execution>
+          <execution>
+            <id>protobuf-compile-custom</id>
+
+            <goals>
               <goal>compile-custom</goal>
+              <goal>test-compile-custom</goal>
             </goals>
           </execution>
         </executions>
-        <groupId>org.xolstice.maven.plugins</groupId>
-        <version>0.6.1</version>
       </plugin>
       <plugin>
         <artifactId>maven-compiler-plugin</artifactId>
