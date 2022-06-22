@@ -1,8 +1,21 @@
 #include <gtest/gtest.h>
+#include <chrono>
+#include <thread>
 
 #include "json.h"
 #include "log.h"
 #include "multipaxos.h"
+
+using namespace std::chrono_literals;
+
+using grpc::Channel;
+using grpc::ClientContext;
+using grpc::ServerContext;
+using grpc::Status;
+
+using multipaxosrpc::HeartbeatRequest;
+using multipaxosrpc::HeartbeatResponse;
+using multipaxosrpc::MultiPaxosRPC;
 
 std::string MakeConfig(int64_t id) {
   return R"({ "id": )" + std::to_string(id) + R"(,
@@ -39,4 +52,35 @@ TEST(MultiPaxosTest, NextBallot) {
     EXPECT_FALSE(mp.IsSomeoneElseLeader());
     EXPECT_EQ(id, mp.Leader());
   }
+}
+
+TEST(MultiPaxosTest, HeartbeatIgnoreStaleRPC) {
+  auto id = 0;
+  auto config = json::parse(MakeConfig(id));
+  auto peer = config["peers"][id];
+  Log log;
+  MultiPaxos mp(&log, config);
+
+  std::thread t([&mp] {
+    mp.Start();
+    mp.NextBallot();
+  });
+
+  auto stub = MultiPaxosRPC::NewStub(
+      grpc::CreateChannel(peer, grpc::InsecureChannelCredentials()));
+
+  ClientContext context;
+  HeartbeatRequest request;
+  HeartbeatResponse response;
+
+  request.set_ballot(0);
+  request.set_last_executed(1);
+  request.set_global_last_executed(1);
+
+  stub->Heartbeat(&context, request, &response);
+
+  EXPECT_EQ(0, response.last_executed());
+
+  mp.Shutdown();
+  t.join();
 }
