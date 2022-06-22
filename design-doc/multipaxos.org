@@ -98,13 +98,23 @@
       id = leader();
       return id != id_ && id < max_num_peers_
 
-    - heartbeat_handler(message: heartbeat_rpc_request)
+    - heartbeat_handler(request: heartbeat_rpc_request)
       # description: handler for the heartbeat RPC
       # preconditions:
       # postconditions:
+
+      stale_rpc = true
+      mu_.lock()
       if message.ballot_ >= ballot_:
         last_heartbeat_ = time::now()
         ballot_ = message.ballot_
+        stale_rpc = false
+      mu_.unlock()
+
+      # our log object is concurrent, so we don't need to hold the lock during
+      # the whole RPC handling. instead, we introduce stale_rpc boolean that
+      # is set to false when the lock is held and the ballots are compared.
+      if !stale_rpc:
         log_.commit_until(message_.last_executed_, ballot_)
         log_.trim_until(message_.global_last_executed)
       return heartbeat_rpc_response{last_executed_: log_.last_executed()}
