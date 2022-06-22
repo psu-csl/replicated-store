@@ -28,11 +28,11 @@ Status MultiPaxos::Heartbeat(ServerContext* context,
                              const HeartbeatRequest* request,
                              HeartbeatResponse* response) {
   DLOG(INFO) << id_ << " received heartbeat rpc from " << context->peer();
-  bool stale_rpc = false;
+  bool stale_rpc = true;
   {
     std::scoped_lock lock(mu_);
     if (request->ballot() >= ballot_) {
-      stale_rpc = true;
+      stale_rpc = false;
       last_heartbeat_ = std::chrono::steady_clock::now();
       ballot_ = request->ballot();
     }
