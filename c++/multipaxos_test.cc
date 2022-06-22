@@ -27,60 +27,61 @@ std::string MakeConfig(int64_t id) {
             })";
 }
 
-TEST(MultiPaxosTest, Constructor) {
-  Log log;
-  MultiPaxos mp(&log, json::parse(MakeConfig(0)));
+class MultiPaxosTest : public testing::Test {
+ public:
+  MultiPaxosTest()
+      : config0_(json::parse(MakeConfig(0))),
+        config1_(json::parse(MakeConfig(1))),
+        config2_(json::parse(MakeConfig(2))),
+        peer0_(&log0_, config0_),
+        peer1_(&log1_, config1_),
+        peer2_(&log2_, config2_) {}
 
-  EXPECT_EQ(kMaxNumPeers, mp.Leader());
-  EXPECT_FALSE(mp.IsLeader());
-  EXPECT_FALSE(mp.IsSomeoneElseLeader());
+ protected:
+  ClientContext context_;
+  HeartbeatRequest request_;
+  HeartbeatResponse response_;
+
+  json config0_, config1_, config2_;
+  Log log0_, log1_, log2_;
+  MultiPaxos peer0_, peer1_, peer2_;
+};
+
+TEST_F(MultiPaxosTest, Constructor) {
+  EXPECT_EQ(kMaxNumPeers, peer0_.Leader());
+  EXPECT_FALSE(peer0_.IsLeader());
+  EXPECT_FALSE(peer0_.IsSomeoneElseLeader());
 }
 
-TEST(MultiPaxosTest, NextBallot) {
-  const int kNumPeers = 5;
-  for (auto id = 0; id < kNumPeers; ++id) {
-    Log log;
-    MultiPaxos mp(&log, json::parse(MakeConfig(id)));
+TEST_F(MultiPaxosTest, NextBallot) {
+  int peer2 = 2;
+  int ballot = peer2;
 
-    int64_t ballot = id;
-    ballot += kRoundIncrement;
-    EXPECT_EQ(ballot, mp.NextBallot());
-    ballot += kRoundIncrement;
-    EXPECT_EQ(ballot, mp.NextBallot());
+  ballot += kRoundIncrement;
+  EXPECT_EQ(ballot, peer2_.NextBallot());
+  ballot += kRoundIncrement;
+  EXPECT_EQ(ballot, peer2_.NextBallot());
 
-    EXPECT_TRUE(mp.IsLeader());
-    EXPECT_FALSE(mp.IsSomeoneElseLeader());
-    EXPECT_EQ(id, mp.Leader());
-  }
+  EXPECT_TRUE(peer2_.IsLeader());
+  EXPECT_FALSE(peer2_.IsSomeoneElseLeader());
+  EXPECT_EQ(peer2, peer2_.Leader());
 }
 
-TEST(MultiPaxosTest, HeartbeatIgnoreStaleRPC) {
-  auto id = 0;
-  auto config = json::parse(MakeConfig(id));
-  auto peer = config["peers"][id];
-  Log log;
-  MultiPaxos mp(&log, config);
+TEST_F(MultiPaxosTest, HeartbeatIgnoreStaleRPC) {
+  std::thread t([this] { peer0_.Start(); });
 
-  std::thread t([&mp] {
-    mp.Start();
-    mp.NextBallot();
-  });
+  auto stub = MultiPaxosRPC::NewStub(grpc::CreateChannel(
+      config0_["peers"][0], grpc::InsecureChannelCredentials()));
 
-  auto stub = MultiPaxosRPC::NewStub(
-      grpc::CreateChannel(peer, grpc::InsecureChannelCredentials()));
+  peer0_.NextBallot();
+  peer0_.NextBallot();
 
-  ClientContext context;
-  HeartbeatRequest request;
-  HeartbeatResponse response;
+  request_.set_ballot(peer1_.NextBallot());
 
-  request.set_ballot(0);
-  request.set_last_executed(1);
-  request.set_global_last_executed(1);
+  stub->Heartbeat(&context_, request_, &response_);
 
-  stub->Heartbeat(&context, request, &response);
+  EXPECT_TRUE(peer0_.IsLeader());
 
-  EXPECT_EQ(0, response.last_executed());
-
-  mp.Shutdown();
+  peer0_.Shutdown();
   t.join();
 }
