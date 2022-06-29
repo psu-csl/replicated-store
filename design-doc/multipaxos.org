@@ -103,13 +103,12 @@
       # preconditions:
       # postconditions:
 
-      stale_rpc = true
-
       # a leader does not send heartbeats to itself; therefore, it should never
       # receive a ballot in a heartbeat message that has the same id bits as its
       # own (i.e. a ballot that was originated by this peer).
       assert(!is_leader() || id_ != request.ballot_ & id_bits_) << "heartbeat case 1"
 
+      stale_rpc = true
       mu_.lock()
       if message.ballot_ >= ballot_:
         last_heartbeat_ = time::now()
