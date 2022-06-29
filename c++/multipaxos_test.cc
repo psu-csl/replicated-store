@@ -38,10 +38,6 @@ class MultiPaxosTest : public testing::Test {
         peer2_(&log2_, config2_) {}
 
  protected:
-  ClientContext context_;
-  HeartbeatRequest request_;
-  HeartbeatResponse response_;
-
   json config0_, config1_, config2_;
   Log log0_, log1_, log2_;
   MultiPaxos peer0_, peer1_, peer2_;
@@ -68,20 +64,24 @@ TEST_F(MultiPaxosTest, NextBallot) {
 }
 
 TEST_F(MultiPaxosTest, HeartbeatIgnoreStaleRPC) {
-  std::thread t([this] { peer0_.Start(); });
+  std::thread t0([this] { peer0_.Start(); });
 
-  auto stub = MultiPaxosRPC::NewStub(grpc::CreateChannel(
+  auto stub0 = MultiPaxosRPC::NewStub(grpc::CreateChannel(
       config0_["peers"][0], grpc::InsecureChannelCredentials()));
 
   peer0_.NextBallot();
   peer0_.NextBallot();
 
-  request_.set_ballot(peer1_.NextBallot());
+  ClientContext context0;
+  HeartbeatRequest request0;
+  HeartbeatResponse response0;
 
-  stub->Heartbeat(&context_, request_, &response_);
+  request0.set_ballot(peer1_.NextBallot());
+
+  stub0->Heartbeat(&context0, request0, &response0);
 
   EXPECT_TRUE(peer0_.IsLeader());
 
   peer0_.Shutdown();
-  t.join();
+  t0.join();
 }
