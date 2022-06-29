@@ -104,6 +104,12 @@
       # postconditions:
 
       stale_rpc = true
+
+      # a leader does not send heartbeats to itself; therefore, it should never
+      # receive a ballot in a heartbeat message that has the same id bits as its
+      # own (i.e. a ballot that was originated by this peer).
+      assert(!is_leader() || id_ != request.ballot_ & id_bits_) << "heartbeat case 1"
+
       mu_.lock()
       if message.ballot_ >= ballot_:
         last_heartbeat_ = time::now()
@@ -141,3 +147,12 @@
       since peer1.next_ballot was called once, the ballot on the heartbeat RPC
       should be smaller than the ballot on peer0; therefore, the RPC request
       should be ignored and peer0 should remain the leader.
+
+  - heartbeat_invalid_ballot (death test) *THIS TEST IS NOT IMPLEMENTED*
+    - a death test for "heartbeat case 1" above
+
+      1) in thread t1, start peer0 RPC server
+      2) in thread t2, create a heartbeat RPC request and set its ballot to the
+         result of calling peer0.next_ballot
+
+      this should trigger the assertion "heartbeat case 1"
