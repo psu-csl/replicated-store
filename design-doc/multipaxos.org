@@ -4,6 +4,11 @@
 
   - members
 
+    - running_: atomic<bool>; a flag used by long-running threads (heartbeat
+      thread and prepare thread) to know when to stop running; initialized to
+      false, set to true with the start() method and to false with the
+      shutdown() method.
+
     - id_: int64_t; identifier of this peer. initialized from the configuration
       file. currently, we limit the number of peers to 16; therefore, id_ is a
       value in [0, 16).
@@ -63,6 +68,14 @@
   - methods
 
     - constructor(log: *Log, cfg: config)
+
+    - start()
+      running_ = true
+      rpc_server_->wait() # start the RPC server so it listens for incoming calls
+
+    - shutdown()
+      running_ = false
+      rpc_server_->shutdown() # stop the RPC server
 
     - next_ballot() -> int
       # description: gets the next ballot number by incrementing the round
