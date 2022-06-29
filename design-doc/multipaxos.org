@@ -80,12 +80,14 @@
       # description: returns current leader's id
       # preconditions:
       # postconditions:
+      mu_.lock()
       return ballot_ & id_bits_
 
     - is_leader() -> bool
       # description: returns true if this peer is leader
       # preconditions:
       # postconditions:
+      mu_.lock()
       return leader() == id_
 
     - is_someone_else_leader() -> bool
@@ -95,7 +97,8 @@
       # there is no leader.
       # preconditions:
       # postconditions:
-      id = leader();
+      mu_.lock()
+      id = ballot_ & id_bits_
       return id != id_ && id < max_num_peers_
 
     - heartbeat_handler(request: heartbeat_rpc_request)

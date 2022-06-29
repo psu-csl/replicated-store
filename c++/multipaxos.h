@@ -56,7 +56,8 @@ class MultiPaxos : public MultiPaxosRPC::Service {
   }
 
   bool IsSomeoneElseLeader() const {
-    auto id = Leader();
+    std::scoped_lock lock(mu_);
+    auto id = ballot_ & kIdBits;
     return id != id_ && id < kMaxNumPeers;
   }
 
