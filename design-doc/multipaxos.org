@@ -13,7 +13,9 @@
       file. currently, we limit the number of peers to 16; therefore, id_ is a
       value in [0, 16).
 
-    - ballot_: atomic<int64_t>; current ballot number known to the peer;
+    - port_: string; the port where the RPC server is listening
+
+    - ballot_: int64_t; current ballot number known to the peer;
       initialized |max_num_peers_|, which indicates that there is no current
       leader, since valid leader ids are in [0, max_num_peers_). it is a 64-bit
       integer, the lower 8 bits of which is always equal to |id_| of the peer
@@ -40,6 +42,11 @@
 
     - heartbeat_interval_: milliseconds; interval between heartbeats.
       initialized from the configuration file.
+
+    - rpc_peers_: stubs to RPC peers; initialized based on the configuration file
+
+    - rpc_server_: an RPC server for handling incoming RPC requests; initialized
+      based on the configuration file
 
     - mu_: mutex; MultiPaxos is a concurrent object -- multiple threads may
       concurrently call its |decide| method. |mu_| protects shared data in
@@ -68,6 +75,13 @@
   - methods
 
     - constructor(log: *Log, cfg: config)
+      running_ = false
+      id_ = config["id"]
+      port_ = config["peers"][id_]
+      ballot_ = max_num_peers_
+      log_ = log
+      instantiate RPC stubs to each peer including self
+      instantiate RPC server
 
     - start()
       running_ = true

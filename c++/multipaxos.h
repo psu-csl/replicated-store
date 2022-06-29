@@ -3,10 +3,12 @@
 
 #include <glog/logging.h>
 #include <grpcpp/grpcpp.h>
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <vector>
 
 #include "json_fwd.h"
 #include "kvstore.h"
@@ -69,11 +71,13 @@ class MultiPaxos : public MultiPaxosRPC::Service {
                    const HeartbeatRequest*,
                    HeartbeatResponse*) override;
 
+  std::atomic<bool> running_;
   int64_t id_;
   std::string port_;
   int64_t ballot_;
   std::chrono::time_point<std::chrono::steady_clock> last_heartbeat_;
   Log* log_;
+  std::vector<std::unique_ptr<MultiPaxosRPC::Stub>> rpc_peers_;
   std::unique_ptr<Server> rpc_server_;
   mutable std::mutex mu_;
 };

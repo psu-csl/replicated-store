@@ -2,10 +2,15 @@
 #include "json.h"
 
 MultiPaxos::MultiPaxos(Log* log, json const& config)
-    : id_(config["id"]),
+    : running_(false),
+      id_(config["id"]),
       port_(config["peers"][id_]),
       ballot_(kMaxNumPeers),
       log_(log) {
+  for (std::string const peer : config["peers"])
+    rpc_peers_.emplace_back(MultiPaxosRPC::NewStub(
+        grpc::CreateChannel(peer, grpc::InsecureChannelCredentials())));
+
   ServerBuilder builder;
   builder.AddListeningPort(port_, grpc::InsecureServerCredentials());
   builder.RegisterService(this);
