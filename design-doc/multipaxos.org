@@ -158,7 +158,7 @@
       this should trigger the assertion "heartbeat case 1"
 
   - heartbeat_changes_leader_to_follower
-    - start a peer0 as a leader, and ensure that a valid RPC (those with higher
+    - start peer0 as a leader, and ensure that a valid RPC (those with higher
       than peer's ballot numbers) from peer1 changes the peer0 to follower and
       that peer0 considers peer1 to be the leader.
 
@@ -170,3 +170,23 @@
          know it.
       4) in thread main, send request0 to peer0
       5) ensure that peer0 is not a leader anymore and considers peer1 as the leader.
+
+  - heartbeat_updates_leader_on_followers
+    - start peer0 and peer1 leaders, send an RPC from peer2 to demote them to
+      followers and ensure that they know of the new leader; then send another
+      RPC from peer3 and ensure that they know of the newer leader
+
+      1) in thread t0, start peer0 RPC server
+      2) in thread t1, start peer1 RPC server
+      3) in thread main, call peer0_.next_ballot and peer1_.next_ballot to make
+         them leaders
+      4) in thread main, create a heartbeat RPC request and set its ballot to
+         the result of calling peer2.next_ballot
+      5) in thread main, send request created in step (4) to peer0 and peer1
+      6) ensure that peer0 and peer1 are not leaders anymore and they correctly
+         know that peer2 is the new leader
+      7) in thread main, create a heartbeat RPC request and set its ballot to
+         the result of calling peer3.next_ballot
+      8) in thread main, send request created in step (7) to peer0 and peer1
+      9) ensure that peer0 and peer1 are not leaders and they correctly know
+         that peer3 is the new leader
