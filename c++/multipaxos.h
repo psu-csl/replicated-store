@@ -38,8 +38,6 @@ class MultiPaxos : public MultiPaxosRPC::Service {
   MultiPaxos(MultiPaxos&& log) = delete;
   MultiPaxos& operator=(MultiPaxos&& log) = delete;
 
-  int64_t id() const { return id_; }
-
   int64_t NextBallot() {
     std::scoped_lock lock(mu_);
     ballot_ += kRoundIncrement;
