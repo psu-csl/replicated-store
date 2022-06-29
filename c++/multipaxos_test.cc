@@ -85,3 +85,24 @@ TEST_F(MultiPaxosTest, HeartbeatIgnoreStaleRPC) {
   peer0_.Shutdown();
   t0.join();
 }
+
+TEST_F(MultiPaxosTest, HeartbeatChangesLeaderToFollower) {
+  std::thread t0([this] { peer0_.Start(); });
+
+  auto stub0 = MultiPaxosRPC::NewStub(grpc::CreateChannel(
+      config0_["peers"][0], grpc::InsecureChannelCredentials()));
+
+  ClientContext context0;
+  HeartbeatRequest request0;
+  HeartbeatResponse response0;
+
+  peer0_.NextBallot();
+  request0.set_ballot(peer1_.NextBallot());
+  stub0->Heartbeat(&context0, request0, &response0);
+
+  EXPECT_FALSE(peer0_.IsLeader());
+  EXPECT_EQ(1, peer0_.Leader());
+
+  peer0_.Shutdown();
+  t0.join();
+}

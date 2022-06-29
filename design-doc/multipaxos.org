@@ -138,11 +138,11 @@
     - ensure that stale RPCs (those with older than peer's ballot numbers) are
       ignored by the heartbeat RPC handler:
 
-      1) in thread t1 start peer0 RPC server
-      2) in thread t2, call peer0.next_ballot twice
-      3) in thread t2, create a heartbeat RPC request and set its ballot to the
+      1) in thread t0 start peer0 RPC server
+      2) in thread main, call peer0.next_ballot twice
+      3) in thread main, create a heartbeat RPC request and set its ballot to the
          result of calling peer1.next_ballot
-      4) in thread t2, invoke heartbeat RPC on peer0
+      4) in thread main, invoke heartbeat RPC on peer0
 
       since peer1.next_ballot was called once, the ballot on the heartbeat RPC
       should be smaller than the ballot on peer0; therefore, the RPC request
@@ -156,3 +156,17 @@
          result of calling peer0.next_ballot
 
       this should trigger the assertion "heartbeat case 1"
+
+  - heartbeat_changes_leader_to_follower
+    - start a peer0 as a leader, and ensure that a valid RPC (those with higher
+      than peer's ballot numbers) from peer1 changes the peer0 to follower and
+      that peer0 considers peer1 to be the leader.
+
+      1) in thread t0, start peer0 RPC server
+      3) in thread main, call peer0_.next_ballot to make peer0 leader
+      5) in thread main, create a heartbeat RPC request request0 and set its
+         ballot to the result of calling peer1.next_ballot -- now peer1 is a
+         leader with a higher ballot number than peer0, but peer0 does not yet
+         know it.
+      6) in thread main, send request0 to peer0
+      7) ensure that peer0 is not a leader anymore and considers peer1 as the leader.
