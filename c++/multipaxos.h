@@ -74,7 +74,7 @@ class MultiPaxos : public MultiPaxosRPC::Service {
   int64_t ballot_;
   std::chrono::time_point<std::chrono::steady_clock> last_heartbeat_;
   Log* log_;
-  std::unique_ptr<Server> server_;
+  std::unique_ptr<Server> rpc_server_;
   mutable std::mutex mu_;
 };
 

@@ -9,19 +9,19 @@ MultiPaxos::MultiPaxos(Log* log, json const& config)
   ServerBuilder builder;
   builder.AddListeningPort(port_, grpc::InsecureServerCredentials());
   builder.RegisterService(this);
-  server_ = builder.BuildAndStart();
+  rpc_server_ = builder.BuildAndStart();
 }
 
 void MultiPaxos::Start(void) {
-  CHECK(server_);
+  CHECK(rpc_server_);
   DLOG(INFO) << "starting rpc server at " << port_;
-  server_->Wait();
+  rpc_server_->Wait();
 }
 
 void MultiPaxos::Shutdown(void) {
-  CHECK(server_);
+  CHECK(rpc_server_);
   DLOG(INFO) << "stopping rpc server at " << port_;
-  server_->Shutdown();
+  rpc_server_->Shutdown();
 }
 
 Status MultiPaxos::Heartbeat(ServerContext* context,
