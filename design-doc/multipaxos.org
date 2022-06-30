@@ -98,7 +98,7 @@
       # another peer. calling this method makes this peer the leader.
       # preconditions:
       # postconditions:
-      mu_.lock()
+      mu_.lock() # unlocks on return
       ballot_ += id_bits_
       ballot_ = (ballot_ & ~id_bits_) | id_
       return ballot_
@@ -107,14 +107,14 @@
       # description: returns current leader's id
       # preconditions:
       # postconditions:
-      mu_.lock()
+      mu_.lock() # unlocks on return
       return ballot_ & id_bits_
 
     - is_leader() -> bool
       # description: returns true if this peer is leader
       # preconditions:
       # postconditions:
-      mu_.lock()
+      mu_.lock() # unlocks on return
       return leader() == id_
 
     - is_someone_else_leader() -> bool
@@ -124,7 +124,7 @@
       # there is no leader.
       # preconditions:
       # postconditions:
-      mu_.lock()
+      mu_.lock() # unlocks on return
       id = ballot_ & id_bits_
       return id != id_ && id < max_num_peers_
 
@@ -133,18 +133,11 @@
       # preconditions:
       # postconditions:
 
-      stale_rpc = true
-      mu_.lock()
+      mu_.lock() # unlocks on return
       if message.ballot_ >= ballot_:
         last_heartbeat_ = time::now()
         ballot_ = message.ballot_
         stale_rpc = false
-      mu_.unlock()
-
-      # our log object is concurrent, so we don't need to hold the lock during
-      # the whole RPC handling. instead, we introduce stale_rpc boolean that
-      # is set to false when the lock is held and the ballots are compared.
-      if !stale_rpc:
         log_.commit_until(message_.last_executed_, ballot_)
         log_.trim_until(message_.global_last_executed)
       return heartbeat_rpc_response{last_executed_: log_.last_executed()}
