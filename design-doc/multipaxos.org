@@ -177,15 +177,6 @@
       should be smaller than the ballot on peer0; therefore, the RPC request
       should be ignored and peer0 should remain the leader.
 
-  - heartbeat_invalid_ballot (death test) *THIS TEST IS NOT IMPLEMENTED*
-    - a death test for "heartbeat case 1" above
-
-      1) in thread t1, start peer0 RPC server
-      2) in thread t2, create a heartbeat RPC request and set its ballot to the
-         result of calling peer0.next_ballot
-
-      this should trigger the assertion "heartbeat case 1"
-
   - heartbeat_changes_leader_to_follower
     - start peer0 as a leader, and ensure that a valid RPC (those with higher
       than peer's ballot numbers) from peer1 changes the peer0 to follower and
