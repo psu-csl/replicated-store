@@ -40,7 +40,7 @@
     - last_heartbeat_: timestamp; timestamp of the last heartbeat received from the current
       leader. initialized to 0.
 
-    - heartbeat_interval_: milliseconds; interval between heartbeats.
+    - heartbeat_pause_: milliseconds; pause duration between heartbeats.
       initialized from the configuration file.
 
     - rpc_peers_: stubs to RPC peers; initialized based on the configuration file
@@ -51,6 +51,9 @@
     - mu_: mutex; MultiPaxos is a concurrent object -- multiple threads may
       concurrently call its |decide| method. |mu_| protects shared data in
       MultiPaxos.
+
+    - tp_: thread_pool; a thread pool to which we post RPC requests to peers;
+      initialized from the configuration file.
 
   - constants
 

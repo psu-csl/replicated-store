@@ -6,7 +6,9 @@ MultiPaxos::MultiPaxos(Log* log, json const& config)
       id_(config["id"]),
       port_(config["peers"][id_]),
       ballot_(kMaxNumPeers),
-      log_(log) {
+      heartbeat_pause_(config["heartbeat_pause"]),
+      log_(log),
+      tp_(config["threadpool_size"]) {
   for (std::string const peer : config["peers"])
     rpc_peers_.emplace_back(MultiPaxosRPC::NewStub(
         grpc::CreateChannel(peer, grpc::InsecureChannelCredentials())));

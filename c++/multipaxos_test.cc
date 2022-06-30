@@ -19,6 +19,8 @@ using multipaxosrpc::MultiPaxosRPC;
 
 std::string MakeConfig(int64_t id) {
   return R"({ "id": )" + std::to_string(id) + R"(,
+              "threadpool_size": 8,
+              "heartbeat_pause": 3000,
               "peers": [ "127.0.0.1:3000",
                          "127.0.0.1:3001",
                          "127.0.0.1:3002",
