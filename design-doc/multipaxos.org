@@ -115,7 +115,13 @@
       # preconditions:
       # postconditions:
       mu_.lock() # unlocks on return
-      return leader() == id_
+      return is_leader_lockless()
+
+    - is_leader_lockless() -> bool
+      # description: returns true if this peer is leader
+      # preconditions: lock is not acquired
+      # postconditions:
+      return (ballot_ & id_bits) == id_
 
     - is_someone_else_leader() -> bool
       # description: returns true if we are not a leader and someone else is.
