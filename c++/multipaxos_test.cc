@@ -20,12 +20,11 @@ using multipaxosrpc::MultiPaxosRPC;
 std::string MakeConfig(int64_t id) {
   return R"({ "id": )" + std::to_string(id) + R"(,
               "threadpool_size": 8,
-              "heartbeat_pause": 3000,
+              "heartbeat_pause": 300,
               "peers": [ "127.0.0.1:3000",
                          "127.0.0.1:3001",
                          "127.0.0.1:3002",
-                         "127.0.0.1:3003",
-                         "127.0.0.1:3004"]
+                         "127.0.0.1:3003"]
             })";
 }
 
@@ -114,63 +113,42 @@ TEST_F(MultiPaxosTest, HeartbeatChangesLeaderToFollower) {
 TEST_F(MultiPaxosTest, HeartbeatUpdatesLeaderOnFollowers) {
   std::thread t0([this] { peer0_.Start(); });
   std::thread t1([this] { peer1_.Start(); });
+  std::thread t2([this] { peer2_.Start(); });
 
-  auto stub0 = MultiPaxosRPC::NewStub(grpc::CreateChannel(
-      config0_["peers"][0], grpc::InsecureChannelCredentials()));
-  auto stub1 = MultiPaxosRPC::NewStub(grpc::CreateChannel(
-      config1_["peers"][1], grpc::InsecureChannelCredentials()));
+  int pause = 2 * static_cast<int>(config0_["heartbeat_pause"]);
+
+  EXPECT_FALSE(peer0_.IsLeader());
+  EXPECT_FALSE(peer1_.IsLeader());
+  EXPECT_FALSE(peer2_.IsLeader());
 
   peer0_.NextBallot();
+  std::this_thread::sleep_for(std::chrono::milliseconds(pause));
+  EXPECT_TRUE(peer0_.IsLeader());
+  EXPECT_FALSE(peer1_.IsLeader());
+  EXPECT_EQ(0, peer1_.Leader());
+  EXPECT_FALSE(peer2_.IsLeader());
+  EXPECT_EQ(0, peer2_.Leader());
+
   peer1_.NextBallot();
-
-  auto ballot = peer2_.NextBallot();
-  {
-    ClientContext context;
-    HeartbeatRequest request;
-    HeartbeatResponse response;
-
-    request.set_ballot(ballot);
-    stub0->Heartbeat(&context, request, &response);
-  }
-  {
-    ClientContext context;
-    HeartbeatRequest request;
-    HeartbeatResponse response;
-
-    request.set_ballot(ballot);
-    stub1->Heartbeat(&context, request, &response);
-  }
-
+  std::this_thread::sleep_for(std::chrono::milliseconds(pause));
+  EXPECT_TRUE(peer1_.IsLeader());
   EXPECT_FALSE(peer0_.IsLeader());
-  EXPECT_FALSE(peer1_.IsLeader());
+  EXPECT_EQ(1, peer0_.Leader());
+  EXPECT_FALSE(peer2_.IsLeader());
+  EXPECT_EQ(1, peer2_.Leader());
+
+  peer2_.NextBallot();
+  std::this_thread::sleep_for(std::chrono::milliseconds(pause));
+  EXPECT_TRUE(peer2_.IsLeader());
+  EXPECT_FALSE(peer0_.IsLeader());
   EXPECT_EQ(2, peer0_.Leader());
-  EXPECT_EQ(2, peer1_.Leader());
-
-  ballot = peer3_.NextBallot();
-  {
-    ClientContext context;
-    HeartbeatRequest request;
-    HeartbeatResponse response;
-
-    request.set_ballot(ballot);
-    stub0->Heartbeat(&context, request, &response);
-  }
-  {
-    ClientContext context;
-    HeartbeatRequest request;
-    HeartbeatResponse response;
-
-    request.set_ballot(ballot);
-    stub1->Heartbeat(&context, request, &response);
-  }
-
-  EXPECT_FALSE(peer0_.IsLeader());
   EXPECT_FALSE(peer1_.IsLeader());
-  EXPECT_EQ(3, peer0_.Leader());
-  EXPECT_EQ(3, peer1_.Leader());
+  EXPECT_EQ(2, peer1_.Leader());
 
   peer0_.Shutdown();
   peer1_.Shutdown();
+  peer2_.Shutdown();
   t0.join();
   t1.join();
+  t2.join();
 }

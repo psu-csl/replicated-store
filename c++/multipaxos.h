@@ -3,8 +3,10 @@
 
 #include <glog/logging.h>
 #include <grpcpp/grpcpp.h>
+#include <asio.hpp>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -44,6 +46,7 @@ class MultiPaxos : public MultiPaxosRPC::Service {
     std::scoped_lock lock(mu_);
     ballot_ += kRoundIncrement;
     ballot_ = (ballot_ & ~kIdBits) | id_;
+    cv_leader_.notify_all();
     return ballot_;
   }
 
@@ -67,6 +70,7 @@ class MultiPaxos : public MultiPaxosRPC::Service {
 
   void Start();
   void Shutdown();
+  void HeartbeatThread();
 
  private:
   Status Heartbeat(ServerContext*,
@@ -85,6 +89,13 @@ class MultiPaxos : public MultiPaxosRPC::Service {
   mutable std::mutex mu_;
   std::condition_variable cv_leader_;
   asio::thread_pool tp_;
+  std::thread heartbeat_thread_;
+
+  std::mutex heartbeat_mu_;
+  std::condition_variable heartbeat_cv_;
+  size_t heartbeat_num_responses_;
+  std::vector<int64_t> heartbeat_ok_responses_;
+  HeartbeatRequest heartbeat_request_;
 };
 
 #endif
