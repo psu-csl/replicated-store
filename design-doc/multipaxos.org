@@ -236,10 +236,10 @@
             global_last_executed = min(ok_responses)
             log_.trim_until(global_last_executed)
           heartbeat_mu_.unlock()
+
           sleep(heartbeat_pause_)
           if !is_leader()
             break
-
 
 - unit tests
 

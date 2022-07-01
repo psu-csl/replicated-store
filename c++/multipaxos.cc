@@ -78,9 +78,6 @@ void MultiPaxos::HeartbeatThread() {
         std::unique_lock lock(heartbeat_mu_);
         while (IsLeader() && heartbeat_num_responses_ != rpc_peers_.size())
           heartbeat_cv_.wait(lock);
-      }
-      {
-        std::scoped_lock lock(heartbeat_mu_);
         if (heartbeat_ok_responses_.size() == rpc_peers_.size())
           log_->TrimUntil(*std::min_element(std::begin(heartbeat_ok_responses_),
                                             std::end(heartbeat_ok_responses_)));
