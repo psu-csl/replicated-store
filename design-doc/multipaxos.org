@@ -229,9 +229,6 @@
           heartbeat_mu_.lock()
           while (is_leader() && heartbeat_num_responses_ != peers_.size())
             heartbeat_cv_.wait(hb_mu)
-          heartbeat_mu_.unlock()
-
-          heartbeat_mu_.lock()
           if heartbeat_ok_responses_.size() == peer_.size()
             global_last_executed = min(ok_responses)
             log_.trim_until(global_last_executed)
