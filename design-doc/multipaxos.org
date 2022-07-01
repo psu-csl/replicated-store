@@ -62,6 +62,33 @@
     - heartbeat_thread_: thread; runs the function heartbeat_thread() until
       shutdown() is called.
 
+    # the followings are heartbeat thread related variables. we cannot make them
+    # local to the heartbeat thread because the heartbeat thread posts tasks to
+    # the threadpool tp_; it is possible that the threads from the threadpool
+    # outlive the heartbeat thread, and if these variables are local to the
+    # heartbeat thread, then the threadpool threads will end up referencing
+    # destroyed variables. One other possible solution is to have the threadpool
+    # local to the heartbeat thread as well.
+
+    - heartbeat_request_: heartbeat RPC request protobuf; initialized every time
+      right before heartbeats are sent by acquiring mu_ and getting a consistent
+      set of its fields (ballot, last_executed, and global_last_executed) from
+      this peer.
+
+    - heartbeat_num_responses_: int; number of heartbeat responses; initialized
+      to 0 every time right before heartbeats are sent.
+
+    - heartbeat_ok_responses_: array of ints; the values of ok responses to
+      heartbeats; reset to empty every time right before heartbeats are sent.
+
+    - heartbeat_mu_: mutex; serializes access to heartbeat_num_responses_ and
+      heartbeat_ok_responses_ among thread pool threads and the heartbeat
+      thread.
+
+    - heartbeat_cv_: condition variable; the heartbeat thread waits on this
+      condition variable and it is woken up every time an RPC posted by a
+      threadpool thread completes and signals this condition variable.
+
   - constants
 
     - id_bits_ = 0xff: the lower bits of |ballot_| we use for storing the id of
@@ -179,35 +206,36 @@
 
         # this peer is a leader
         while (running_)
-          num_responses = 0
-          ok_responses = []
-          hb_mu, hb_cv
-          hb_rpc_request
+          heartbeat_num_responses_ = 0
+          heartbeat_ok_responses_ = []
 
           mu_.lock()
-          hb_rpc_request.set_ballot(ballot_)
-          hb_rpc_request.set_last_executed(log_.last_executed())
-          hb_rpc_request.set_global_last_executed(log_.global_last_executed())
+          heartbeat_request_.set_ballot(ballot_)
+          heartbeat_request_.set_last_executed(log_.last_executed())
+          heartbeat_request_.set_global_last_executed(log_.global_last_executed())
           mu_.unlock
 
           for each peer p
             post a closure to a thread pool {
-              status = p.Heartbeat(hb_rpc_request)
-              hb_mu.lock()
-              ++num_responses
+              status = p.Heartbeat(heartbeat_request_)
+              heartbeat_mu_.lock()
+              ++heartbeat_num_responses_
               if status.ok
-                ok_responses.push_back(status.response)
-              hb_cv.notify_one()
-              hb_mu.unlock()
+                heartbeat_ok_responses_.push_back(status.response)
+              heartbeat_cv_.notify_one()
             }
+            heartbeat_mu_.unlock()
 
-          hb_mu.lock()
-          while (is_leader() && num_responses != peers_.size())
-            hb_cv.wait(hb_mu)
-          hb_mu.unlock()
-          if ok_responses.size() == peer_.size()
+          heartbeat_mu_.lock()
+          while (is_leader() && heartbeat_num_responses_ != peers_.size())
+            heartbeat_cv_.wait(hb_mu)
+          heartbeat_mu_.unlock()
+
+          heartbeat_mu_.lock()
+          if heartbeat_ok_responses_.size() == peer_.size()
             global_last_executed = min(ok_responses)
             log_.trim_until(global_last_executed)
+          heartbeat_mu_.unlock()
           sleep(heartbeat_pause_)
           if !is_leader()
             break

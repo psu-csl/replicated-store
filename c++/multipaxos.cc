@@ -70,8 +70,8 @@ void MultiPaxos::HeartbeatThread() {
             ++heartbeat_num_responses_;
             if (status.ok())
               heartbeat_ok_responses_.push_back(response.last_executed());
-            heartbeat_cv_.notify_one();
           }
+          heartbeat_cv_.notify_one();
         });
       }
       {

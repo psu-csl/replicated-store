@@ -91,11 +91,11 @@ class MultiPaxos : public MultiPaxosRPC::Service {
   asio::thread_pool tp_;
   std::thread heartbeat_thread_;
 
-  std::mutex heartbeat_mu_;
-  std::condition_variable heartbeat_cv_;
+  HeartbeatRequest heartbeat_request_;
   size_t heartbeat_num_responses_;
   std::vector<int64_t> heartbeat_ok_responses_;
-  HeartbeatRequest heartbeat_request_;
+  std::mutex heartbeat_mu_;
+  std::condition_variable heartbeat_cv_;
 };
 
 #endif
