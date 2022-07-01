@@ -1,3 +1,6 @@
+- explore the cost of sending RPC requests to self (should we use stale_rpc flag
+  in heartbeat handler?)
+
 - explore the overhead of locking ballot_; replace NextBallot with CAS loop,
   remove the lock, and change ballot to atomic and measure the overhead.
 
@@ -20,5 +23,3 @@
   desirable.
 
 - handle errors in asio calls -- or at least add assertions.
-
-- change cmake to look for asio.
