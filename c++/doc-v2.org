@@ -1,33 +1,11 @@
 * TYPES
 
-- struct Command
-  - synopsis: a key-value command
-  - fields:
-    - type_: enum { get, put, del }
-    - key_: string
-    - value_: string (valid only if type_ == put)
-
 - struct Result
   - synopsis: result of a key-value command
   - fields:
     - ok_: bool (true if result is a success, false otherwise)
     - value_: string (if ok_ == false, contains error message, otherwise
       contains return value for a get command or empty for put and del)
-
-- struct Instance
-  - synopsis: entry in the log. each instance starts in the in-progress state,
-    and changes to the committed state once quorum has voted for it, and changes
-    to executed state once the executor thread has its command executed. once
-    the command is executed, we look for the client-id in the global map that
-    maintains client-id to socket mapping. if found, then this is the leader
-    that created the instance, and we write the response to the client;
-    otherwise, this is a follower and we do nothing.
-  - fields:
-    - ballot_: ballot of the instance
-    - index_: index of the command in the log
-    - client-id_: id of the client in the leader that issued the command
-    - state_: enum { in-progress, committed, executed }
-    - command_: Command
 
 - struct accept_result_t
   - synopsis: return type of replicate() and accept()
@@ -52,15 +30,6 @@
 - message accept_rpc_response
   - type_: enum {ok, reject, timeout}
   - ballot_: ballot of the remote peer (valid only if type_ == reject)
-
-- message prepare_rpc_request
-  - ballot_: ballot of the sender
-
-- message prepare_rpc_response
-  - type_: enum {ok, reject, timeout}
-  - ballot_: ballot of the remote peer (valid only if type_ == reject)
-  - log_: instances since global_last_executed_ in the corresponding prepareRPC
-    request (valid only if type_ == ok}
 
 * OBJECTS
 

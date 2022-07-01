@@ -10,7 +10,22 @@
 
   - types:
 
-    log_t: a map from int to Instance
+    - Command: a key-value command. Fields of a command are
+      - type_: enum { get, put, del }
+      - key_: string
+      - value_: string (valid only if type_ == put)
+
+    - Log: a map from int to Instance
+
+    - Instance: entry in the log. each instance starts in the in-progress state,
+      and changes to the committed state once quorum has voted for it, and
+      changes to executed state once the executor thread has its command
+      executed. Fields of an instance are:
+      - ballot_: ballot of the instance
+      - index_: index of the command in the log
+      - client-id_: id of the client in the leader that issued the command
+      - state_: enum { in-progress, committed, executed }
+      - command_: Command
 
   - members
 
@@ -48,7 +63,7 @@
 
   - non-members functions
 
-    - insert(log: *log_t, instance: Instance) -> bool
+    - insert(log: *Log, instance: Instance) -> bool
       # description: given |log| and |instance|, inserts |instance| to |log| if
       # possible, and returns true if an instance was inserted to an empty slot;
       # also checks for safety violations.

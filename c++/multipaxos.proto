@@ -4,6 +4,12 @@ package multipaxosrpc;
 
 service MultiPaxosRPC {
   rpc Heartbeat (HeartbeatRequest) returns (HeartbeatResponse) {}
+  rpc Prepare (PrepareRequest) returns (PrepareResponse) {}
+}
+
+enum ResponseType {
+  Ok = 0;
+  Reject = 1;
 }
 
 message HeartbeatRequest {
@@ -14,4 +20,39 @@ message HeartbeatRequest {
 
 message HeartbeatResponse {
   int32 last_executed = 1;
+}
+
+message PrepareRequest {
+  int64 ballot = 1;
+}
+
+message PrepareResponse {
+  ResponseType type = 1;
+
+  message Instance {
+    int64 ballot = 1;
+    int64 index = 2;
+    int64 client_id = 3;
+
+    enum State {
+      InProgress = 0;
+      Committed = 1;
+      Executed = 2;
+    }
+    State state = 4;
+
+    message Command {
+      enum CommandType {
+        Get = 0;
+        Put = 1;
+        Del = 2;
+      }
+      CommandType type = 1;
+      string key = 2;
+      string value = 3;
+    }
+    Command command = 5;
+  }
+
+  repeated Instance instances = 2;
 }
