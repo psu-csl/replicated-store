@@ -1,31 +1,69 @@
 #include <gtest/gtest.h>
 #include <thread>
 
-#include "instance.h"
 #include "log.h"
 #include "memkvstore.h"
+
+using multipaxos::Command;
+using multipaxos::CommandType;
+using multipaxos::CommandType::DEL;
+using multipaxos::CommandType::GET;
+using multipaxos::CommandType::PUT;
+
+using multipaxos::Instance;
+using multipaxos::InstanceState;
+using multipaxos::InstanceState::COMMITTED;
+using multipaxos::InstanceState::EXECUTED;
+using multipaxos::InstanceState::INPROGRESS;
 
 class LogTest : public testing::Test {
  protected:
   Instance MakeInstance(int64_t ballot) {
-    return Instance{ballot, log_.AdvanceLastIndex(), 0,
-                    InstanceState::kInProgress, Command{}};
+    Instance i;
+    i.set_ballot(ballot);
+    i.set_index(log_.AdvanceLastIndex());
+    i.set_state(INPROGRESS);
+    *i.mutable_command() = Command();
+    return i;
   }
   Instance MakeInstance(int64_t ballot, int64_t index) {
-    return Instance{ballot, index, 0, InstanceState::kInProgress, Command{}};
+    Instance i;
+    i.set_ballot(ballot);
+    i.set_index(index);
+    i.set_state(INPROGRESS);
+    *i.mutable_command() = Command();
+    return i;
   }
   Instance MakeInstance(int64_t ballot, InstanceState state) {
-    return Instance{ballot, log_.AdvanceLastIndex(), 0, state, Command{}};
+    Instance i;
+    i.set_ballot(ballot);
+    i.set_index(log_.AdvanceLastIndex());
+    i.set_state(state);
+    *i.mutable_command() = Command();
+    return i;
   }
   Instance MakeInstance(int64_t ballot, int64_t index, CommandType type) {
-    return Instance{ballot, index, 0, InstanceState::kInProgress,
-                    Command{type, "", ""}};
+    Instance i;
+    i.set_ballot(ballot);
+    i.set_index(index);
+    i.set_state(INPROGRESS);
+    Command c;
+    c.set_type(type);
+    *i.mutable_command() = c;
+    return i;
   }
   Instance MakeInstance(int64_t ballot,
                         int64_t index,
                         InstanceState state,
                         CommandType type) {
-    return Instance{ballot, index, 0, state, Command{type, "", ""}};
+    Instance i;
+    i.set_ballot(ballot);
+    i.set_index(index);
+    i.set_state(state);
+    Command c;
+    c.set_type(type);
+    *i.mutable_command() = c;
+    return i;
   }
 
   Log log_;
@@ -47,51 +85,43 @@ TEST_F(LogTest, Insert) {
   log_t log;
   auto index = 1;
   auto ballot = 1;
-  EXPECT_TRUE(Insert(&log, MakeInstance(ballot, index, CommandType::kPut)));
-  EXPECT_EQ(CommandType::kPut, log[index].command_.type_);
-  EXPECT_FALSE(Insert(&log, MakeInstance(ballot, index, CommandType::kPut)));
+  EXPECT_TRUE(Insert(&log, MakeInstance(ballot, index, PUT)));
+  EXPECT_EQ(PUT, log[index].command().type());
+  EXPECT_FALSE(Insert(&log, MakeInstance(ballot, index, PUT)));
 }
 
 TEST_F(LogTest, InsertUpdateInProgress) {
   log_t log;
   auto index = 1;
   auto ballot = 1;
-  EXPECT_TRUE(Insert(&log, MakeInstance(ballot, index, CommandType::kPut)));
-  EXPECT_EQ(CommandType::kPut, log[index].command_.type_);
-  EXPECT_FALSE(
-      Insert(&log, MakeInstance(ballot + 1, index, CommandType::kDel)));
-  EXPECT_EQ(CommandType::kDel, log[index].command_.type_);
+  EXPECT_TRUE(Insert(&log, MakeInstance(ballot, index, PUT)));
+  EXPECT_EQ(PUT, log[index].command().type());
+  EXPECT_FALSE(Insert(&log, MakeInstance(ballot + 1, index, DEL)));
+  EXPECT_EQ(DEL, log[index].command().type());
 }
 
 TEST_F(LogTest, InsertUpdateCommitted) {
   log_t log;
   auto index = 1;
   auto ballot = 1;
-  EXPECT_TRUE(
-      Insert(&log, MakeInstance(ballot, index, InstanceState::kCommitted,
-                                CommandType::kPut)));
-  EXPECT_FALSE(
-      Insert(&log, MakeInstance(ballot, index, InstanceState::kInProgress,
-                                CommandType::kPut)));
+  EXPECT_TRUE(Insert(&log, MakeInstance(ballot, index, COMMITTED, PUT)));
+  EXPECT_FALSE(Insert(&log, MakeInstance(ballot, index, INPROGRESS, PUT)));
 }
 
 TEST_F(LogTest, InsertStale) {
   log_t log;
   auto index = 1;
   auto ballot = 1;
-  EXPECT_TRUE(Insert(&log, MakeInstance(ballot, index, CommandType::kPut)));
-  EXPECT_EQ(CommandType::kPut, log[index].command_.type_);
-  EXPECT_FALSE(
-      Insert(&log, MakeInstance(ballot - 1, index, CommandType::kDel)));
-  EXPECT_EQ(CommandType::kPut, log[index].command_.type_);
+  EXPECT_TRUE(Insert(&log, MakeInstance(ballot, index, PUT)));
+  EXPECT_EQ(PUT, log[index].command().type());
+  EXPECT_FALSE(Insert(&log, MakeInstance(ballot - 1, index, DEL)));
+  EXPECT_EQ(PUT, log[index].command().type());
 }
 
 TEST_F(LogDeathTest, InsertCase2Committed) {
   auto index = 1;
-  auto inst1 =
-      MakeInstance(0, index, InstanceState::kCommitted, CommandType::kPut);
-  auto inst2 =
-      MakeInstance(0, index, InstanceState::kInProgress, CommandType::kDel);
+  auto inst1 = MakeInstance(0, index, COMMITTED, PUT);
+  auto inst2 = MakeInstance(0, index, INPROGRESS, DEL);
   log_t log;
   Insert(&log, std::move(inst1));
   EXPECT_DEATH(Insert(&log, std::move(inst2)), "Insert case2");
@@ -99,10 +129,8 @@ TEST_F(LogDeathTest, InsertCase2Committed) {
 
 TEST_F(LogDeathTest, InsertCase2Executed) {
   auto index = 1;
-  auto inst1 =
-      MakeInstance(0, index, InstanceState::kExecuted, CommandType::kPut);
-  auto inst2 =
-      MakeInstance(0, index, InstanceState::kInProgress, CommandType::kDel);
+  auto inst1 = MakeInstance(0, index, EXECUTED, PUT);
+  auto inst2 = MakeInstance(0, index, INPROGRESS, DEL);
   log_t log;
   Insert(&log, std::move(inst1));
   EXPECT_DEATH(Insert(&log, std::move(inst2)), "Insert case2");
@@ -110,10 +138,8 @@ TEST_F(LogDeathTest, InsertCase2Executed) {
 
 TEST_F(LogDeathTest, InsertCase3) {
   auto index = 1;
-  auto inst1 =
-      MakeInstance(0, index, InstanceState::kInProgress, CommandType::kPut);
-  auto inst2 =
-      MakeInstance(0, index, InstanceState::kInProgress, CommandType::kDel);
+  auto inst1 = MakeInstance(0, index, INPROGRESS, PUT);
+  auto inst2 = MakeInstance(0, index, INPROGRESS, DEL);
   log_t log;
   Insert(&log, std::move(inst1));
   EXPECT_DEATH(Insert(&log, std::move(inst2)), "Insert case3");
@@ -122,14 +148,14 @@ TEST_F(LogDeathTest, InsertCase3) {
 TEST_F(LogTest, Append) {
   log_.Append(MakeInstance(0));
   log_.Append(MakeInstance(0));
-  EXPECT_EQ(1, log_[1]->index_);
-  EXPECT_EQ(2, log_[2]->index_);
+  EXPECT_EQ(1, log_[1]->index());
+  EXPECT_EQ(2, log_[2]->index());
 }
 
 TEST_F(LogTest, AppendWithGap) {
   auto index = 42;
   log_.Append(MakeInstance(0, index));
-  EXPECT_EQ(index, log_[index]->index_);
+  EXPECT_EQ(index, log_[index]->index());
   EXPECT_EQ(index + 1, log_.AdvanceLastIndex());
 }
 
@@ -142,16 +168,16 @@ TEST_F(LogTest, AppendFillGaps) {
 
 TEST_F(LogTest, AppendHighBallotOverride) {
   auto index = 1, lo_ballot = 0, hi_ballot = 1;
-  log_.Append(MakeInstance(lo_ballot, index, CommandType::kPut));
-  log_.Append(MakeInstance(hi_ballot, index, CommandType::kDel));
-  EXPECT_EQ(CommandType::kDel, log_[index]->command_.type_);
+  log_.Append(MakeInstance(lo_ballot, index, PUT));
+  log_.Append(MakeInstance(hi_ballot, index, DEL));
+  EXPECT_EQ(DEL, log_[index]->command().type());
 }
 
 TEST_F(LogTest, AppendLowBallotNoEffect) {
   auto index = 1, lo_ballot = 0, hi_ballot = 1;
-  log_.Append(MakeInstance(hi_ballot, index, CommandType::kPut));
-  log_.Append(MakeInstance(lo_ballot, index, CommandType::kDel));
-  EXPECT_EQ(CommandType::kPut, log_[index]->command_.type_);
+  log_.Append(MakeInstance(hi_ballot, index, PUT));
+  log_.Append(MakeInstance(lo_ballot, index, DEL));
+  EXPECT_EQ(PUT, log_[index]->command().type());
 }
 
 TEST_F(LogTest, Commit) {
@@ -160,20 +186,20 @@ TEST_F(LogTest, Commit) {
   auto index2 = 2;
   log_.Append(MakeInstance(0, index2));
 
-  EXPECT_TRUE(log_[index1]->IsInProgress());
-  EXPECT_TRUE(log_[index2]->IsInProgress());
+  EXPECT_TRUE(IsInProgress(*log_[index1]));
+  EXPECT_TRUE(IsInProgress(*log_[index2]));
   EXPECT_FALSE(log_.IsExecutable());
 
   log_.Commit(index2);
 
-  EXPECT_TRUE(log_[index1]->IsInProgress());
-  EXPECT_TRUE(log_[index2]->IsCommitted());
+  EXPECT_TRUE(IsInProgress(*log_[index1]));
+  EXPECT_TRUE(IsCommitted(*log_[index2]));
   EXPECT_FALSE(log_.IsExecutable());
 
   log_.Commit(index1);
 
-  EXPECT_TRUE(log_[index1]->IsCommitted());
-  EXPECT_TRUE(log_[index2]->IsCommitted());
+  EXPECT_TRUE(IsCommitted(*log_[index1]));
+  EXPECT_TRUE(IsCommitted(*log_[index2]));
   EXPECT_TRUE(log_.IsExecutable());
 }
 
@@ -183,7 +209,7 @@ TEST_F(LogTest, CommitBeforeAppend) {
   std::this_thread::yield();
   log_.Append(MakeInstance(0));
   commit_thread.join();
-  EXPECT_TRUE(log_[index]->IsCommitted());
+  EXPECT_TRUE(IsCommitted(*log_[index]));
 }
 
 TEST_F(LogTest, AppendCommitExecute) {
@@ -194,7 +220,7 @@ TEST_F(LogTest, AppendCommitExecute) {
   log_.Commit(index);
   execute_thread.join();
 
-  EXPECT_TRUE(log_[index]->IsExecuted());
+  EXPECT_TRUE(IsExecuted(*log_[index]));
   EXPECT_EQ(index, log_.LastExecuted());
 }
 
@@ -218,9 +244,9 @@ TEST_F(LogTest, AppendCommitExecuteOutOfOrder) {
 
   execute_thread.join();
 
-  EXPECT_TRUE(log_[index1]->IsExecuted());
-  EXPECT_TRUE(log_[index2]->IsExecuted());
-  EXPECT_TRUE(log_[index3]->IsExecuted());
+  EXPECT_TRUE(IsExecuted(*log_[index1]));
+  EXPECT_TRUE(IsExecuted(*log_[index2]));
+  EXPECT_TRUE(IsExecuted(*log_[index3]));
   EXPECT_EQ(index3, log_.LastExecuted());
 }
 
@@ -235,9 +261,9 @@ TEST_F(LogTest, CommitUntil) {
 
   log_.CommitUntil(index2, ballot);
 
-  EXPECT_TRUE(log_[index1]->IsCommitted());
-  EXPECT_TRUE(log_[index2]->IsCommitted());
-  EXPECT_FALSE(log_[index3]->IsCommitted());
+  EXPECT_TRUE(IsCommitted(*log_[index1]));
+  EXPECT_TRUE(IsCommitted(*log_[index2]));
+  EXPECT_FALSE(IsCommitted(*log_[index3]));
   EXPECT_TRUE(log_.IsExecutable());
 }
 
@@ -252,9 +278,9 @@ TEST_F(LogTest, CommitUntilHigherBallot) {
 
   log_.CommitUntil(index3, ballot + 1);
 
-  EXPECT_FALSE(log_[index1]->IsCommitted());
-  EXPECT_FALSE(log_[index2]->IsCommitted());
-  EXPECT_FALSE(log_[index3]->IsCommitted());
+  EXPECT_FALSE(IsCommitted(*log_[index1]));
+  EXPECT_FALSE(IsCommitted(*log_[index2]));
+  EXPECT_FALSE(IsCommitted(*log_[index3]));
   EXPECT_FALSE(log_.IsExecutable());
 }
 
@@ -281,9 +307,9 @@ TEST_F(LogTest, CommitUntilWithGap) {
 
   log_.CommitUntil(index4, ballot);
 
-  EXPECT_TRUE(log_[index1]->IsCommitted());
-  EXPECT_FALSE(log_[index3]->IsCommitted());
-  EXPECT_FALSE(log_[index4]->IsCommitted());
+  EXPECT_TRUE(IsCommitted(*log_[index1]));
+  EXPECT_FALSE(IsCommitted(*log_[index3]));
+  EXPECT_FALSE(IsCommitted(*log_[index4]));
   EXPECT_TRUE(log_.IsExecutable());
 }
 
@@ -305,9 +331,9 @@ TEST_F(LogTest, AppendCommitUntilExecute) {
   log_.CommitUntil(index3, ballot);
   execute_thread.join();
 
-  EXPECT_TRUE(log_[index1]->IsExecuted());
-  EXPECT_TRUE(log_[index2]->IsExecuted());
-  EXPECT_TRUE(log_[index3]->IsExecuted());
+  EXPECT_TRUE(IsExecuted(*log_[index1]));
+  EXPECT_TRUE(IsExecuted(*log_[index2]));
+  EXPECT_TRUE(IsExecuted(*log_[index3]));
   EXPECT_FALSE(log_.IsExecutable());
 }
 

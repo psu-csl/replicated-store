@@ -24,9 +24,9 @@ using grpc::ServerBuilder;
 using grpc::ServerContext;
 using grpc::Status;
 
-using multipaxosrpc::HeartbeatRequest;
-using multipaxosrpc::HeartbeatResponse;
-using multipaxosrpc::MultiPaxosRPC;
+using multipaxos::HeartbeatRequest;
+using multipaxos::HeartbeatResponse;
+using multipaxos::MultiPaxosRPC;
 
 using nlohmann::json;
 

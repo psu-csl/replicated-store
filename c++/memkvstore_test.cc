@@ -8,6 +8,12 @@ std::string const val1 = "bar";
 std::string const key2 = "baz";
 std::string const val2 = "quux";
 
+using multipaxos::Command;
+using multipaxos::CommandType;
+using multipaxos::CommandType::DEL;
+using multipaxos::CommandType::GET;
+using multipaxos::CommandType::PUT;
+
 TEST(MemKVStoreTest, GetPutDel) {
   MemKVStore store;
 
@@ -34,60 +40,58 @@ TEST(MemKVStoreTest, GetPutDel) {
   EXPECT_EQ(nullptr, store.Get(key2));
 }
 
+Command MakeCommand(CommandType type,
+                    const std::string& key,
+                    const std::string& value) {
+  Command cmd;
+  cmd.set_type(type);
+  cmd.set_key(key);
+  cmd.set_value(value);
+  return cmd;
+}
+
 TEST(MemKVStoreTest, Execute) {
   MemKVStore store;
   {
-    Command get{CommandType::kGet, key1, ""};
-    Result r = store.Execute(get);
+    Result r = store.Execute(MakeCommand(GET, key1, ""));
     EXPECT_TRUE(!r.ok_ && *r.value_ == kKeyNotFound);
   }
   {
-    Command del{CommandType::kDel, key1, ""};
-    Result r = store.Execute(del);
+    Result r = store.Execute(MakeCommand(DEL, key1, ""));
     EXPECT_TRUE(!r.ok_ && *r.value_ == kKeyNotFound);
   }
   {
-    Command put{CommandType::kPut, key1, val1};
-    Result r1 = store.Execute(put);
+    Result r1 = store.Execute(MakeCommand(PUT, key1, val1));
     EXPECT_TRUE(r1.ok_ && *r1.value_ == kEmpty);
 
-    Command get{CommandType::kGet, key1, ""};
-    Result r2 = store.Execute(get);
+    Result r2 = store.Execute(MakeCommand(GET, key1, ""));
     EXPECT_TRUE(r2.ok_ && *r2.value_ == val1);
   }
   {
-    Command put{CommandType::kPut, key2, val2};
-    Result r1 = store.Execute(put);
+    Result r1 = store.Execute(MakeCommand(PUT, key2, val2));
     EXPECT_TRUE(r1.ok_ && *r1.value_ == kEmpty);
 
-    Command get{CommandType::kGet, key2, ""};
-    Result r2 = store.Execute(get);
+    Result r2 = store.Execute(MakeCommand(GET, key2, ""));
     EXPECT_TRUE(r2.ok_ && *r2.value_ == val2);
   }
   {
-    Command put{CommandType::kPut, key1, val2};
-    Result r1 = store.Execute(put);
+    Result r1 = store.Execute(MakeCommand(PUT, key1, val2));
     EXPECT_TRUE(r1.ok_ && *r1.value_ == kEmpty);
 
-    Command get1{CommandType::kGet, key1, ""};
-    Result r2 = store.Execute(get1);
+    Result r2 = store.Execute(MakeCommand(GET, key1, ""));
     EXPECT_TRUE(r2.ok_ && *r2.value_ == val2);
 
-    Command get2{CommandType::kGet, key2, ""};
-    Result r3 = store.Execute(get2);
+    Result r3 = store.Execute(MakeCommand(GET, key2, ""));
     EXPECT_TRUE(r3.ok_ && *r3.value_ == val2);
   }
   {
-    Command del{CommandType::kDel, key1, ""};
-    Result r1 = store.Execute(del);
+    Result r1 = store.Execute(MakeCommand(DEL, key1, ""));
     EXPECT_TRUE(r1.ok_ && *r1.value_ == kEmpty);
 
-    Command get1{CommandType::kGet, key1, ""};
-    Result r2 = store.Execute(get1);
+    Result r2 = store.Execute(MakeCommand(GET, key1, ""));
     EXPECT_FALSE(r2.ok_ && *r2.value_ == kKeyNotFound);
 
-    Command get2{CommandType::kGet, key2, ""};
-    Result r3 = store.Execute(get2);
+    Result r3 = store.Execute(MakeCommand(GET, key2, ""));
     EXPECT_TRUE(r3.ok_ && *r3.value_ == val2);
   }
 }

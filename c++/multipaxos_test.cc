@@ -13,9 +13,9 @@ using grpc::ClientContext;
 using grpc::ServerContext;
 using grpc::Status;
 
-using multipaxosrpc::HeartbeatRequest;
-using multipaxosrpc::HeartbeatResponse;
-using multipaxosrpc::MultiPaxosRPC;
+using multipaxos::HeartbeatRequest;
+using multipaxos::HeartbeatResponse;
+using multipaxos::MultiPaxosRPC;
 
 std::string MakeConfig(int64_t id) {
   return R"({ "id": )" + std::to_string(id) + R"(,

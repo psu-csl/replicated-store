@@ -3,7 +3,12 @@
 
 #include <string>
 
-#include "command.h"
+#include "multipaxos.pb.h"
+
+struct Result {
+  bool ok_ = false;
+  std::string const* value_ = nullptr;
+};
 
 class KVStore {
  public:
@@ -11,7 +16,7 @@ class KVStore {
   virtual std::string* Get(const std::string& key) = 0;
   virtual bool Put(const std::string& key, const std::string& value) = 0;
   virtual bool Del(const std::string& key) = 0;
-  virtual Result Execute(const Command& cmd) = 0;
+  virtual Result Execute(const multipaxos::Command& cmd) = 0;
 };
 
 #endif

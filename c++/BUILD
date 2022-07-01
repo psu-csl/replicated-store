@@ -1,26 +1,12 @@
 load("@com_github_grpc_grpc//bazel:grpc_build_system.bzl", "grpc_proto_library")
-
-cc_library(
-    name = "command",
-    srcs = ["command.cc"],
-    hdrs = ["command.h"],
-)
-
-cc_library(
-    name = "instance",
-    srcs = ["instance.cc"],
-    hdrs = ["instance.h"],
-    deps = [
-        ":command",
-    ],
-)
+load("@com_github_grpc_grpc//bazel:cc_grpc_library.bzl", "cc_grpc_library")
 
 cc_library(
     name = "memkvstore",
     srcs = ["memkvstore.cc"],
     hdrs = ["memkvstore.h", "kvstore.h"],
     deps = [
-        ":command",
+        ":multipaxos_cc_proto",
         "@com_github_google_glog//:glog",
     ],
 )
@@ -30,16 +16,26 @@ cc_library(
     srcs = ["log.cc"],
     hdrs = ["log.h"],
     deps = [
-        ":command",
-        ":instance",
         ":memkvstore",
         "@com_github_google_glog//:glog",
     ],
 )
 
-grpc_proto_library(
-    name = "multipaxosrpc",
+proto_library(
+    name = "multipaxos_proto",
     srcs = ["multipaxos.proto"],
+)
+
+cc_proto_library(
+    name = "multipaxos_cc_proto",
+    deps = [":multipaxos_proto"],
+)
+
+cc_grpc_library(
+    name = "multipaxos_cc_grpc",
+    srcs = [":multipaxos_proto"],
+    grpc_only = True,
+    deps = [":multipaxos_cc_proto"],
 )
 
 cc_library(
@@ -47,11 +43,9 @@ cc_library(
     srcs = ["multipaxos.cc"],
     hdrs = ["multipaxos.h", "json.h", "json_fwd.h"],
     deps = [
-        ":command",
-        ":instance",
         ":memkvstore",
         ":log",
-        ":multipaxosrpc",
+        ":multipaxos_cc_grpc",
         "@com_github_google_glog//:glog",
         "@com_github_grpc_grpc//:grpc++",
     ],
@@ -61,11 +55,9 @@ cc_binary(
     name = "replicant",
     srcs = ["main.cc", "replicant.cc", "replicant.h"],
     deps = [
-        ":command",
-        ":instance",
         ":memkvstore",
         ":log",
-        ":multipaxosrpc",
+        ":multipaxos_cc_grpc",
         ":multipaxos",
         "@com_github_google_glog//:glog",
         "@com_github_grpc_grpc//:grpc++",

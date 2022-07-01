@@ -8,13 +8,20 @@
 #include <unordered_map>
 #include <vector>
 
-#include "command.h"
-#include "instance.h"
 #include "kvstore.h"
 
-using log_t = std::unordered_map<int64_t, Instance>;
+using client_id_t = int64_t;
+using log_t = std::unordered_map<int64_t, multipaxos::Instance>;
 
-bool Insert(log_t* log, Instance instance);
+bool Insert(log_t* log, multipaxos::Instance instance);
+bool IsCommitted(multipaxos::Instance const& instance);
+bool IsExecuted(multipaxos::Instance const& instance);
+bool IsInProgress(multipaxos::Instance const& instance);
+
+namespace multipaxos {
+bool operator==(multipaxos::Command const& a, multipaxos::Command const& b);
+bool operator==(multipaxos::Instance const& a, multipaxos::Instance const& b);
+}  // namespace multipaxos
 
 class Log {
  public:
@@ -39,21 +46,21 @@ class Log {
     return ++last_index_;
   }
 
-  void Append(Instance instance);
+  void Append(multipaxos::Instance instance);
   void Commit(int64_t index);
   std::tuple<client_id_t, Result> Execute(KVStore* kv);
 
   void CommitUntil(int64_t leader_last_executed, int64_t ballot);
   void TrimUntil(int64_t leader_global_last_executed);
 
-  std::vector<Instance> InstancesForPrepare() const;
+  std::vector<multipaxos::Instance> InstancesForPrepare() const;
 
   bool IsExecutable() const {
     auto it = log_.find(last_executed_ + 1);
-    return it != log_.end() && it->second.IsCommitted();
+    return it != log_.end() && IsCommitted(it->second);
   }
 
-  Instance const* operator[](std::size_t i) const;
+  multipaxos::Instance const* operator[](std::size_t i) const;
 
  private:
   log_t log_;

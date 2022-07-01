@@ -2,30 +2,56 @@
 
 #include "log.h"
 
+using multipaxos::Instance;
+using multipaxos::InstanceState::COMMITTED;
+using multipaxos::InstanceState::EXECUTED;
+
+bool IsCommitted(multipaxos::Instance const& instance) {
+  return instance.state() == multipaxos::InstanceState::COMMITTED;
+}
+bool IsExecuted(multipaxos::Instance const& instance) {
+  return instance.state() == multipaxos::InstanceState::EXECUTED;
+}
+bool IsInProgress(multipaxos::Instance const& instance) {
+  return instance.state() == multipaxos::InstanceState::INPROGRESS;
+}
+
+namespace multipaxos {
+bool operator==(multipaxos::Command const& a, multipaxos::Command const& b) {
+  return a.type() == b.type() && a.key() == b.key() && a.value() == b.value();
+}
+
+bool operator==(multipaxos::Instance const& a, multipaxos::Instance const& b) {
+  return a.ballot() == b.ballot() && a.index() == b.index() &&
+         a.client_id() == b.client_id() && a.state() == b.state() &&
+         a.command() == b.command();
+}
+}  // namespace multipaxos
+
 bool Insert(log_t* log, Instance instance) {
-  auto i = instance.index_;
+  auto i = instance.index();
   auto it = log->find(i);
   if (it == log->end()) {
     (*log)[i] = std::move(instance);
     return true;
   }
-  if (it->second.IsCommitted() || it->second.IsExecuted()) {
-    CHECK(it->second.command_ == instance.command_) << "Insert case2";
+  if (IsCommitted(it->second) || IsExecuted(it->second)) {
+    CHECK(it->second.command() == instance.command()) << "Insert case2";
     return false;
   }
-  if (instance.ballot_ > it->second.ballot_) {
+  if (instance.ballot() > it->second.ballot()) {
     (*log)[i] = std::move(instance);
     return false;
   }
-  if (instance.ballot_ == it->second.ballot_)
-    CHECK(it->second.command_ == instance.command_) << "Insert case3";
+  if (instance.ballot() == it->second.ballot())
+    CHECK(it->second.command() == instance.command()) << "Insert case3";
   return false;
 }
 
 void Log::Append(Instance instance) {
   std::scoped_lock lock(mu_);
 
-  int64_t i = instance.index_;
+  int64_t i = instance.index();
   if (i <= global_last_executed_)
     return;
 
@@ -45,8 +71,8 @@ void Log::Commit(int64_t index) {
     it = log_.find(index);
   }
 
-  if (it->second.IsInProgress())
-    it->second.SetCommitted();
+  if (IsInProgress(it->second))
+    it->second.set_state(COMMITTED);
 
   if (IsExecutable())
     cv_executable_.notify_one();
@@ -62,10 +88,10 @@ std::tuple<client_id_t, Result> Log::Execute(KVStore* kv) {
   Instance* instance = &it->second;
 
   CHECK_NOTNULL(kv);
-  Result result = kv->Execute(instance->command_);
-  instance->SetExecuted();
+  Result result = kv->Execute(instance->command());
+  instance->set_state(EXECUTED);
   ++last_executed_;
-  return {instance->client_id_, result};
+  return {instance->client_id(), result};
 }
 
 void Log::CommitUntil(int64_t leader_last_executed, int64_t ballot) {
@@ -77,9 +103,9 @@ void Log::CommitUntil(int64_t leader_last_executed, int64_t ballot) {
     auto it = log_.find(i);
     if (it == log_.end())
       break;
-    CHECK(ballot >= it->second.ballot_) << "CommitUntil case 2";
-    if (it->second.ballot_ == ballot)
-      it->second.SetCommitted();
+    CHECK(ballot >= it->second.ballot()) << "CommitUntil case 2";
+    if (it->second.ballot() == ballot)
+      it->second.set_state(COMMITTED);
   }
   if (IsExecutable())
     cv_executable_.notify_one();
@@ -93,7 +119,7 @@ void Log::TrimUntil(int64_t leader_global_last_executed) {
   while (global_last_executed_ < leader_global_last_executed) {
     ++global_last_executed_;
     auto it = log_.find(global_last_executed_);
-    CHECK(it != log_.end() && it->second.IsExecuted()) << "TrimUntil case 1";
+    CHECK(it != log_.end() && IsExecuted(it->second)) << "TrimUntil case 1";
     log_.erase(it);
   }
 }

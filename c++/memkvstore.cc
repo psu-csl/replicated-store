@@ -1,8 +1,9 @@
 #include <glog/logging.h>
 #include <string>
 
-#include "command.h"
 #include "memkvstore.h"
+
+using multipaxos::Command;
 
 std::string* MemKVStore::Get(const std::string& key) {
   auto it = map_.find(key);
@@ -21,21 +22,21 @@ bool MemKVStore::Del(const std::string& key) {
 }
 
 Result MemKVStore::Execute(const Command& cmd) {
-  if (cmd.type_ == CommandType::kGet) {
-    auto r = Get(cmd.key_);
+  if (cmd.type() == multipaxos::CommandType::GET) {
+    auto r = Get(cmd.key());
     if (!r)
       return Result{false, &kKeyNotFound};
     return Result{true, r};
   }
 
-  if (cmd.type_ == CommandType::kPut) {
-    Put(cmd.key_, cmd.value_);
+  if (cmd.type() == multipaxos::CommandType::PUT) {
+    Put(cmd.key(), cmd.value());
     return Result{true, &kEmpty};
   }
 
-  CHECK(cmd.type_ == CommandType::kDel);
+  CHECK(cmd.type() == multipaxos::CommandType::DEL);
 
-  if (Del(cmd.key_))
+  if (Del(cmd.key()))
     return Result{true, &kEmpty};
   return Result{false, &kKeyNotFound};
 }
