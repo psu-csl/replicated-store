@@ -204,16 +204,21 @@
           cv_leader_.wait(mu_);
         mu_.unlock()
 
-        # this peer is a leader
+        # this peer is a leader now
+        #
+        # initialize global_last_executed and update it later on each iteration;
+        # we send a heartbeat to ourselves as well, which results in trimming of
+        # our log.
+        global_last_executed = log_.global_last_executed()
         while (running_)
           heartbeat_num_responses_ = 0
           heartbeat_ok_responses_ = []
 
           mu_.lock()
           heartbeat_request_.set_ballot(ballot_)
-          heartbeat_request_.set_last_executed(log_.last_executed())
-          heartbeat_request_.set_global_last_executed(log_.global_last_executed())
           mu_.unlock
+          heartbeat_request_.set_last_executed(log_.last_executed())
+          heartbeat_request_.set_global_last_executed(global_last_executed)
 
           for each peer p
             post a closure to a thread pool {
@@ -231,7 +236,6 @@
             heartbeat_cv_.wait(hb_mu)
           if heartbeat_ok_responses_.size() == peer_.size()
             global_last_executed = min(ok_responses)
-            log_.trim_until(global_last_executed)
           heartbeat_mu_.unlock()
 
           sleep(heartbeat_pause_)

@@ -49,15 +49,16 @@ void MultiPaxos::HeartbeatThread() {
       while (running_ && !IsLeaderLockless())
         cv_leader_.wait(lock);
     }
+    auto global_last_executed = log_->GlobalLastExecuted();
     while (running_) {
       heartbeat_num_responses_ = 0;
       heartbeat_ok_responses_.clear();
       {
         std::scoped_lock lock(mu_);
         heartbeat_request_.set_ballot(ballot_);
-        heartbeat_request_.set_last_executed(log_->LastExecuted());
-        heartbeat_request_.set_global_last_executed(log_->GlobalLastExecuted());
       }
+      heartbeat_request_.set_last_executed(log_->LastExecuted());
+      heartbeat_request_.set_global_last_executed(global_last_executed);
       for (auto& peer : rpc_peers_) {
         asio::post(tp_, [this, &peer] {
           ClientContext context;
@@ -79,8 +80,9 @@ void MultiPaxos::HeartbeatThread() {
         while (IsLeader() && heartbeat_num_responses_ != rpc_peers_.size())
           heartbeat_cv_.wait(lock);
         if (heartbeat_ok_responses_.size() == rpc_peers_.size())
-          log_->TrimUntil(*std::min_element(std::begin(heartbeat_ok_responses_),
-                                            std::end(heartbeat_ok_responses_)));
+          global_last_executed =
+              *min_element(std::begin(heartbeat_ok_responses_),
+                           std::end(heartbeat_ok_responses_));
       }
       std::this_thread::sleep_for(heartbeat_pause_);
       if (!IsLeader())
