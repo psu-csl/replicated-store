@@ -283,39 +283,6 @@
           continue
       return true
 
-    - heartbeat_thread():
-      for (;;) {
-        sleep until leader
-        num_responses = 0
-        ok_responses = vector
-        cv, mu
-        global_last_executed = log_.global_last_executed()
-        for (;;) {
-          request = heartbeat_rpc_request{ballot_: ballot_,
-                                          last_executed_: log_.last_executed()
-                                          global_last_executed_: global_last_executed}
-          for each peer p {
-            run closure in a separate thread {
-              response = p.heartbeatRPC(request)
-              lock(mu)
-              ++num_responses
-              if response.ok:
-                ok_responses.push(response)
-              unlock(mu)
-              cv.notify_one()
-            }
-          }
-          lock(mu)
-          while i_am_leader() && num_responses != peers_.size():
-            cv.wait(mu)
-          if ok_responses.size() == peers_.size():
-            global_last_executed = min(ok_responses)
-          if someone_else_is_leader():
-            break
-          sleep(heartbeat_interval_)
-        }
-      }
-
 == TODO ========================================================================
 
 - we can handle gaps if there is a leader election, but if there is no leader
