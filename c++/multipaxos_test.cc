@@ -23,8 +23,7 @@ std::string MakeConfig(int64_t id) {
               "heartbeat_pause": 300,
               "peers": [ "127.0.0.1:3000",
                          "127.0.0.1:3001",
-                         "127.0.0.1:3002",
-                         "127.0.0.1:3003"]
+                         "127.0.0.1:3002"]
             })";
 }
 
@@ -37,13 +36,12 @@ class MultiPaxosTest : public testing::Test {
         config3_(json::parse(MakeConfig(3))),
         peer0_(&log0_, config0_),
         peer1_(&log1_, config1_),
-        peer2_(&log2_, config2_),
-        peer3_(&log3_, config3_) {}
+        peer2_(&log2_, config2_) {}
 
  protected:
-  json config0_, config1_, config2_, config3_;
-  Log log0_, log1_, log2_, log3_;
-  MultiPaxos peer0_, peer1_, peer2_, peer3_;
+  json config0_, config1_, config2_;
+  Log log0_, log1_, log2_;
+  MultiPaxos peer0_, peer1_, peer2_;
 };
 
 TEST_F(MultiPaxosTest, Constructor) {
