@@ -8,24 +8,25 @@
   # executed quickly; therefore, wake up happens only one way: the thread that
   # commits wakes up the executor thread to execute instances.
 
-  - types:
+  - types/protobufs:
 
-    - Command: a key-value command. Fields of a command are
+    - protobuf Command: a key-value command. Fields of a Command are
       - type_: enum { get, put, del }
       - key_: string
       - value_: string (valid only if type_ == put)
 
-    - Log: a map from int to Instance
-
-    - Instance: entry in the log. each instance starts in the in-progress state,
-      and changes to the committed state once quorum has voted for it, and
-      changes to executed state once the executor thread has its command
-      executed. Fields of an instance are:
+    - protobuf Instance: an entry in the log. Fields of an Instance are:
       - ballot_: ballot of the instance
       - index_: index of the command in the log
       - client-id_: id of the client in the leader that issued the command
       - state_: enum { in-progress, committed, executed }
       - command_: Command
+
+      Each Instance starts in the in-progress state, and changes to the
+      committed state once quorum has voted for it, and changes to executed
+      state once the executor thread has its command executed.
+
+    - Log: a map from int to Instance
 
   - members
 

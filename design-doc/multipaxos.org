@@ -105,16 +105,19 @@
       - ballot_: ballot of the leader sending the heartbeat RPC
       - last_executed_: last_executed_ of the leader sending the heartbeat RPC
       - global_last_executed_: global_last_executed of the leader sending the heartbeat RPC
+
     - heartbeat_rpc_response
       - last_executed_: last_executed_ of the follower responding to the
         heartbeat RPC
+
     - prepare_rpc_request
       - ballot_: ballot of the sender
+
     - prepare_rpc_response
       - type_: enum {ok, reject}
       - ballot_: ballot of the peer (valid only if type_ == reject)
       - log_: Instances of the peer since global_last_executed_ (valid only if
-        type_ == ok}
+        type_ == ok)
 
   - methods
 
