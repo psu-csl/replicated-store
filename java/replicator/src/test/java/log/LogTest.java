@@ -379,7 +379,7 @@ class LogTest {
     index--;
     log_.commitUntil(index, ballot);
     try {
-      for (Future<Map.Entry<Long, Result>> future : futures) {
+      for (var future : futures) {
         future.get();
       }
     } catch (InterruptedException | ExecutionException e) {
@@ -409,7 +409,7 @@ class LogTest {
     index--;
     log_.commitUntil(index, ballot);
     try {
-      for (Future<Map.Entry<Long, Result>> future : futures) {
+      for (var future : futures) {
         future.get();
       }
     } catch (ExecutionException | InterruptedException e) {
@@ -450,7 +450,7 @@ class LogTest {
     long index = 5;
     log_.commitUntil(index, ballot);
     try {
-      for (Future<Map.Entry<Long, Result>> future : futures) {
+      for (var future : futures) {
         future.get();
       }
     } catch (ExecutionException | InterruptedException e) {
@@ -464,6 +464,5 @@ class LogTest {
     assertEquals(expected, log_.instancesForPrepare());
 
   }
-
 
 }
