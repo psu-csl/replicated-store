@@ -4,6 +4,17 @@
 #include <chrono>
 #include <thread>
 
+using nlohmann::json;
+
+using grpc::ClientContext;
+using grpc::ServerBuilder;
+using grpc::ServerContext;
+using grpc::Status;
+
+using multipaxos::HeartbeatRequest;
+using multipaxos::HeartbeatResponse;
+using multipaxos::MultiPaxosRPC;
+
 MultiPaxos::MultiPaxos(Log* log, json const& config)
     : running_(false),
       id_(config["id"]),

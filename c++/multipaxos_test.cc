@@ -8,10 +8,9 @@
 
 using namespace std::chrono_literals;
 
-using grpc::Channel;
+using nlohmann::json;
+
 using grpc::ClientContext;
-using grpc::ServerContext;
-using grpc::Status;
 
 using multipaxos::HeartbeatRequest;
 using multipaxos::HeartbeatResponse;
@@ -33,7 +32,6 @@ class MultiPaxosTest : public testing::Test {
       : config0_(json::parse(MakeConfig(0))),
         config1_(json::parse(MakeConfig(1))),
         config2_(json::parse(MakeConfig(2))),
-        config3_(json::parse(MakeConfig(3))),
         peer0_(&log0_, config0_),
         peer1_(&log1_, config1_),
         peer2_(&log2_, config2_) {}

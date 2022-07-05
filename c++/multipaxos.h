@@ -17,26 +17,13 @@
 #include "log.h"
 #include "multipaxos.grpc.pb.h"
 
-using grpc::Channel;
-using grpc::ClientContext;
-using grpc::Server;
-using grpc::ServerBuilder;
-using grpc::ServerContext;
-using grpc::Status;
-
-using multipaxos::HeartbeatRequest;
-using multipaxos::HeartbeatResponse;
-using multipaxos::MultiPaxosRPC;
-
-using nlohmann::json;
-
 static const int64_t kIdBits = 0xff;
 static const int64_t kRoundIncrement = kIdBits + 1;
 static const int64_t kMaxNumPeers = 0xf;
 
-class MultiPaxos : public MultiPaxosRPC::Service {
+class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
  public:
-  MultiPaxos(Log* log, json const& config);
+  MultiPaxos(Log* log, nlohmann::json const& config);
   MultiPaxos(Log const& log) = delete;
   MultiPaxos& operator=(MultiPaxos const& log) = delete;
   MultiPaxos(MultiPaxos&& log) = delete;
@@ -73,9 +60,9 @@ class MultiPaxos : public MultiPaxosRPC::Service {
   void HeartbeatThread();
 
  private:
-  Status Heartbeat(ServerContext*,
-                   const HeartbeatRequest*,
-                   HeartbeatResponse*) override;
+  grpc::Status Heartbeat(grpc::ServerContext*,
+                         const multipaxos::HeartbeatRequest*,
+                         multipaxos::HeartbeatResponse*) override;
 
   std::atomic<bool> running_;
   int64_t id_;
@@ -84,14 +71,14 @@ class MultiPaxos : public MultiPaxosRPC::Service {
   std::chrono::time_point<std::chrono::steady_clock> last_heartbeat_;
   std::chrono::milliseconds heartbeat_pause_;
   Log* log_;
-  std::vector<std::unique_ptr<MultiPaxosRPC::Stub>> rpc_peers_;
-  std::unique_ptr<Server> rpc_server_;
+  std::vector<std::unique_ptr<multipaxos::MultiPaxosRPC::Stub>> rpc_peers_;
+  std::unique_ptr<grpc::Server> rpc_server_;
   mutable std::mutex mu_;
   std::condition_variable cv_leader_;
   asio::thread_pool tp_;
   std::thread heartbeat_thread_;
 
-  HeartbeatRequest heartbeat_request_;
+  multipaxos::HeartbeatRequest heartbeat_request_;
   size_t heartbeat_num_responses_;
   std::vector<int64_t> heartbeat_ok_responses_;
   std::mutex heartbeat_mu_;
