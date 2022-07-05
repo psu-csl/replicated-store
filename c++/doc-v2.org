@@ -213,16 +213,6 @@
       # multiple timeout responses
       return prepare_result_t{type_: timeout}
 
-    - prepare_handler(message: prepare_rpc_request):
-      # common case for phase1
-      if message.ballot >= ballot_:
-        ballot_ = message.ballot_
-        return prepare_rpc_response_t{type_: ok,
-                                      ballot_: N/A,
-                                      log_: log_.new_instances()}
-      # stale messages
-      return prepare_rpc_response_t{type_: reject, ballot_: ballot_, log_: N/A}
-
     - prepare_thread():
       for (;;) {
         sleep until follower

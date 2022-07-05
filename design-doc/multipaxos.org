@@ -198,12 +198,12 @@
       # postconditions:
 
       mu_.lock() # unlocks on return
-      if message.ballot_ >= ballot_:
+      if request.ballot_ >= ballot_:
         last_heartbeat_ = time::now()
-        ballot_ = message.ballot_
+        ballot_ = request.ballot_
         stale_rpc = false
-        log_.commit_until(message_.last_executed_, ballot_)
-        log_.trim_until(message_.global_last_executed)
+        log_.commit_until(request_.last_executed_, ballot_)
+        log_.trim_until(request_.global_last_executed)
       return heartbeat_rpc_response{last_executed_: log_.last_executed()}
 
     - heartbeat_thread()
@@ -251,6 +251,20 @@
           sleep(heartbeat_pause_)
           if !is_leader()
             break
+
+    - prepare_handler(request: prepare_rpc_request)
+      # description: handler for the prepare RPC
+      # preconditions:
+      # postconditions:
+
+      mu_.lock() # unlocks on return
+      if request.ballot_ >= ballot_:
+        ballot_ = request_.ballot_
+        return prepare_rpc_response{type_: ok,
+                                    ballot_: N/A,
+                                    log_: log_.instances_for_prepare()}
+      # reject stale RPC requests
+      return prepare_rpc_response{type_: reject, ballot_: N/A, log_: N/A}
 
 - unit tests
 
