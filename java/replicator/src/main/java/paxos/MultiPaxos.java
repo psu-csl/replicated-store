@@ -101,9 +101,11 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
       stopServer();
       System.out.println("Server is successfully shut down");
     }));
+
+    blockUntilShutDown();
   }
 
-  public void blockUntilShutDown() {
+  private void blockUntilShutDown() {
     if (server != null) {
       try {
         server.awaitTermination();
