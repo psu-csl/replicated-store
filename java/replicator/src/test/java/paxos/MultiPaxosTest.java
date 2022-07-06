@@ -44,16 +44,7 @@ class MultiPaxosTest {
 
   @BeforeEach
   void setUp() {
-   /* config = new Configuration();
-    config.setId(0);
-    config.setPort(8080);
-    log = new Log();
-    multiPaxos = new MultiPaxos(log, config);
-    server.submit(() -> {
-      multiPaxos.startServer();
-      multiPaxos.blockUntilShutDown();
-    });
-*/
+
     config0 = makeConfig(0, 3000);
     config1 = makeConfig(1, 3001);
     config2 = makeConfig(2, 3002);
@@ -93,10 +84,7 @@ class MultiPaxosTest {
   @Test
   void heartbeatHandlerSameBallot() {
     ExecutorService executor = Executors.newSingleThreadExecutor();
-    executor.submit(() -> {
-      peer0.startServer();
-      peer0.blockUntilShutDown();
-    });
+    executor.submit(() -> peer0.startServer());
     log0.append(makeInstance(17, 1, InstanceState.kExecuted, CommandType.kPut));
     log0.append(makeInstance(17, 2, InstanceState.kInProgress, CommandType.kGet));
     log0.setLastExecuted(1);
@@ -123,7 +111,7 @@ class MultiPaxosTest {
     ExecutorService executor = Executors.newSingleThreadExecutor();
     executor.submit(() -> {
       peer0.startServer();
-      peer0.blockUntilShutDown();
+      // peer0.blockUntilShutDown();
     });
 
     var inst1 = makeInstance(17, 1, InstanceState.kExecuted, CommandType.kPut);
@@ -157,7 +145,7 @@ class MultiPaxosTest {
     ExecutorService executor = Executors.newSingleThreadExecutor();
     executor.submit(() -> {
       peer0.startServer();
-      peer0.blockUntilShutDown();
+      // peer0.blockUntilShutDown();
     });
     ManagedChannel channel = ManagedChannelBuilder.forAddress("localhost", config0.getPort())
         .usePlaintext()
@@ -168,7 +156,7 @@ class MultiPaxosTest {
     peer0.nextBallot();
 
     HeartbeatRequest request = HeartbeatRequest.newBuilder().setBallot(peer1.nextBallot()).build();
-    HeartbeatResponse response = blockingStub.heartbeat(request);
+    blockingStub.heartbeat(request);
 
     assertTrue(peer0.isLeader());
     peer0.stopServer();
@@ -179,7 +167,7 @@ class MultiPaxosTest {
     ExecutorService executor = Executors.newSingleThreadExecutor();
     executor.submit(() -> {
       peer0.startServer();
-      peer0.blockUntilShutDown();
+      // peer0.blockUntilShutDown();
     });
     ManagedChannel channel = ManagedChannelBuilder.forAddress("localhost", config0.getPort())
         .usePlaintext()
@@ -188,7 +176,7 @@ class MultiPaxosTest {
 
     peer0.nextBallot();
     HeartbeatRequest request0 = HeartbeatRequest.newBuilder().setBallot(peer1.nextBallot()).build();
-    HeartbeatResponse response = blockingStub.heartbeat(request0);
+    blockingStub.heartbeat(request0);
 
     assertFalse(peer0.isLeader());
     assertEquals(1, peer0.leader());
@@ -201,18 +189,9 @@ class MultiPaxosTest {
     ExecutorService executor1 = Executors.newSingleThreadExecutor();
     ExecutorService executor2 = Executors.newSingleThreadExecutor();
 
-    executor0.submit(() -> {
-      peer0.startServer();
-      peer0.blockUntilShutDown();
-    });
-    executor1.submit(() -> {
-      peer1.startServer();
-      peer1.blockUntilShutDown();
-    });
-    executor2.submit(() -> {
-      peer2.startServer();
-      peer2.blockUntilShutDown();
-    });
+    executor0.submit(() -> peer0.startServer());
+    executor1.submit(() -> peer1.startServer());
+    executor2.submit(() -> peer2.startServer());
 
     var pause = 2 * config0.getHeartbeatPause();
 
