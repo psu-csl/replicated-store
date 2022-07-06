@@ -60,11 +60,7 @@ void MultiPaxos::Shutdown(void) {
 void MultiPaxos::HeartbeatThread() {
   DLOG(INFO) << id_ << " starting heartbeat thread";
   while (running_) {
-    {
-      std::unique_lock lock(mu_);
-      while (running_ && !IsLeaderLockless())
-        cv_leader_.wait(lock);
-    }
+    WaitUntilLeader();
     auto global_last_executed = log_->GlobalLastExecuted();
     while (running_) {
       heartbeat_num_responses_ = 0;

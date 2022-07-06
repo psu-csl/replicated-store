@@ -55,6 +55,12 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
     return id != id_ && id < kMaxNumPeers;
   }
 
+  void WaitUntilLeader() {
+    std::unique_lock lock(mu_);
+    while (running_ && !IsLeaderLockless())
+      cv_leader_.wait(lock);
+  }
+
   void Start();
   void Shutdown();
   void HeartbeatThread();

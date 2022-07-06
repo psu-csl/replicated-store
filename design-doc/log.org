@@ -194,7 +194,7 @@
       # executed, increments last_executed_, and returns the result and the id
       # of the client that originated the command.
       mu_.lock()
-      while not is_executable():
+      while not is_executable()
         cv_executable_.wait()
 
       instance = &log_[last_executed_+1]

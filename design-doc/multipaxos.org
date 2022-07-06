@@ -192,13 +192,22 @@
       id = ballot_ & id_bits_
       return id != id_ && id < max_num_peers_
 
+    - wait_until_leader()
+      # description: waits until this peer becomes a leader
+      # preconditions:
+      # postconditions:
+      mu_.lock()
+      while running_ && !is_leader_lockless()
+        cv_leader_.wait(mu_)
+      mu_.unlock()
+
     - heartbeat_handler(request: heartbeat_rpc_request)
       # description: handler for the heartbeat RPC
       # preconditions:
       # postconditions:
 
       mu_.lock() # unlocks on return
-      if request.ballot_ >= ballot_:
+      if request.ballot_ >= ballot_
         last_heartbeat_ = time::now()
         ballot_ = request.ballot_
         stale_rpc = false
@@ -207,13 +216,8 @@
       return heartbeat_rpc_response{last_executed_: log_.last_executed()}
 
     - heartbeat_thread()
-      while (running_) {
-        # wait until this peer is a leader
-        mu_.lock()
-        while (running_ && !is_leader_lockless())
-          cv_leader_.wait(mu_);
-        mu_.unlock()
-
+      while (running_)
+        wait_until_leader()
         # this peer is a leader now
         #
         # initialize global_last_executed and update it later on each iteration;
@@ -258,7 +262,7 @@
       # postconditions:
 
       mu_.lock() # unlocks on return
-      if request.ballot_ >= ballot_:
+      if request.ballot_ >= ballot_
         ballot_ = request_.ballot_
         return prepare_rpc_response{type_: ok,
                                     ballot_: N/A,
