@@ -150,6 +150,103 @@ class MultiPaxosTest {
     assertNull(log0.get(1L));
 
     peer0.stopServer();
-
   }
+
+  @Test
+  void heartbeatIgnoreStaleRPC() {
+    ExecutorService executor = Executors.newSingleThreadExecutor();
+    executor.submit(() -> {
+      peer0.startServer();
+      peer0.blockUntilShutDown();
+    });
+    ManagedChannel channel = ManagedChannelBuilder.forAddress("localhost", config0.getPort())
+        .usePlaintext()
+        .build();
+    var blockingStub = MultiPaxosRPCGrpc.newBlockingStub(channel);
+
+    peer0.nextBallot();
+    peer0.nextBallot();
+
+    HeartbeatRequest request = HeartbeatRequest.newBuilder().setBallot(peer1.nextBallot()).build();
+    HeartbeatResponse response = blockingStub.heartbeat(request);
+
+    assertTrue(peer0.isLeader());
+    peer0.stopServer();
+  }
+
+  @Test
+  void heartbeatChangesLeaderToFollower() {
+    ExecutorService executor = Executors.newSingleThreadExecutor();
+    executor.submit(() -> {
+      peer0.startServer();
+      peer0.blockUntilShutDown();
+    });
+    ManagedChannel channel = ManagedChannelBuilder.forAddress("localhost", config0.getPort())
+        .usePlaintext()
+        .build();
+    var blockingStub = MultiPaxosRPCGrpc.newBlockingStub(channel);
+
+    peer0.nextBallot();
+    HeartbeatRequest request0 = HeartbeatRequest.newBuilder().setBallot(peer1.nextBallot()).build();
+    HeartbeatResponse response = blockingStub.heartbeat(request0);
+
+    assertFalse(peer0.isLeader());
+    assertEquals(1, peer0.leader());
+    peer0.stopServer();
+  }
+
+  @Test
+  void heartbeatUpdatesLeaderOnFollowers() throws InterruptedException {
+    ExecutorService executor0 = Executors.newSingleThreadExecutor();
+    ExecutorService executor1 = Executors.newSingleThreadExecutor();
+    ExecutorService executor2 = Executors.newSingleThreadExecutor();
+
+    executor0.submit(() -> {
+      peer0.startServer();
+      peer0.blockUntilShutDown();
+    });
+    executor1.submit(() -> {
+      peer1.startServer();
+      peer1.blockUntilShutDown();
+    });
+    executor2.submit(() -> {
+      peer2.startServer();
+      peer2.blockUntilShutDown();
+    });
+
+    var pause = 2 * config0.getHeartbeatPause();
+
+    assertFalse(peer0.isLeader());
+    assertFalse(peer1.isLeader());
+    assertFalse(peer2.isLeader());
+
+    peer0.nextBallot();
+    Thread.sleep(1000);
+    assertTrue(peer0.isLeader());
+    assertFalse(peer1.isLeader());
+    assertEquals(0, peer1.leader());
+    assertFalse(peer2.isLeader());
+    assertEquals(0, peer2.leader());
+
+    peer1.nextBallot();
+    Thread.sleep(pause);
+    assertTrue(peer1.isLeader());
+    assertFalse(peer0.isLeader());
+    assertEquals(1, peer0.leader());
+    assertFalse(peer2.isLeader());
+    assertEquals(1, peer2.leader());
+
+    peer2.nextBallot();
+    Thread.sleep(pause);
+    assertTrue(peer2.isLeader());
+    assertFalse(peer0.isLeader());
+    assertEquals(2, peer0.leader());
+    assertFalse(peer1.isLeader());
+    assertEquals(2, peer2.leader());
+
+    peer0.stopServer();
+    peer1.stopServer();
+    peer2.stopServer();
+  }
+
 }
