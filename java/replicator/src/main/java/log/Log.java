@@ -156,7 +156,7 @@ public class Log {
   }
 
   public void commitUntil(long leaderLastExecuted, long ballot) {
-    assert (leaderLastExecuted > 0) : "invalid leader_last_executed";
+    assert (leaderLastExecuted >= 0) : "invalid leader_last_executed";
     assert (ballot >= 0) : "invalid ballot";
 
     mu.lock();
