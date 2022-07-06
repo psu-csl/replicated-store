@@ -25,7 +25,7 @@ MultiPaxos::MultiPaxos(Log* log, json const& config)
       id_(config["id"]),
       port_(config["peers"][id_]),
       ballot_(kMaxNumPeers),
-      heartbeat_pause_(config["heartbeat_pause"]),
+      heartbeat_interval_(config["heartbeat_interval"]),
       log_(log),
       tp_(config["threadpool_size"]) {
   for (std::string const peer : config["peers"])

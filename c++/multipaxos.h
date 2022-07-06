@@ -79,15 +79,15 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
   std::string port_;
   int64_t ballot_;
   std::chrono::time_point<std::chrono::steady_clock> last_heartbeat_;
-  std::chrono::milliseconds heartbeat_pause_;
+  std::chrono::milliseconds heartbeat_interval_;
   Log* log_;
   std::vector<std::unique_ptr<multipaxos::MultiPaxosRPC::Stub>> rpc_peers_;
   std::unique_ptr<grpc::Server> rpc_server_;
   mutable std::mutex mu_;
-  std::condition_variable cv_leader_;
   asio::thread_pool tp_;
-  std::thread heartbeat_thread_;
 
+  std::thread heartbeat_thread_;
+  std::condition_variable cv_leader_;
   multipaxos::HeartbeatRequest heartbeat_request_;
   size_t heartbeat_num_responses_;
   std::vector<int64_t> heartbeat_ok_responses_;

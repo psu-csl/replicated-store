@@ -40,8 +40,8 @@
     - last_heartbeat_: timestamp; timestamp of the last heartbeat received from the current
       leader. initialized to 0.
 
-    - heartbeat_pause_: milliseconds; pause duration between heartbeats.
-      initialized from the configuration file.
+    - heartbeat_interval_: milliseconds; time between two consecutive
+      heartbeats. initialized from the configuration file.
 
     - rpc_peers_: stubs to RPC peers; initialized based on the configuration file
 
@@ -252,7 +252,7 @@
             global_last_executed = min(ok_responses)
           heartbeat_mu_.unlock()
 
-          sleep(heartbeat_pause_)
+          sleep(heartbeat_interval_)
           if !is_leader()
             break
 
