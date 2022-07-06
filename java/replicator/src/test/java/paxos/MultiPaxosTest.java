@@ -98,8 +98,7 @@ class MultiPaxosTest {
         .setGlobalLastExecuted(1)
         .build();
     HeartbeatResponse response = blockingStub.heartbeat(request);
-    // System.out.println("Response is " + response.getLastExecuted());
-
+    
     assertEquals(1, response.getLastExecuted());
     assertEquals(log0.get(2L).getState(), InstanceState.kCommitted);
     assertNull(log0.get(1L));
@@ -143,10 +142,7 @@ class MultiPaxosTest {
   @Test
   void heartbeatIgnoreStaleRPC() {
     ExecutorService executor = Executors.newSingleThreadExecutor();
-    executor.submit(() -> {
-      peer0.startServer();
-      // peer0.blockUntilShutDown();
-    });
+    executor.submit(() -> peer0.startServer());
     ManagedChannel channel = ManagedChannelBuilder.forAddress("localhost", config0.getPort())
         .usePlaintext()
         .build();
@@ -165,10 +161,7 @@ class MultiPaxosTest {
   @Test
   void heartbeatChangesLeaderToFollower() {
     ExecutorService executor = Executors.newSingleThreadExecutor();
-    executor.submit(() -> {
-      peer0.startServer();
-      // peer0.blockUntilShutDown();
-    });
+    executor.submit(() -> peer0.startServer());
     ManagedChannel channel = ManagedChannelBuilder.forAddress("localhost", config0.getPort())
         .usePlaintext()
         .build();
