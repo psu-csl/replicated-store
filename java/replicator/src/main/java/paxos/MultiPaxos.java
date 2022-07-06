@@ -6,7 +6,7 @@ import io.grpc.stub.StreamObserver;
 import java.io.IOException;
 import java.time.Instant;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 import log.Log;
 import multipaxosrpc.HeartbeatRequest;
@@ -17,28 +17,34 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
 
   protected static final long kIdBits = 0xff;
   protected static final long kRoundIncrement = kIdBits + 1;
-  protected static long kMaxNumPeers = 0xf;
-  private final AtomicLong ballot;
+  protected static final long kMaxNumPeers = 0xf;
   private final ReentrantLock mu;
-  private final Log log;
-  private final Server server;
-  private long id;
+
+  private final Condition cvLeader;
+  private Log log;
+  private Server server;
   private Instant lastHeartbeat;
+  private long heartbeatPause;
+  private long id;
+  private long ballot;
 
   public MultiPaxos(Log log, Configuration config) {
     this.id = config.getId();
-    this.ballot = new AtomicLong(kMaxNumPeers);
+    this.ballot = kMaxNumPeers;
+    this.heartbeatPause = config.getHeartbeatPause();
     this.log = log;
     mu = new ReentrantLock();
+    cvLeader = mu.newCondition();
     server = ServerBuilder.forPort(config.getPort()).addService(this).build();
   }
 
   public long nextBallot() {
     mu.lock();
     try {
-      ballot.addAndGet(kRoundIncrement);
-      ballot.set((ballot.get() & (~kIdBits)) | this.id);
-      return ballot.get();
+      ballot += kRoundIncrement;
+      ballot = (ballot & ~kIdBits) | id;
+      cvLeader.signalAll();
+      return ballot;
     } finally {
       mu.unlock();
     }
@@ -47,7 +53,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
   public long leader() {
     mu.lock();
     try {
-      return ballot.get() & kIdBits;
+      return ballot & kIdBits;
     } finally {
       mu.unlock();
     }
@@ -56,15 +62,24 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
   public boolean isLeader() {
     mu.lock();
     try {
-      return leader() == id;
+      return isLeaderLockless();
     } finally {
       mu.unlock();
     }
   }
 
+  public boolean isLeaderLockless() {
+    return (ballot & kIdBits) == id;
+  }
+
   public boolean isSomeoneElseLeader() {
-    var id = leader();
-    return id != this.id && id < kMaxNumPeers;
+    mu.lock();
+    try {
+      var id = ballot & kIdBits;
+      return id != this.id && id < kMaxNumPeers;
+    } finally {
+      mu.unlock();
+    }
   }
 
   public long getId() {
@@ -112,27 +127,23 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
   public void heartbeat(HeartbeatRequest heartbeatRequest,
       StreamObserver<HeartbeatResponse> responseObserver) {
 
-    boolean staleRpc = true;
-
     mu.lock();
+    try {
+      if (heartbeatRequest.getBallot() >= ballot) {
+        lastHeartbeat = Instant.now();
+        ballot = heartbeatRequest.getBallot();
 
-    if (heartbeatRequest.getBallot() >= ballot.get()) {
-      staleRpc = false;
-      lastHeartbeat = Instant.now();
-      ballot.set(heartbeatRequest.getBallot());
+        log.commitUntil(heartbeatRequest.getLastExecuted(), heartbeatRequest.getBallot());
+        log.trimUntil(heartbeatRequest.getGlobalLastExecuted());
+
+      }
+      HeartbeatResponse response = HeartbeatResponse.newBuilder()
+          .setLastExecuted(log.getLastExecuted()).build();
+      responseObserver.onNext(response);
+      responseObserver.onCompleted();
+    } finally {
+      mu.unlock();
     }
-    mu.unlock();
-    if (!staleRpc) {
-      log.commitUntil(heartbeatRequest.getLastExecuted(), ballot.get());
-      log.trimUntil(heartbeatRequest.getGlobalLastExecuted());
-
-    }
-    HeartbeatResponse response = HeartbeatResponse.newBuilder()
-        .setLastExecuted(log.getLastExecuted()).build();
-
-    responseObserver.onNext(response);
-    responseObserver.onCompleted();
   }
-
 
 }
