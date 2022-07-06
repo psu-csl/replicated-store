@@ -1,10 +1,14 @@
 package paxos;
 
+import java.util.List;
+
 public class Configuration {
 
   private long id;
   private int port;
   private long heartbeatPause;
+  private int threadPoolSize;
+  private List<String> peers;
 
   public long getId() {
     return id;
@@ -28,5 +32,21 @@ public class Configuration {
 
   public void setHeartbeatPause(long heartbeatPause) {
     this.heartbeatPause = heartbeatPause;
+  }
+
+  public int getThreadPoolSize() {
+    return threadPoolSize;
+  }
+
+  public void setThreadPoolSize(int threadPoolSize) {
+    this.threadPoolSize = threadPoolSize;
+  }
+
+  public List<String> getPeers() {
+    return peers;
+  }
+
+  public void setPeers(List<String> peers) {
+    this.peers = peers;
   }
 }
