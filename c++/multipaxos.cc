@@ -38,7 +38,7 @@ MultiPaxos::MultiPaxos(Log* log, json const& config)
   rpc_server_ = builder.BuildAndStart();
 }
 
-void MultiPaxos::Start(void) {
+void MultiPaxos::Start() {
   CHECK(!running_);
   running_ = true;
   heartbeat_thread_ = std::thread(&MultiPaxos::HeartbeatThread, this);
@@ -47,7 +47,7 @@ void MultiPaxos::Start(void) {
   rpc_server_->Wait();
 }
 
-void MultiPaxos::Shutdown(void) {
+void MultiPaxos::Shutdown() {
   CHECK(running_);
   running_ = false;
   cv_leader_.notify_all();
