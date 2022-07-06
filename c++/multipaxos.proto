@@ -49,7 +49,7 @@ message PrepareRequest {
 
 message PrepareResponse {
   ResponseType type = 1;
-  repeated Instance log = 2;
+  repeated Instance instances = 2;
 }
 
 service MultiPaxosRPC {

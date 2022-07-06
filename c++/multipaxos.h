@@ -64,6 +64,10 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
                          const multipaxos::HeartbeatRequest*,
                          multipaxos::HeartbeatResponse*) override;
 
+  grpc::Status Prepare(grpc::ServerContext*,
+                       const multipaxos::PrepareRequest*,
+                       multipaxos::PrepareResponse*) override;
+
   std::atomic<bool> running_;
   int64_t id_;
   std::string port_;

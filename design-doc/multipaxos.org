@@ -116,8 +116,8 @@
     - prepare_rpc_response
       - type_: enum {ok, reject}
       - ballot_: ballot of the peer (valid only if type_ == reject)
-      - log_: Instances of the peer since global_last_executed_ (valid only if
-        type_ == ok)
+      - instances_: Instances of the peer since global_last_executed_ (valid
+        only if type_ == ok)
 
   - methods
 

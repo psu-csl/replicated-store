@@ -11,9 +11,14 @@ using grpc::ServerBuilder;
 using grpc::ServerContext;
 using grpc::Status;
 
+using multipaxos::MultiPaxosRPC;
+using multipaxos::ResponseType::OK;
+using multipaxos::ResponseType::REJECT;
+
 using multipaxos::HeartbeatRequest;
 using multipaxos::HeartbeatResponse;
-using multipaxos::MultiPaxosRPC;
+using multipaxos::PrepareRequest;
+using multipaxos::PrepareResponse;
 
 MultiPaxos::MultiPaxos(Log* log, json const& config)
     : running_(false),
@@ -115,5 +120,21 @@ Status MultiPaxos::Heartbeat(ServerContext* context,
     log_->TrimUntil(request->global_last_executed());
   }
   response->set_last_executed(log_->LastExecuted());
+  return Status::OK;
+}
+
+Status MultiPaxos::Prepare(ServerContext* context,
+                           const PrepareRequest* request,
+                           PrepareResponse* response) {
+  DLOG(INFO) << id_ << " received prepare rpc from " << context->peer();
+  std::scoped_lock lock(mu_);
+  if (request->ballot() >= ballot_) {
+    ballot_ = request->ballot();
+    response->set_type(OK);
+    for (auto& i : log_->InstancesForPrepare())
+      *response->add_instances() = std::move(i);
+  } else {
+    response->set_type(REJECT);
+  }
   return Status::OK;
 }
