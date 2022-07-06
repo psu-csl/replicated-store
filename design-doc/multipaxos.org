@@ -52,15 +52,8 @@
       concurrently call its |decide| method. |mu_| protects shared data in
       MultiPaxos.
 
-    - cv_leader_: condition variable; long-running threads (heartbeat_thread and
-      prepare_thread) sleep on this condition variable to get notified when this
-      peer becomes a leader.
-
     - tp_: thread_pool; a thread pool to which we post RPC requests to peers;
       initialized from the configuration file.
-
-    - heartbeat_thread_: thread; runs the function heartbeat_thread() until
-      shutdown() is called.
 
     # the followings are heartbeat thread related variables. we cannot make them
     # local to the heartbeat thread because the heartbeat thread posts tasks to
@@ -69,6 +62,12 @@
     # heartbeat thread, then the threadpool threads will end up referencing
     # destroyed variables. One other possible solution is to have the threadpool
     # local to the heartbeat thread as well.
+
+    - heartbeat_thread_: thread; runs the function heartbeat_thread() until
+      shutdown() is called.
+
+    - cv_leader_: condition variable; heartbeat_thread sleeps on this condition
+      variable to get notified when this peer becomes a leader.
 
     - heartbeat_request_: heartbeat RPC request protobuf; initialized every time
       right before heartbeats are sent by acquiring mu_ and getting a consistent
@@ -88,6 +87,16 @@
     - heartbeat_cv_: condition variable; the heartbeat thread waits on this
       condition variable and it is woken up every time an RPC posted by a
       threadpool thread completes and signals this condition variable.
+
+    # the followings are prepare thread related variables. we cannot make them
+    # local to the prepare thread for the same reason as above, with the
+    # heartbeat thread.
+
+    - prepare_thread_: thread; runs the function prepare_thread() until
+      shutdown() is called.
+
+    - cv_follower_: condition variable; prepare_thread sleeps on this condition
+      variable to get notified when this peer becomes a follower.
 
   - constants
 

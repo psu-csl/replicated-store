@@ -1,5 +1,7 @@
 {
+    "seed": 42,
     "threadpool_size": 8,
+    "heartbeat_offset": 10,
     "heartbeat_interval": 3000,
     "peers": ["127.0.0.1:2000",
               "127.0.0.1:3000",

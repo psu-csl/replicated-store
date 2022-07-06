@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <random>
 #include <vector>
 
 #include "json_fwd.h"
@@ -33,7 +34,7 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
     std::scoped_lock lock(mu_);
     ballot_ += kRoundIncrement;
     ballot_ = (ballot_ & ~kIdBits) | id_;
-    cv_leader_.notify_all();
+    cv_leader_.notify_one();
     return ballot_;
   }
 
@@ -61,9 +62,17 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
       cv_leader_.wait(lock);
   }
 
+  void WaitUntilFollower() {
+    std::unique_lock lock(mu_);
+    while (running_ && IsLeaderLockless())
+      cv_follower_.wait(lock);
+  }
+
   void Start();
   void Shutdown();
+
   void HeartbeatThread();
+  void PrepareThread();
 
  private:
   grpc::Status Heartbeat(grpc::ServerContext*,
@@ -75,12 +84,14 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
                        multipaxos::PrepareResponse*) override;
 
   std::atomic<bool> running_;
-  int64_t id_;
-  std::string port_;
   int64_t ballot_;
-  std::chrono::time_point<std::chrono::steady_clock> last_heartbeat_;
-  std::chrono::milliseconds heartbeat_interval_;
   Log* log_;
+  int64_t id_;
+  long heartbeat_interval_;
+  std::default_random_engine engine_;
+  std::uniform_int_distribution<int> dist_;
+  std::string port_;
+  std::atomic<long> last_heartbeat_;
   std::vector<std::unique_ptr<multipaxos::MultiPaxosRPC::Stub>> rpc_peers_;
   std::unique_ptr<grpc::Server> rpc_server_;
   mutable std::mutex mu_;
@@ -93,6 +104,10 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
   std::vector<int64_t> heartbeat_ok_responses_;
   std::mutex heartbeat_mu_;
   std::condition_variable heartbeat_cv_;
+
+  std::thread prepare_thread_;
+  std::condition_variable cv_follower_;
+  multipaxos::PrepareRequest prepare_request_;
 };
 
 #endif

@@ -4,6 +4,8 @@
 #include <chrono>
 #include <thread>
 
+using namespace std::chrono;
+
 using nlohmann::json;
 
 using grpc::ClientContext;
@@ -22,11 +24,13 @@ using multipaxos::PrepareResponse;
 
 MultiPaxos::MultiPaxos(Log* log, json const& config)
     : running_(false),
-      id_(config["id"]),
-      port_(config["peers"][id_]),
       ballot_(kMaxNumPeers),
-      heartbeat_interval_(config["heartbeat_interval"]),
       log_(log),
+      id_(config["id"]),
+      heartbeat_interval_(config["heartbeat_interval"]),
+      engine_(config["seed"]),
+      dist_(config["heartbeat_offset"], heartbeat_interval_),
+      port_(config["peers"][id_]),
       tp_(config["threadpool_size"]) {
   for (std::string const peer : config["peers"])
     rpc_peers_.emplace_back(MultiPaxosRPC::NewStub(
@@ -42,6 +46,7 @@ void MultiPaxos::Start() {
   CHECK(!running_);
   running_ = true;
   heartbeat_thread_ = std::thread(&MultiPaxos::HeartbeatThread, this);
+  prepare_thread_ = std::thread(&MultiPaxos::PrepareThread, this);
   CHECK(rpc_server_);
   DLOG(INFO) << id_ << " starting rpc server at " << port_;
   rpc_server_->Wait();
@@ -50,8 +55,13 @@ void MultiPaxos::Start() {
 void MultiPaxos::Shutdown() {
   CHECK(running_);
   running_ = false;
-  cv_leader_.notify_all();
+
+  cv_leader_.notify_one();
   heartbeat_thread_.join();
+
+  cv_follower_.notify_one();
+  prepare_thread_.join();
+
   CHECK(rpc_server_);
   DLOG(INFO) << id_ << " stopping rpc server at " << port_;
   rpc_server_->Shutdown();
@@ -96,12 +106,31 @@ void MultiPaxos::HeartbeatThread() {
               *min_element(std::begin(heartbeat_ok_responses_),
                            std::end(heartbeat_ok_responses_));
       }
-      std::this_thread::sleep_for(heartbeat_pause_);
+      std::this_thread::sleep_for(milliseconds(heartbeat_interval_));
       if (!IsLeader())
         break;
     }
   }
   DLOG(INFO) << id_ << " stopping heartbeat thread";
+}
+
+void MultiPaxos::PrepareThread() {
+  DLOG(INFO) << id_ << " starting prepare thread";
+  while (running_) {
+    WaitUntilFollower();
+    while (running_) {
+      auto sleep_time = dist_(engine_);
+      DLOG(INFO) << id_ << " prepare thread sleeping for " << sleep_time;
+      std::this_thread::sleep_for(milliseconds(sleep_time));
+      DLOG(INFO) << id_ << " prepare thread woke up";
+      auto now = time_point_cast<milliseconds>(steady_clock::now())
+                     .time_since_epoch()
+                     .count();
+      if (now - last_heartbeat_ < heartbeat_interval_)
+        continue;
+    }
+  }
+  DLOG(INFO) << id_ << " stopping prepare thread";
 }
 
 Status MultiPaxos::Heartbeat(ServerContext* context,
@@ -110,7 +139,9 @@ Status MultiPaxos::Heartbeat(ServerContext* context,
   DLOG(INFO) << id_ << " received heartbeat rpc from " << context->peer();
   std::scoped_lock lock(mu_);
   if (request->ballot() >= ballot_) {
-    last_heartbeat_ = std::chrono::steady_clock::now();
+    last_heartbeat_ = time_point_cast<milliseconds>(steady_clock::now())
+                          .time_since_epoch()
+                          .count();
     ballot_ = request->ballot();
     log_->CommitUntil(request->last_executed(), request->ballot());
     log_->TrimUntil(request->global_last_executed());

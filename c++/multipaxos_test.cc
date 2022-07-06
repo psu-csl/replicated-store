@@ -18,7 +18,9 @@ using multipaxos::MultiPaxosRPC;
 
 std::string MakeConfig(int64_t id) {
   return R"({ "id": )" + std::to_string(id) + R"(,
+              "seed": 42,
               "threadpool_size": 8,
+              "heartbeat_offset": 10,
               "heartbeat_interval": 300,
               "peers": [ "127.0.0.1:3000",
                          "127.0.0.1:3001",
@@ -147,4 +149,5 @@ TEST_F(MultiPaxosTest, HeartbeatUpdatesLeaderOnFollowers) {
   t0.join();
   t1.join();
   t2.join();
+  std::this_thread::sleep_for(std::chrono::seconds(10));
 }
