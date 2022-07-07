@@ -6,7 +6,7 @@
 #include "log.h"
 #include "multipaxos.h"
 
-using namespace std::chrono_literals;
+using namespace std::chrono;
 
 using nlohmann::json;
 
@@ -113,14 +113,15 @@ TEST_F(MultiPaxosTest, HeartbeatUpdatesLeaderOnFollowers) {
   std::thread t1([this] { peer1_.Start(); });
   std::thread t2([this] { peer2_.Start(); });
 
-  int pause = 2 * static_cast<int>(config0_["heartbeat_pause"]);
+  int interval = 2 * static_cast<int>(config0_["heartbeat_interval"]);
+  auto interval_ms = milliseconds(interval);
 
   EXPECT_FALSE(peer0_.IsLeader());
   EXPECT_FALSE(peer1_.IsLeader());
   EXPECT_FALSE(peer2_.IsLeader());
 
   peer0_.NextBallot();
-  std::this_thread::sleep_for(std::chrono::milliseconds(pause));
+  std::this_thread::sleep_for(interval_ms);
   EXPECT_TRUE(peer0_.IsLeader());
   EXPECT_FALSE(peer1_.IsLeader());
   EXPECT_EQ(0, peer1_.Leader());
@@ -128,7 +129,7 @@ TEST_F(MultiPaxosTest, HeartbeatUpdatesLeaderOnFollowers) {
   EXPECT_EQ(0, peer2_.Leader());
 
   peer1_.NextBallot();
-  std::this_thread::sleep_for(std::chrono::milliseconds(pause));
+  std::this_thread::sleep_for(interval_ms);
   EXPECT_TRUE(peer1_.IsLeader());
   EXPECT_FALSE(peer0_.IsLeader());
   EXPECT_EQ(1, peer0_.Leader());
@@ -136,7 +137,7 @@ TEST_F(MultiPaxosTest, HeartbeatUpdatesLeaderOnFollowers) {
   EXPECT_EQ(1, peer2_.Leader());
 
   peer2_.NextBallot();
-  std::this_thread::sleep_for(std::chrono::milliseconds(pause));
+  std::this_thread::sleep_for(interval_ms);
   EXPECT_TRUE(peer2_.IsLeader());
   EXPECT_FALSE(peer0_.IsLeader());
   EXPECT_EQ(2, peer0_.Leader());
@@ -149,5 +150,4 @@ TEST_F(MultiPaxosTest, HeartbeatUpdatesLeaderOnFollowers) {
   t0.join();
   t1.join();
   t2.join();
-  std::this_thread::sleep_for(std::chrono::seconds(10));
 }
