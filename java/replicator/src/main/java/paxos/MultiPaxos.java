@@ -18,10 +18,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 import log.Log;
-import multipaxosrpc.HeartbeatRequest;
-import multipaxosrpc.HeartbeatRequest.Builder;
-import multipaxosrpc.HeartbeatResponse;
-import multipaxosrpc.MultiPaxosRPCGrpc;
+import multipaxos.HeartbeatRequest;
+import multipaxos.HeartbeatRequest.Builder;
+import multipaxos.HeartbeatResponse;
+import multipaxos.MultiPaxosRPCGrpc;
 import org.slf4j.LoggerFactory;
 
 public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
@@ -214,7 +214,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
             logger.info(id + " sent heartbeat to " + peer);
             heartbeatMu.lock();
             ++heartbeatNumResponses;
-            heartbeatOkResponses.add(response.getLastExecuted());
+            heartbeatOkResponses.add((long) response.getLastExecuted());
 
             heartbeatMu.unlock();
             heartbeatCv.signal();
@@ -260,7 +260,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
 
       }
       HeartbeatResponse response = HeartbeatResponse.newBuilder()
-          .setLastExecuted(log.getLastExecuted()).build();
+          .setLastExecuted((int) log.getLastExecuted()).build();
       responseObserver.onNext(response);
       responseObserver.onCompleted();
     } finally {

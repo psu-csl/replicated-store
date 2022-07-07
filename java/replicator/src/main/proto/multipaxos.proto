@@ -1,0 +1,61 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "multipaxos";
+
+package multipaxos;
+
+enum ResponseType {
+  OK = 0;
+  REJECT = 1;
+}
+
+enum CommandType {
+  GET = 0;
+  PUT = 1;
+  DEL = 2;
+}
+
+enum InstanceState {
+  INPROGRESS = 0;
+  COMMITTED = 1;
+  EXECUTED = 2;
+}
+
+message Command {
+  CommandType type = 1;
+  string key = 2;
+  string value = 3;
+}
+
+message Instance {
+  int64 ballot = 1;
+  int64 index = 2;
+  int64 client_id = 3;
+  InstanceState state = 4;
+  Command command = 5;
+}
+
+message HeartbeatRequest {
+  int64 ballot = 1;
+  int64 last_executed = 2;
+  int64 global_last_executed = 3;
+}
+
+message HeartbeatResponse {
+  int32 last_executed = 1;
+}
+
+message PrepareRequest {
+  int64 ballot = 1;
+}
+
+message PrepareResponse {
+  ResponseType type = 1;
+  repeated Instance instances = 2;
+}
+
+service MultiPaxosRPC {
+  rpc Heartbeat (HeartbeatRequest) returns (HeartbeatResponse) {}
+  rpc Prepare (PrepareRequest) returns (PrepareResponse) {}
+}
