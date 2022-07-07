@@ -262,7 +262,7 @@
         assert(log_[global_last_executed_].state == executed)
         del log_[global_last_executed_]
 
-    - instances_for_prepare() -> Instance[]
+    - instances_since_global_last_executed() -> Instance[]
       # description: return instances for a response to a prepare message; these
       # are instances since global_last_executed_.
       # preconditions:
@@ -396,9 +396,11 @@
       ensure that it has no effect, i.e. there are no instances at index 1
       and 2.
 
-  - instances-for-prepare
-    - append instances at indexes 1, 2, 3; call instances_for_prepare and ensure
-      that all instances are returned; call commit_until with the same ballot
-      number and leader_last_executed = 2, and then call trim_until with
+  - instances-since-global-last-executed
+    - append instances at indexes 1, 2, 3; call
+      instances_since_global_last_executed and ensure that all instances are
+      returned; call commit_until with the same ballot number and
+      leader_last_executed = 2, and then call trim_until with
       leader_global_last_executed = 2 to move global_last_executed_ to 2. call
-      instances_for_prepare again, and ensure that only instance 3 is returned.
+      instances_since_global_last_executed again, and ensure that only instance
+      3 is returned.

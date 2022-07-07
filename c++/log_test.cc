@@ -82,7 +82,7 @@ TEST_F(LogTest, Constructor) {
 }
 
 TEST_F(LogTest, Insert) {
-  log_t log;
+  log_map_t log;
   auto index = 1;
   auto ballot = 1;
   EXPECT_TRUE(Insert(&log, MakeInstance(ballot, index, PUT)));
@@ -91,7 +91,7 @@ TEST_F(LogTest, Insert) {
 }
 
 TEST_F(LogTest, InsertUpdateInProgress) {
-  log_t log;
+  log_map_t log;
   auto index = 1;
   auto ballot = 1;
   EXPECT_TRUE(Insert(&log, MakeInstance(ballot, index, PUT)));
@@ -101,7 +101,7 @@ TEST_F(LogTest, InsertUpdateInProgress) {
 }
 
 TEST_F(LogTest, InsertUpdateCommitted) {
-  log_t log;
+  log_map_t log;
   auto index = 1;
   auto ballot = 1;
   EXPECT_TRUE(Insert(&log, MakeInstance(ballot, index, COMMITTED, PUT)));
@@ -109,7 +109,7 @@ TEST_F(LogTest, InsertUpdateCommitted) {
 }
 
 TEST_F(LogTest, InsertStale) {
-  log_t log;
+  log_map_t log;
   auto index = 1;
   auto ballot = 1;
   EXPECT_TRUE(Insert(&log, MakeInstance(ballot, index, PUT)));
@@ -122,7 +122,7 @@ TEST_F(LogDeathTest, InsertCase2Committed) {
   auto index = 1;
   auto inst1 = MakeInstance(0, index, COMMITTED, PUT);
   auto inst2 = MakeInstance(0, index, INPROGRESS, DEL);
-  log_t log;
+  log_map_t log;
   Insert(&log, std::move(inst1));
   EXPECT_DEATH(Insert(&log, std::move(inst2)), "Insert case2");
 }
@@ -131,7 +131,7 @@ TEST_F(LogDeathTest, InsertCase2Executed) {
   auto index = 1;
   auto inst1 = MakeInstance(0, index, EXECUTED, PUT);
   auto inst2 = MakeInstance(0, index, INPROGRESS, DEL);
-  log_t log;
+  log_map_t log;
   Insert(&log, std::move(inst1));
   EXPECT_DEATH(Insert(&log, std::move(inst2)), "Insert case2");
 }
@@ -140,7 +140,7 @@ TEST_F(LogDeathTest, InsertCase3) {
   auto index = 1;
   auto inst1 = MakeInstance(0, index, INPROGRESS, PUT);
   auto inst2 = MakeInstance(0, index, INPROGRESS, DEL);
-  log_t log;
+  log_map_t log;
   Insert(&log, std::move(inst1));
   EXPECT_DEATH(Insert(&log, std::move(inst2)), "Insert case3");
 }
@@ -394,7 +394,7 @@ TEST_F(LogTest, AppendAtTrimmedIndex) {
   EXPECT_EQ(nullptr, log_[index2]);
 }
 
-TEST_F(LogTest, InstancesForPrepare) {
+TEST_F(LogTest, InstancesSinceGlobalLastExecuted) {
   std::thread execute_thread([this] {
     log_.Execute(&store_);
     log_.Execute(&store_);
@@ -410,7 +410,7 @@ TEST_F(LogTest, InstancesForPrepare) {
   expected.emplace_back(MakeInstance(ballot));
   log_.Append(expected.back());
 
-  EXPECT_EQ(expected, log_.InstancesForPrepare());
+  EXPECT_EQ(expected, log_.InstancesSinceGlobalLastExecuted());
 
   auto index = 2;
   log_.CommitUntil(index, ballot);
@@ -418,5 +418,5 @@ TEST_F(LogTest, InstancesForPrepare) {
   log_.TrimUntil(index);
 
   expected.erase(expected.begin(), expected.begin() + index);
-  EXPECT_EQ(expected, log_.InstancesForPrepare());
+  EXPECT_EQ(expected, log_.InstancesSinceGlobalLastExecuted());
 }

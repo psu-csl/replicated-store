@@ -286,7 +286,7 @@
         ballot_ = request_.ballot_
         return prepare_rpc_response{type_: ok,
                                     ballot_: N/A,
-                                    log_: log_.instances_for_prepare()}
+                                    log_: log_.instances_since_global_last_executed()}
       # reject stale RPC requests
       return prepare_rpc_response{type_: reject, ballot_: N/A, log_: N/A}
 

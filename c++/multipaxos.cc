@@ -159,7 +159,7 @@ Status MultiPaxos::Prepare(ServerContext* context,
   if (request->ballot() >= ballot_) {
     ballot_ = request->ballot();
     response->set_type(OK);
-    for (auto& i : log_->InstancesForPrepare())
+    for (auto& i : log_->InstancesSinceGlobalLastExecuted())
       *response->add_instances() = std::move(i);
   } else {
     response->set_type(REJECT);
