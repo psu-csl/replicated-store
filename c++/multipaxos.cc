@@ -24,6 +24,7 @@ using multipaxos::PrepareResponse;
 
 MultiPaxos::MultiPaxos(Log* log, json const& config)
     : running_(false),
+      ready_(false),
       ballot_(kMaxNumPeers),
       log_(log),
       id_(config["id"]),

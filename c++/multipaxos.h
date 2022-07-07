@@ -34,6 +34,7 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
     std::scoped_lock lock(mu_);
     ballot_ += kRoundIncrement;
     ballot_ = (ballot_ & ~kIdBits) | id_;
+    ready_ = false;
     cv_leader_.notify_one();
     return ballot_;
   }
@@ -84,6 +85,7 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
                        multipaxos::PrepareResponse*) override;
 
   std::atomic<bool> running_;
+  bool ready_;
   int64_t ballot_;
   Log* log_;
   int64_t id_;
