@@ -18,7 +18,6 @@ using multipaxos::MultiPaxosRPC;
 
 std::string MakeConfig(int64_t id) {
   return R"({ "id": )" + std::to_string(id) + R"(,
-              "seed": 42,
               "threadpool_size": 8,
               "heartbeat_offset": 10,
               "heartbeat_interval": 300,

@@ -28,7 +28,7 @@ MultiPaxos::MultiPaxos(Log* log, json const& config)
       log_(log),
       id_(config["id"]),
       heartbeat_interval_(config["heartbeat_interval"]),
-      engine_(config["seed"]),
+      engine_(id_),
       dist_(config["heartbeat_offset"], heartbeat_interval_),
       port_(config["peers"][id_]),
       thread_pool_(config["threadpool_size"]) {
