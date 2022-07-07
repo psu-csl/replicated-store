@@ -18,10 +18,17 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 import log.Log;
+import multipaxos.Command;
+import multipaxos.CommandType;
 import multipaxos.HeartbeatRequest;
 import multipaxos.HeartbeatRequest.Builder;
 import multipaxos.HeartbeatResponse;
+import multipaxos.Instance;
+import multipaxos.InstanceState;
 import multipaxos.MultiPaxosRPCGrpc;
+import multipaxos.PrepareRequest;
+import multipaxos.PrepareResponse;
+import multipaxos.ResponseType;
 import org.slf4j.LoggerFactory;
 
 public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
@@ -31,9 +38,8 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
   protected static final long kMaxNumPeers = 0xf;
   private static final Logger logger = (Logger) LoggerFactory.getLogger(MultiPaxos.class);
   private final ReentrantLock mu;
-
   private final Condition cvLeader;
-  private Log log;
+  private Log log_;
   private Server server;
   private Instant lastHeartbeat;
   private long heartbeatPause;
@@ -49,12 +55,12 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
   private List<ManagedChannel> rpcPeers;
   private ExecutorService tp;
 
-
   public MultiPaxos(Log log, Configuration config) {
+
     this.id = config.getId();
     this.ballot = kMaxNumPeers;
     this.heartbeatPause = config.getHeartbeatPause();
-    this.log = log;
+    this.log_ = log;
     this.running = new AtomicBoolean(false);
     mu = new ReentrantLock();
     cvLeader = mu.newCondition();
@@ -73,6 +79,30 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
       rpcPeers.add(channel);
     }
     server = ServerBuilder.forPort(config.getPort()).addService(this).build();
+  }
+
+  public static Command makeProtoCommand(command.Command command) {
+    CommandType commandType = null;
+    switch (command.getCommandType()) {
+      case kDel -> commandType = CommandType.DEL;
+      case kGet -> commandType = CommandType.GET;
+      case kPut -> commandType = CommandType.PUT;
+    }
+    return Command.newBuilder().setType(commandType).setKey(command.getKey())
+        .setValue(command.getValue()).build();
+  }
+
+  public static Instance makeProtoInstance(log.Instance inst) {
+    InstanceState state = null;
+    switch (inst.getState()) {
+      case kInProgress -> state = InstanceState.INPROGRESS;
+      case kCommitted -> state = InstanceState.COMMITTED;
+      case kExecuted -> state = InstanceState.EXECUTED;
+    }
+
+    return Instance.newBuilder().setBallot(inst.getBallot()).setIndex(inst.getIndex())
+        .setClientId(inst.getClientId()).setState(state)
+        .setCommand(makeProtoCommand(inst.getCommand())).build();
   }
 
   public long nextBallot() {
@@ -194,7 +224,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
         }
       }
       mu.unlock();
-      var globalLastExecuted = log.getGlobalLastExecuted();
+      var globalLastExecuted = log_.getGlobalLastExecuted();
       while (running.get()) {
         heartbeatNumResponses = 0;
         heartbeatOkResponses.clear();
@@ -203,7 +233,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
         heartbeatRequestBuilder.setBallot(ballot);
         mu.unlock();
 
-        heartbeatRequestBuilder.setLastExecuted(log.getLastExecuted());
+        heartbeatRequestBuilder.setLastExecuted(log_.getLastExecuted());
         heartbeatRequestBuilder.setGlobalLastExecuted(globalLastExecuted);
 
         for (var peer : rpcPeers) {
@@ -255,14 +285,39 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
         lastHeartbeat = Instant.now();
         ballot = heartbeatRequest.getBallot();
 
-        log.commitUntil(heartbeatRequest.getLastExecuted(), heartbeatRequest.getBallot());
-        log.trimUntil(heartbeatRequest.getGlobalLastExecuted());
+        log_.commitUntil(heartbeatRequest.getLastExecuted(), heartbeatRequest.getBallot());
+        log_.trimUntil(heartbeatRequest.getGlobalLastExecuted());
 
       }
       HeartbeatResponse response = HeartbeatResponse.newBuilder()
-          .setLastExecuted((int) log.getLastExecuted()).build();
+          .setLastExecuted((int) log_.getLastExecuted()).build();
       responseObserver.onNext(response);
       responseObserver.onCompleted();
+    } finally {
+      mu.unlock();
+    }
+  }
+
+  @Override
+  public void prepare(PrepareRequest request, StreamObserver<PrepareResponse> responseObserver) {
+    logger.info(id + " received prepare rpc");
+    mu.lock();
+    PrepareResponse.Builder responseBuilder = PrepareResponse.newBuilder();
+    try {
+      if (request.getBallot() >= ballot) {
+        ballot = request.getBallot();
+        responseBuilder.setType(ResponseType.OK);
+        for (var i : log_.instancesForPrepare()) {
+          responseBuilder.addInstances(makeProtoInstance(i));
+        }
+      } else {
+        responseBuilder.setType(ResponseType.REJECT);
+      }
+      var response = responseBuilder.build();
+      logger.info("sending response : " + response);
+      responseObserver.onNext(response);
+      responseObserver.onCompleted();
+
     } finally {
       mu.unlock();
     }
