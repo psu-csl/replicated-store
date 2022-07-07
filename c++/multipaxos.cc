@@ -75,7 +75,7 @@ void MultiPaxos::HeartbeatThread() {
   while (running_) {
     WaitUntilLeader();
     auto global_last_executed = log_->GlobalLastExecuted();
-    while (running_) {
+    while (running_ && IsLeader()) {
       heartbeat_num_responses_ = 0;
       heartbeat_ok_responses_.clear();
       {
@@ -110,8 +110,6 @@ void MultiPaxos::HeartbeatThread() {
                            std::end(heartbeat_ok_responses_));
       }
       std::this_thread::sleep_for(milliseconds(heartbeat_interval_));
-      if (!IsLeader())
-        break;
     }
   }
   DLOG(INFO) << id_ << " stopping heartbeat thread";
