@@ -28,7 +28,7 @@ bool operator==(multipaxos::Instance const& a, multipaxos::Instance const& b) {
 }
 }  // namespace multipaxos
 
-bool Insert(log_t* log, Instance instance) {
+bool Insert(log_map_t* log, Instance instance) {
   auto i = instance.index();
   auto it = log->find(i);
   if (it == log->end()) {

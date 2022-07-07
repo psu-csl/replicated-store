@@ -11,9 +11,10 @@
 #include "kvstore.h"
 
 using client_id_t = int64_t;
-using log_t = std::unordered_map<int64_t, multipaxos::Instance>;
+using log_map_t = std::unordered_map<int64_t, multipaxos::Instance>;
+using log_vector_t = std::vector<multipaxos::Instance>;
 
-bool Insert(log_t* log, multipaxos::Instance instance);
+bool Insert(log_map_t* log, multipaxos::Instance instance);
 bool IsCommitted(multipaxos::Instance const& instance);
 bool IsExecuted(multipaxos::Instance const& instance);
 bool IsInProgress(multipaxos::Instance const& instance);
@@ -63,7 +64,7 @@ class Log {
   multipaxos::Instance const* operator[](std::size_t i) const;
 
  private:
-  log_t log_;
+  log_map_t log_;
   int64_t last_index_ = 0;
   int64_t last_executed_ = 0;
   int64_t global_last_executed_ = 0;
