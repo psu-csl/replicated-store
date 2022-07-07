@@ -22,6 +22,9 @@ static const int64_t kIdBits = 0xff;
 static const int64_t kRoundIncrement = kIdBits + 1;
 static const int64_t kMaxNumPeers = 0xf;
 
+using rpc_stub_t = std::unique_ptr<multipaxos::MultiPaxosRPC::Stub>;
+using rpc_server_t = std::unique_ptr<grpc::Server>;
+
 class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
  public:
   MultiPaxos(Log* log, nlohmann::json const& config);
@@ -94,8 +97,8 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
   std::uniform_int_distribution<int> dist_;
   std::string port_;
   std::atomic<long> last_heartbeat_;
-  std::vector<std::unique_ptr<multipaxos::MultiPaxosRPC::Stub>> rpc_peers_;
-  std::unique_ptr<grpc::Server> rpc_server_;
+  std::vector<rpc_stub_t> rpc_peers_;
+  rpc_server_t rpc_server_;
   mutable std::mutex mu_;
   asio::thread_pool thread_pool_;
 
