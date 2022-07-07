@@ -38,8 +38,17 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
     ballot_ += kRoundIncrement;
     ballot_ = (ballot_ & ~kIdBits) | id_;
     ready_ = false;
+    DLOG(INFO) << id_ << " became a leader";
     cv_leader_.notify_one();
     return ballot_;
+  }
+
+  void SetBallot(int64_t ballot) {
+    if ((ballot_ & kIdBits) == id_ && (ballot & kIdBits) != id_) {
+      DLOG(INFO) << id_ << " became a follower";
+      cv_follower_.notify_one();
+    }
+    ballot_ = ballot;
   }
 
   int64_t Leader() const {
@@ -113,6 +122,10 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
   std::thread prepare_thread_;
   std::condition_variable cv_follower_;
   multipaxos::PrepareRequest prepare_request_;
+  size_t prepare_num_responses_;
+  std::vector<log_vector_t> prepare_ok_responses_;
+  std::mutex prepare_mu_;
+  std::condition_variable prepare_cv_;
 };
 
 #endif

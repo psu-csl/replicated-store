@@ -119,7 +119,7 @@ void MultiPaxos::PrepareThread() {
   DLOG(INFO) << id_ << " starting prepare thread";
   while (running_) {
     WaitUntilFollower();
-    while (running_) {
+    while (running_ && !IsLeader()) {
       auto sleep_time = dist_(engine_);
       DLOG(INFO) << id_ << " prepare thread sleeping for " << sleep_time;
       std::this_thread::sleep_for(milliseconds(sleep_time));
@@ -129,6 +129,46 @@ void MultiPaxos::PrepareThread() {
                      .count();
       if (now - last_heartbeat_ < heartbeat_interval_)
         continue;
+
+      prepare_num_responses_ = 0;
+      prepare_ok_responses_.clear();
+      prepare_request_.set_ballot(NextBallot());
+      for (auto& peer : rpc_peers_) {
+        asio::post(thread_pool_, [this, &peer] {
+          ClientContext context;
+          PrepareResponse response;
+          Status status = peer->Prepare(&context, prepare_request_, &response);
+          DLOG(INFO) << id_ << " sent prepare request to " << context.peer();
+          {
+            std::scoped_lock lock(prepare_mu_);
+            ++prepare_num_responses_;
+            if (status.ok()) {
+              log_vector_t log;
+              for (int i = 0; i < response.instances_size(); ++i)
+                log.push_back(std::move(response.instances(i)));
+              prepare_ok_responses_.push_back(std::move(log));
+            }
+          }
+          prepare_cv_.notify_one();
+        });
+      }
+      {
+        std::unique_lock lock(prepare_mu_);
+        while (IsLeader() &&
+               prepare_ok_responses_.size() <= rpc_peers_.size() / 2 &&
+               prepare_num_responses_ != rpc_peers_.size()) {
+          prepare_cv_.wait(lock);
+        }
+        if (prepare_ok_responses_.size() <= rpc_peers_.size())
+          continue;
+      }
+      {
+        std::scoped_lock lock(mu_);
+        if (IsLeaderLockless()) {
+          ready_ = true;
+          DLOG(INFO) << id_ << " leader and ready to serve";
+        }
+      }
     }
   }
   DLOG(INFO) << id_ << " stopping prepare thread";
@@ -143,7 +183,7 @@ Status MultiPaxos::Heartbeat(ServerContext* context,
     last_heartbeat_ = time_point_cast<milliseconds>(steady_clock::now())
                           .time_since_epoch()
                           .count();
-    ballot_ = request->ballot();
+    SetBallot(request->ballot());
     log_->CommitUntil(request->last_executed(), request->ballot());
     log_->TrimUntil(request->global_last_executed());
   }
@@ -157,7 +197,7 @@ Status MultiPaxos::Prepare(ServerContext* context,
   DLOG(INFO) << id_ << " received prepare rpc from " << context->peer();
   std::scoped_lock lock(mu_);
   if (request->ballot() >= ballot_) {
-    ballot_ = request->ballot();
+    SetBallot(request->ballot());
     response->set_type(OK);
     for (auto& i : log_->InstancesSinceGlobalLastExecuted())
       *response->add_instances() = std::move(i);
