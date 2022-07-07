@@ -29,6 +29,7 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
   MultiPaxos& operator=(MultiPaxos const& log) = delete;
   MultiPaxos(MultiPaxos&& log) = delete;
   MultiPaxos& operator=(MultiPaxos&& log) = delete;
+  ~MultiPaxos();
 
   int64_t NextBallot() {
     std::scoped_lock lock(mu_);

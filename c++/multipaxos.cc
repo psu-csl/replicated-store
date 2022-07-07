@@ -42,6 +42,10 @@ MultiPaxos::MultiPaxos(Log* log, json const& config)
   rpc_server_ = builder.BuildAndStart();
 }
 
+MultiPaxos::~MultiPaxos() {
+  tp_.join();
+}
+
 void MultiPaxos::Start() {
   CHECK(!running_);
   running_ = true;
