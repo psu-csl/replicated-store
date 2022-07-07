@@ -3,3 +3,10 @@
 * Java
 1. Currently we have both proto generated and custom implementations for Instance and Command;
    We transform from custom implementation to proto generated one. Refactor such that we have only proto generated classes.
+
+* C++
+
+  - consider replacing ballot with atomic and using the CAS loop, and make sure
+    to insert PAUSEs below, per recommendation of Thiago on C++ slack.
+
+    https://herbsutter.com/2012/08/31/reader-qa-how-to-write-a-cas-loop-using-stdatomics/
