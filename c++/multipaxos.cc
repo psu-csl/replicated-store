@@ -31,7 +31,7 @@ MultiPaxos::MultiPaxos(Log* log, json const& config)
       engine_(config["seed"]),
       dist_(config["heartbeat_offset"], heartbeat_interval_),
       port_(config["peers"][id_]),
-      tp_(config["threadpool_size"]) {
+      thread_pool_(config["threadpool_size"]) {
   for (std::string const peer : config["peers"])
     rpc_peers_.emplace_back(MultiPaxosRPC::NewStub(
         grpc::CreateChannel(peer, grpc::InsecureChannelCredentials())));
@@ -40,10 +40,6 @@ MultiPaxos::MultiPaxos(Log* log, json const& config)
   builder.AddListeningPort(port_, grpc::InsecureServerCredentials());
   builder.RegisterService(this);
   rpc_server_ = builder.BuildAndStart();
-}
-
-MultiPaxos::~MultiPaxos() {
-  tp_.join();
 }
 
 void MultiPaxos::Start() {
@@ -66,6 +62,8 @@ void MultiPaxos::Shutdown() {
   cv_follower_.notify_one();
   prepare_thread_.join();
 
+  thread_pool_.join();
+
   CHECK(rpc_server_);
   DLOG(INFO) << id_ << " stopping rpc server at " << port_;
   rpc_server_->Shutdown();
@@ -86,7 +84,7 @@ void MultiPaxos::HeartbeatThread() {
       heartbeat_request_.set_last_executed(log_->LastExecuted());
       heartbeat_request_.set_global_last_executed(global_last_executed);
       for (auto& peer : rpc_peers_) {
-        asio::post(tp_, [this, &peer] {
+        asio::post(thread_pool_, [this, &peer] {
           ClientContext context;
           HeartbeatResponse response;
           Status status =

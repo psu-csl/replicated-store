@@ -29,7 +29,6 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
   MultiPaxos& operator=(MultiPaxos const& log) = delete;
   MultiPaxos(MultiPaxos&& log) = delete;
   MultiPaxos& operator=(MultiPaxos&& log) = delete;
-  ~MultiPaxos();
 
   int64_t NextBallot() {
     std::scoped_lock lock(mu_);
@@ -96,7 +95,7 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
   std::vector<std::unique_ptr<multipaxos::MultiPaxosRPC::Stub>> rpc_peers_;
   std::unique_ptr<grpc::Server> rpc_server_;
   mutable std::mutex mu_;
-  asio::thread_pool tp_;
+  asio::thread_pool thread_pool_;
 
   std::thread heartbeat_thread_;
   std::condition_variable cv_leader_;
