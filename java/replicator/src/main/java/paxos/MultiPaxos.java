@@ -149,6 +149,19 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     }
   }
 
+  public void waitUntilLeader() {
+    mu.lock();
+    try {
+      while (running.get() && !isLeaderLockless()) {
+        cvLeader.await();
+      }
+    } catch (InterruptedException e) {
+      e.printStackTrace();
+    } finally {
+      mu.unlock();
+    }
+  }
+
   public long getId() {
     return id;
   }
@@ -215,15 +228,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
   public void heartbeatThread() {
     logger.info(id + " starting heartbeat thread");
     while (running.get()) {
-      mu.lock();
-      while (running.get() && !isLeaderLockless()) {
-        try {
-          cvLeader.await();
-        } catch (InterruptedException e) {
-          e.printStackTrace();
-        }
-      }
-      mu.unlock();
+      waitUntilLeader();
       var globalLastExecuted = log_.getGlobalLastExecuted();
       while (running.get()) {
         heartbeatNumResponses = 0;
