@@ -401,7 +401,7 @@ TEST_F(LogTest, InstancesForPrepare) {
   });
 
   auto ballot = 0;
-  std::vector<Instance> expected;
+  log_vector_t expected;
 
   expected.emplace_back(MakeInstance(ballot));
   log_.Append(expected.back());

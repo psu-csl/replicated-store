@@ -54,7 +54,7 @@ class Log {
   void CommitUntil(int64_t leader_last_executed, int64_t ballot);
   void TrimUntil(int64_t leader_global_last_executed);
 
-  std::vector<multipaxos::Instance> InstancesForPrepare() const;
+  log_vector_t InstancesForPrepare() const;
 
   bool IsExecutable() const {
     auto it = log_.find(last_executed_ + 1);
