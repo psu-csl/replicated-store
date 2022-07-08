@@ -37,6 +37,19 @@ class MultiPaxosTest : public testing::Test {
         peer1_(&log1_, config1_),
         peer2_(&log2_, config2_) {}
 
+  bool OneLeader() const {
+    if (peer0_.IsLeader())
+      return !peer1_.IsLeader() && !peer2_.IsLeader() && peer1_.Leader() == 0 &&
+             peer2_.Leader() == 0;
+    if (peer1_.IsLeader())
+      return !peer0_.IsLeader() && !peer2_.IsLeader() && peer0_.Leader() == 1 &&
+             peer2_.Leader() == 1;
+    if (peer2_.IsLeader())
+      return !peer0_.IsLeader() && !peer1_.IsLeader() && peer0_.Leader() == 2 &&
+             peer1_.Leader() == 2;
+    return false;
+  }
+
  protected:
   json config0_, config1_, config2_;
   Log log0_, log1_, log2_;
@@ -105,4 +118,24 @@ TEST_F(MultiPaxosTest, HeartbeatChangesLeaderToFollower) {
 
   peer0_.Stop();
   t0.join();
+}
+
+TEST_F(MultiPaxosTest, OneLeaderElected) {
+  std::thread t0([this] { peer0_.Start(); });
+  std::thread t1([this] { peer1_.Start(); });
+  std::thread t2([this] { peer2_.Start(); });
+
+  auto heartbeat_3x =
+      milliseconds(3 * static_cast<int>(config0_["heartbeat_interval"]));
+
+  std::this_thread::sleep_for(heartbeat_3x);
+
+  EXPECT_TRUE(OneLeader());
+
+  peer0_.Stop();
+  peer1_.Stop();
+  peer2_.Stop();
+  t0.join();
+  t1.join();
+  t2.join();
 }

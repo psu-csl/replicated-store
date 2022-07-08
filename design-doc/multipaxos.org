@@ -326,3 +326,7 @@
          know it.
       4) in thread main, send request0 to peer0
       5) ensure that peer0 is not a leader anymore and considers peer1 as the leader.
+
+  - one_leader_elected
+    - start peer0, peer1, peer2, wait for 3x of heartbeat interval and then
+      check that a single leader is elected.
