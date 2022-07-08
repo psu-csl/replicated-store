@@ -37,11 +37,6 @@ MultiPaxos::MultiPaxos(Log* log, json const& config)
   for (std::string const peer : config["peers"])
     rpc_peers_.emplace_back(MultiPaxosRPC::NewStub(
         grpc::CreateChannel(peer, grpc::InsecureChannelCredentials())));
-
-  ServerBuilder builder;
-  builder.AddListeningPort(port_, grpc::InsecureServerCredentials());
-  builder.RegisterService(this);
-  rpc_server_ = builder.BuildAndStart();
 }
 
 void MultiPaxos::Start() {
@@ -49,8 +44,12 @@ void MultiPaxos::Start() {
   running_ = true;
   heartbeat_thread_ = std::thread(&MultiPaxos::HeartbeatThread, this);
   prepare_thread_ = std::thread(&MultiPaxos::PrepareThread, this);
-  CHECK(rpc_server_);
+
   DLOG(INFO) << id_ << " starting rpc server at " << port_;
+  ServerBuilder builder;
+  builder.AddListeningPort(port_, grpc::InsecureServerCredentials());
+  builder.RegisterService(this);
+  rpc_server_ = builder.BuildAndStart();
   rpc_server_->Wait();
 }
 
