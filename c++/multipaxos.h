@@ -28,7 +28,7 @@ using rpc_server_t = std::unique_ptr<grpc::Server>;
 class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
  public:
   MultiPaxos(Log* log, nlohmann::json const& config);
-  MultiPaxos(Log const& log) = delete;
+  MultiPaxos(MultiPaxos const& log) = delete;
   MultiPaxos& operator=(MultiPaxos const& log) = delete;
   MultiPaxos(MultiPaxos&& log) = delete;
   MultiPaxos& operator=(MultiPaxos&& log) = delete;
