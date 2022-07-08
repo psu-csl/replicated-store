@@ -267,7 +267,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     while (running.get()) {
       waitUntilLeader();
       var globalLastExecuted = log_.getGlobalLastExecuted();
-      while (running.get()) {
+      while (running.get() && isLeader()) {
         heartbeatNumResponses = 0;
         heartbeatOkResponses.clear();
 
@@ -308,9 +308,6 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
           Thread.sleep(heartbeatInterval);
         } catch (InterruptedException e) {
           e.printStackTrace();
-        }
-        if (!isLeader()) {
-          break;
         }
       }
       logger.info(id + " stopping heartbeat thread");
