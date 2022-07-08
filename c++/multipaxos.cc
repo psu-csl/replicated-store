@@ -76,8 +76,8 @@ void MultiPaxos::HeartbeatThread() {
     WaitUntilLeader();
     auto global_last_executed = log_->GlobalLastExecuted();
     while (running_ && IsLeader()) {
-      heartbeat_num_responses_ = 0;
-      heartbeat_ok_responses_.clear();
+      heartbeat_num_rpcs_ = 0;
+      heartbeat_responses_.clear();
       {
         std::scoped_lock lock(mu_);
         heartbeat_request_.set_ballot(ballot_);
@@ -93,21 +93,20 @@ void MultiPaxos::HeartbeatThread() {
           DLOG(INFO) << id_ << " sent heartbeat to " << context.peer();
           {
             std::scoped_lock lock(heartbeat_mu_);
-            ++heartbeat_num_responses_;
+            ++heartbeat_num_rpcs_;
             if (status.ok())
-              heartbeat_ok_responses_.push_back(response.last_executed());
+              heartbeat_responses_.push_back(response.last_executed());
           }
           heartbeat_cv_.notify_one();
         });
       }
       {
         std::unique_lock lock(heartbeat_mu_);
-        while (IsLeader() && heartbeat_num_responses_ != rpc_peers_.size())
+        while (IsLeader() && heartbeat_num_rpcs_ != rpc_peers_.size())
           heartbeat_cv_.wait(lock);
-        if (heartbeat_ok_responses_.size() == rpc_peers_.size())
-          global_last_executed =
-              *min_element(std::begin(heartbeat_ok_responses_),
-                           std::end(heartbeat_ok_responses_));
+        if (heartbeat_responses_.size() == rpc_peers_.size())
+          global_last_executed = *min_element(std::begin(heartbeat_responses_),
+                                              std::end(heartbeat_responses_));
       }
       std::this_thread::sleep_for(milliseconds(heartbeat_interval_));
     }

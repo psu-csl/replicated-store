@@ -85,10 +85,10 @@
       set of its fields (ballot, last_executed, and global_last_executed) from
       this peer.
 
-    - heartbeat_num_responses_: int; number of heartbeat responses; initialized
+    - heartbeat_num_rpcs_: int; the number of heartbeat rpcs sent; initialized
       to 0 every time right before heartbeats are sent.
 
-    - heartbeat_ok_responses_: array of ints; the values of ok responses to
+    - heartbeat_responses_: array of ints; the values of responses to
       heartbeats; reset to empty every time right before heartbeats are sent.
 
     - heartbeat_mu_: mutex; serializes access to heartbeat_num_responses_ and
@@ -245,8 +245,8 @@
         # our log.
         global_last_executed = log_.global_last_executed()
         while (running_)
-          heartbeat_num_responses_ = 0
-          heartbeat_ok_responses_ = []
+          heartbeat_num_rpcs_ = 0
+          heartbeat_responses_ = []
 
           mu_.lock()
           heartbeat_request_.set_ballot(ballot_)
@@ -258,17 +258,23 @@
             post a closure to a thread pool {
               status = p.Heartbeat(heartbeat_request_)
               heartbeat_mu_.lock()
-              ++heartbeat_num_responses_
+              ++heartbeat_num_rpcs_
               if status.ok
-                heartbeat_ok_responses_.push_back(status.response)
+                heartbeat_responses_.push_back(status.response)
               heartbeat_cv_.notify_one()
             }
             heartbeat_mu_.unlock()
 
           heartbeat_mu_.lock()
-          while (is_leader() && heartbeat_num_responses_ != peers_.size())
+          # for heartbeats, we have to wait until we have sent rpcs to all of
+          # the peers; this is unlike accept or prepare rpcs because with
+          # heartbeats we receive last_executed from peers, and if we want to
+          # advance global_last_executed, we need to receive last_executed from
+          # all peers so that we could be sure the new global_last_executed is a
+          # global minimum.
+          while (is_leader() && heartbeat_num_rpcs_ != peers_.size())
             heartbeat_cv_.wait(hb_mu)
-          if heartbeat_ok_responses_.size() == peer_.size()
+          if heartbeat_responses_.size() == peer_.size()
             global_last_executed = min(ok_responses)
           heartbeat_mu_.unlock()
 

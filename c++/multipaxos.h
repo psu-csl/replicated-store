@@ -114,8 +114,8 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
   std::thread heartbeat_thread_;
   std::condition_variable cv_leader_;
   multipaxos::HeartbeatRequest heartbeat_request_;
-  size_t heartbeat_num_responses_;
-  std::vector<int64_t> heartbeat_ok_responses_;
+  size_t heartbeat_num_rpcs_;
+  std::vector<int64_t> heartbeat_responses_;
   std::mutex heartbeat_mu_;
   std::condition_variable heartbeat_cv_;
 
