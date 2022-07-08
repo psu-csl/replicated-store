@@ -58,6 +58,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
   private List<ManagedChannel> rpcPeers;
   private ExecutorService threadPool;
   private int offset;
+  private boolean ready;
 
   public MultiPaxos(Log log, Configuration config) {
     this.offset = config.getOffset();
@@ -66,6 +67,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     this.heartbeatInterval = config.getHeartbeatPause();
     this.log_ = log;
     this.running = new AtomicBoolean(false);
+    ready = false;
     mu = new ReentrantLock();
     cvLeader = mu.newCondition();
     cvFollower = mu.newCondition();
@@ -115,6 +117,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     try {
       ballot += kRoundIncrement;
       ballot = (ballot & ~kIdBits) | id;
+      ready = false;
       cvLeader.signal();
       return ballot;
     } finally {
