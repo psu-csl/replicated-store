@@ -82,7 +82,7 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
   }
 
   void Start();
-  void Shutdown();
+  void Stop();
 
   void HeartbeatThread();
   void PrepareThread();

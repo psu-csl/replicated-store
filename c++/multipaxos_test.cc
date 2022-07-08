@@ -82,7 +82,7 @@ TEST_F(MultiPaxosTest, HeartbeatIgnoreStaleRPC) {
 
   EXPECT_TRUE(peer0_.IsLeader());
 
-  peer0_.Shutdown();
+  peer0_.Stop();
   t0.join();
 }
 
@@ -103,7 +103,7 @@ TEST_F(MultiPaxosTest, HeartbeatChangesLeaderToFollower) {
   EXPECT_FALSE(peer0_.IsLeader());
   EXPECT_EQ(1, peer0_.Leader());
 
-  peer0_.Shutdown();
+  peer0_.Stop();
   t0.join();
 }
 
@@ -143,9 +143,9 @@ TEST_F(MultiPaxosTest, HeartbeatUpdatesLeaderOnFollowers) {
   EXPECT_FALSE(peer1_.IsLeader());
   EXPECT_EQ(2, peer1_.Leader());
 
-  peer0_.Shutdown();
-  peer1_.Shutdown();
-  peer2_.Shutdown();
+  peer0_.Stop();
+  peer1_.Stop();
+  peer2_.Stop();
   t0.join();
   t1.join();
   t2.join();

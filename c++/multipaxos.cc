@@ -53,7 +53,7 @@ void MultiPaxos::Start() {
   rpc_server_->Wait();
 }
 
-void MultiPaxos::Shutdown() {
+void MultiPaxos::Stop() {
   CHECK(running_);
   running_ = false;
 
