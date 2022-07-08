@@ -30,7 +30,8 @@ MultiPaxos::MultiPaxos(Log* log, json const& config)
       id_(config["id"]),
       heartbeat_interval_(config["heartbeat_interval"]),
       engine_(id_),
-      dist_(config["heartbeat_offset"], heartbeat_interval_),
+      dist_(config["heartbeat_delta"],
+            heartbeat_interval_ - config["heartbeat_delta"]),
       port_(config["peers"][id_]),
       thread_pool_(config["threadpool_size"]) {
   for (std::string const peer : config["peers"])
@@ -120,7 +121,7 @@ void MultiPaxos::PrepareThread() {
   while (running_) {
     WaitUntilFollower();
     while (running_ && !IsLeader()) {
-      auto sleep_time = dist_(engine_);
+      auto sleep_time = heartbeat_interval_ + dist_(engine_);
       DLOG(INFO) << id_ << " prepare thread sleeping for " << sleep_time;
       std::this_thread::sleep_for(milliseconds(sleep_time));
       DLOG(INFO) << id_ << " prepare thread woke up";
