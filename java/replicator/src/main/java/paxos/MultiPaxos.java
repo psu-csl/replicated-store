@@ -57,7 +57,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
   private Builder heartbeatRequestBuilder;
   private List<ManagedChannel> rpcPeers;
   private ExecutorService threadPool;
-  private int offset;
+  private int heartbeatDelta;
   private boolean ready;
   private long prepareNumResponses;
   private List<List<Instance>> prepareOkResponses;
@@ -66,7 +66,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
   private PrepareRequest.Builder prepareRequestBuilder;
 
   public MultiPaxos(Log log, Configuration config) {
-    this.offset = config.getOffset();
+    this.heartbeatDelta = config.getHeartbeatDelta();
     this.id = config.getId();
     this.ballot = kMaxNumPeers;
     this.heartbeatInterval = config.getHeartbeatPause();
@@ -387,7 +387,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     while (running.get()) {
       waitUntilLeader();
       while (running.get() && !isLeader()) {
-        var sleepTime = random.nextInt(offset,
+        var sleepTime = heartbeatInterval + random.nextInt(heartbeatDelta,
             (int) heartbeatInterval); // check whether to add with heartbeatInterval or not
         logger.info(id + " prepare thread sleeping for " + sleepTime);
         try {

@@ -9,7 +9,7 @@ public class Configuration {
   private long heartbeatPause;
   private int threadPoolSize;
   private List<String> peers;
-  private int offset;
+  private int heartbeatDelta;
 
   public long getId() {
     return id;
@@ -51,11 +51,11 @@ public class Configuration {
     this.peers = peers;
   }
 
-  public int getOffset() {
-    return offset;
+  public int getHeartbeatDelta() {
+    return heartbeatDelta;
   }
 
-  public void setOffset(int offset) {
-    this.offset = offset;
+  public void setHeartbeatDelta(int heartbeatDelta) {
+    this.heartbeatDelta = heartbeatDelta;
   }
 }

@@ -40,6 +40,7 @@ class MultiPaxosTest {
     config.setPort(port);
     config.setHeartbeatPause(300);
     config.setThreadPoolSize(8);
+    config.setHeartbeatDelta(10);
     config.setPeers(Arrays.asList("127.0.0.1:3000", "127.0.0.1:3001", "127.0.0.1:3002"));
     return config;
   }
