@@ -195,7 +195,7 @@ public class Log {
     }
   }
 
-  public ArrayList<Instance> instancesForPrepare() {
+  public ArrayList<Instance> instancesSinceGlobalLastExecuted() {
     mu.lock();
     try {
       ArrayList<Instance> instances = new ArrayList<>();
