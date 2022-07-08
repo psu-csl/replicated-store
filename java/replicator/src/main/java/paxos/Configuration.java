@@ -9,6 +9,7 @@ public class Configuration {
   private long heartbeatPause;
   private int threadPoolSize;
   private List<String> peers;
+  private int offset;
 
   public long getId() {
     return id;
@@ -48,5 +49,13 @@ public class Configuration {
 
   public void setPeers(List<String> peers) {
     this.peers = peers;
+  }
+
+  public int getOffset() {
+    return offset;
+  }
+
+  public void setOffset(int offset) {
+    this.offset = offset;
   }
 }
