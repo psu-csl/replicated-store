@@ -10,3 +10,11 @@
     to insert PAUSEs below, per recommendation of Thiago on C++ slack.
 
     https://herbsutter.com/2012/08/31/reader-qa-how-to-write-a-cas-loop-using-stdatomics/
+
+* All
+
+  - The current design may push stale prepare responses to prepare_ok_reponses
+    and increase the prepare_num_responses. Then the prepare_thread proceed to
+    replay as it reaches prepare_num_responses, though the instances for replay
+    are not from majority peers. (heartbeat_thread and accept might have similar
+    issues, though it seems that they won't fail the correctness so far)
