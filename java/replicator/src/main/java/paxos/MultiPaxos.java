@@ -56,7 +56,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
   private Condition heartbeatCv;
   private Builder heartbeatRequestBuilder;
   private List<ManagedChannel> rpcPeers;
-  private ExecutorService tp;
+  private ExecutorService threadPool;
   private int offset;
 
   public MultiPaxos(Log log, Configuration config) {
@@ -77,7 +77,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     heartbeatCv = heartbeatMu.newCondition();
 
     heartbeatRequestBuilder = HeartbeatRequest.newBuilder();
-    tp = Executors.newFixedThreadPool(config.getThreadPoolSize());
+    threadPool = Executors.newFixedThreadPool(config.getThreadPoolSize());
     rpcPeers = new ArrayList<>();
     for (var peer : config.getPeers()) {
       ManagedChannel channel = ManagedChannelBuilder.forTarget(peer).usePlaintext().build();
@@ -241,7 +241,12 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     } catch (InterruptedException e) {
       e.printStackTrace();
     }
-    // Left here add cv followers etc ... from git commit
+    threadPool.shutdown();
+    try {
+      threadPool.awaitTermination(1000, TimeUnit.MILLISECONDS);
+    } catch (InterruptedException e) {
+      e.printStackTrace();
+    }
     assert (server != null);
     try {
       logger.info(id + " stopping rpc at " + server.getPort());
@@ -271,7 +276,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
         heartbeatRequestBuilder.setGlobalLastExecuted(globalLastExecuted);
 
         for (var peer : rpcPeers) {
-          tp.submit(() -> {
+          threadPool.submit(() -> {
 
             var response = MultiPaxosRPCGrpc.newBlockingStub(peer)
                 .heartbeat(heartbeatRequestBuilder.build());
