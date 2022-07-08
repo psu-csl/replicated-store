@@ -31,7 +31,7 @@ MultiPaxos::MultiPaxos(Log* log, json const& config)
       heartbeat_interval_(config["heartbeat_interval"]),
       engine_(id_),
       dist_(config["heartbeat_delta"],
-            heartbeat_interval_ - config["heartbeat_delta"]),
+            heartbeat_interval_ - static_cast<long>(config["heartbeat_delta"])),
       port_(config["peers"][id_]),
       thread_pool_(config["threadpool_size"]) {
   for (std::string const peer : config["peers"])
