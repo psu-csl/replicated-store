@@ -326,23 +326,3 @@
          know it.
       4) in thread main, send request0 to peer0
       5) ensure that peer0 is not a leader anymore and considers peer1 as the leader.
-
-  - heartbeat_updates_leader_on_followers
-    - start peer0, peer1, and peer2; initially they are not leaders. call
-      peer0.next_ballot() and ensure that peer1 and peer2 now recognize peer0 as
-      the leader. call peer1.next_ballot() and ensure that peer0 and peer2
-      recognize peer1 as leader, and finally call peer2.next_ballot() and ensure
-      that peer0 and peer1 recognize peer2 as the leader.
-
-      1) in thread t0, call peer0.start()
-      2) in thread t1, call peer1.start()
-      3) in thread t2, call peer2.start()
-      4) in thread main, call peer0_.next_ballot, sleep 2 heartbeat interval and
-         check that peer0 is the leader and peer1 and peer2 recognize peer0 as
-         the leader.
-      5) in thread main, call peer1_.next_ballot, sleep 2 heartbeat interval and
-         check that peer1 is the leader and peer0 and peer2 recognize peer1 as
-         the leader.
-      6) in thread main, call peer2_.next_ballot, sleep 2 heartbeat interval and
-         check that peer2 is the leader and peer0 and peer1 recognize peer1 as
-         the leader.
