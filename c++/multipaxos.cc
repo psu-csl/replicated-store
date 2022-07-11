@@ -129,7 +129,7 @@ void MultiPaxos::PrepareThread() {
       if (now - last_heartbeat_ < heartbeat_interval_)
         continue;
 
-      prepare_num_responses_ = 0;
+      prepare_num_rpcs_ = 0;
       prepare_ok_responses_.clear();
       prepare_request_.set_ballot(NextBallot());
       for (auto& peer : rpc_peers_) {
@@ -140,12 +140,18 @@ void MultiPaxos::PrepareThread() {
           DLOG(INFO) << id_ << " sent prepare request to " << context.peer();
           {
             std::scoped_lock lock(prepare_mu_);
-            ++prepare_num_responses_;
+            ++prepare_num_rpcs_;
             if (status.ok()) {
-              log_vector_t log;
-              for (int i = 0; i < response.instances_size(); ++i)
-                log.push_back(std::move(response.instances(i)));
-              prepare_ok_responses_.push_back(std::move(log));
+              if (response.type() == OK) {
+                log_vector_t log;
+                for (int i = 0; i < response.instances_size(); ++i)
+                  log.push_back(std::move(response.instances(i)));
+                prepare_ok_responses_.push_back(std::move(log));
+              } else {
+                CHECK(response.type() == REJECT);
+                std::scoped_lock lock(mu_);
+                SetBallot(response.ballot());
+              }
             }
           }
           prepare_cv_.notify_one();
@@ -155,7 +161,7 @@ void MultiPaxos::PrepareThread() {
         std::unique_lock lock(prepare_mu_);
         while (IsLeader() &&
                prepare_ok_responses_.size() <= rpc_peers_.size() / 2 &&
-               prepare_num_responses_ != rpc_peers_.size()) {
+               prepare_num_rpcs_ != rpc_peers_.size()) {
           prepare_cv_.wait(lock);
         }
         if (prepare_ok_responses_.size() <= rpc_peers_.size())

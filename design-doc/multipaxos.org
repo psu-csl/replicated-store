@@ -109,6 +109,12 @@
     - cv_follower_: condition variable; prepare_thread sleeps on this condition
       variable to get notified when this peer becomes a follower.
 
+    - prepare_num_rpcs_: int; the number of prepare rpcs sent; initialized to 0
+      every time right before prepare rpcs are sent.
+
+    - prepare_ok_responses_: array of log_vector_t; log_vector_ts received in a
+      round of prepare rpcs
+
   - constants
 
     - id_bits_ = 0xff: the lower bits of |ballot_| we use for storing the id of
@@ -295,6 +301,8 @@
                                     log_: log_.instances_since_global_last_executed()}
       # reject stale RPC requests
       return prepare_rpc_response{type_: reject, ballot_: N/A, log_: N/A}
+
+    - prepare_thread()
 
 - unit tests
 

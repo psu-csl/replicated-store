@@ -26,11 +26,13 @@
       committed state once quorum has voted for it, and changes to executed
       state once the executor thread has its command executed.
 
-    - Log: a map from int to Instance
+    - log_map_t: a map from int to Instance
+
+    - log_vector_t: an array of Instances
 
   - members
 
-    - log_t: log
+    - log_: log_map_t
 
     - last_index_: index of the highest-numbered instance in the log. the log
       starts at index 1; therefore, last_index_ is initialized to 0, signifying

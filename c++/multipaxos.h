@@ -122,7 +122,7 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
   std::thread prepare_thread_;
   std::condition_variable cv_follower_;
   multipaxos::PrepareRequest prepare_request_;
-  size_t prepare_num_responses_;
+  size_t prepare_num_rpcs_;
   std::vector<log_vector_t> prepare_ok_responses_;
   std::mutex prepare_mu_;
   std::condition_variable prepare_cv_;
