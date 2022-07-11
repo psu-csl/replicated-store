@@ -37,6 +37,7 @@ message HeartbeatRequest {
   int64 ballot = 1;
   int64 last_executed = 2;
   int64 global_last_executed = 3;
+  int64 sender = 4;
 }
 
 message HeartbeatResponse {
@@ -45,6 +46,7 @@ message HeartbeatResponse {
 
 message PrepareRequest {
   int64 ballot = 1;
+  int64 sender = 2;
 }
 
 message PrepareResponse {

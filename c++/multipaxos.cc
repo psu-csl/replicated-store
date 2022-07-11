@@ -34,9 +34,11 @@ MultiPaxos::MultiPaxos(Log* log, json const& config)
             heartbeat_interval_ - static_cast<long>(config["heartbeat_delta"])),
       port_(config["peers"][id_]),
       thread_pool_(config["threadpool_size"]) {
+  int64_t id = 0;
   for (std::string const peer : config["peers"])
-    rpc_peers_.emplace_back(MultiPaxosRPC::NewStub(
-        grpc::CreateChannel(peer, grpc::InsecureChannelCredentials())));
+    rpc_peers_.emplace_back(id++,
+                            MultiPaxosRPC::NewStub(grpc::CreateChannel(
+                                peer, grpc::InsecureChannelCredentials())));
 }
 
 void MultiPaxos::Start() {
@@ -89,8 +91,8 @@ void MultiPaxos::HeartbeatThread() {
           ClientContext context;
           HeartbeatResponse response;
           Status status =
-              peer->Heartbeat(&context, heartbeat_request_, &response);
-          DLOG(INFO) << id_ << " sent heartbeat to " << context.peer();
+              peer.stub_->Heartbeat(&context, heartbeat_request_, &response);
+          DLOG(INFO) << id_ << " sent heartbeat to " << peer.id_;
           {
             std::scoped_lock lock(heartbeat_mu_);
             ++heartbeat_num_rpcs_;
@@ -136,8 +138,9 @@ void MultiPaxos::PrepareThread() {
         asio::post(thread_pool_, [this, &peer] {
           ClientContext context;
           PrepareResponse response;
-          Status status = peer->Prepare(&context, prepare_request_, &response);
-          DLOG(INFO) << id_ << " sent prepare request to " << context.peer();
+          Status status =
+              peer.stub_->Prepare(&context, prepare_request_, &response);
+          DLOG(INFO) << id_ << " sent prepare request to " << peer.id_;
           {
             std::scoped_lock lock(prepare_mu_);
             ++prepare_num_rpcs_;
@@ -179,10 +182,10 @@ void MultiPaxos::PrepareThread() {
   DLOG(INFO) << id_ << " stopping prepare thread";
 }
 
-Status MultiPaxos::Heartbeat(ServerContext* context,
+Status MultiPaxos::Heartbeat(ServerContext*,
                              const HeartbeatRequest* request,
                              HeartbeatResponse* response) {
-  DLOG(INFO) << id_ << " received heartbeat rpc from " << context->peer();
+  DLOG(INFO) << id_ << " received heartbeat rpc from " << request->sender();
   std::scoped_lock lock(mu_);
   if (request->ballot() >= ballot_) {
     last_heartbeat_ = time_point_cast<milliseconds>(steady_clock::now())
@@ -196,10 +199,10 @@ Status MultiPaxos::Heartbeat(ServerContext* context,
   return Status::OK;
 }
 
-Status MultiPaxos::Prepare(ServerContext* context,
+Status MultiPaxos::Prepare(ServerContext*,
                            const PrepareRequest* request,
                            PrepareResponse* response) {
-  DLOG(INFO) << id_ << " received prepare rpc from " << context->peer();
+  DLOG(INFO) << id_ << " received prepare rpc from " << request->sender();
   std::scoped_lock lock(mu_);
   if (request->ballot() >= ballot_) {
     SetBallot(request->ballot());
