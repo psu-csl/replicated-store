@@ -168,7 +168,8 @@ void MultiPaxos::PrepareThread() {
               } else {
                 CHECK(response.type() == REJECT);
                 std::scoped_lock lock(mu_);
-                SetBallot(response.ballot());
+                if (response.ballot() >= ballot_)
+                  SetBallot(response.ballot());
               }
             }
           }
