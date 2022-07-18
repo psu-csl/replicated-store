@@ -182,7 +182,7 @@ void MultiPaxos::PrepareThread() {
                prepare_num_rpcs_ != rpc_peers_.size()) {
           prepare_cv_.wait(lock);
         }
-        if (prepare_ok_responses_.size() <= rpc_peers_.size())
+        if (prepare_ok_responses_.size() <= rpc_peers_.size() / 2)
           continue;
       }
       {
