@@ -33,7 +33,10 @@ MultiPaxos::MultiPaxos(Log* log, json const& config)
       dist_(config["heartbeat_delta"],
             heartbeat_interval_ - static_cast<long>(config["heartbeat_delta"])),
       port_(config["peers"][id_]),
-      thread_pool_(config["threadpool_size"]) {
+      last_heartbeat_(0),
+      thread_pool_(config["threadpool_size"]),
+      heartbeat_num_rpcs_(0),
+      prepare_num_rpcs_(0) {
   int64_t id = 0;
   for (std::string const peer : config["peers"])
     rpc_peers_.emplace_back(id++,
