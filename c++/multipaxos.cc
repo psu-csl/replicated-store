@@ -221,10 +221,11 @@ Status MultiPaxos::Prepare(ServerContext*,
   std::scoped_lock lock(mu_);
   if (request->ballot() >= ballot_) {
     SetBallot(request->ballot());
-    response->set_type(OK);
     for (auto& i : log_->InstancesSinceGlobalLastExecuted())
       *response->add_instances() = std::move(i);
+    response->set_type(OK);
   } else {
+    response->set_ballot(ballot_);
     response->set_type(REJECT);
   }
   return Status::OK;
