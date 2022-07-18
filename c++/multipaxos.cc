@@ -34,6 +34,7 @@ MultiPaxos::MultiPaxos(Log* log, json const& config)
             heartbeat_interval_ - static_cast<long>(config["heartbeat_delta"])),
       port_(config["peers"][id_]),
       last_heartbeat_(0),
+      rpc_server_running_(false),
       thread_pool_(config["threadpool_size"]),
       heartbeat_num_rpcs_(0),
       prepare_num_rpcs_(0) {
@@ -55,6 +56,11 @@ void MultiPaxos::Start() {
   builder.AddListeningPort(port_, grpc::InsecureServerCredentials());
   builder.RegisterService(this);
   rpc_server_ = builder.BuildAndStart();
+  {
+    std::scoped_lock lock(mu_);
+    rpc_server_running_ = true;
+    rpc_server_running_cv_.notify_one();
+  }
   rpc_server_->Wait();
 }
 
@@ -70,7 +76,11 @@ void MultiPaxos::Stop() {
 
   thread_pool_.join();
 
-  CHECK(rpc_server_);
+  {
+    std::unique_lock lock(mu_);
+    while (!rpc_server_running_)
+      rpc_server_running_cv_.wait(lock);
+  }
   DLOG(INFO) << id_ << " stopping rpc server at " << port_;
   rpc_server_->Shutdown();
 }
