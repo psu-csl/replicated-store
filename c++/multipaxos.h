@@ -114,7 +114,7 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
   Log* log_;
   int64_t id_;
   long heartbeat_interval_;
-  std::default_random_engine engine_;
+  std::mt19937 engine_;
   std::uniform_int_distribution<int> dist_;
   std::string port_;
   std::atomic<long> last_heartbeat_;
