@@ -42,17 +42,20 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
 
   int64_t NextBallot() {
     std::scoped_lock lock(mu_);
+    auto old_ballot = ballot_;
     ballot_ += kRoundIncrement;
     ballot_ = (ballot_ & ~kIdBits) | id_;
     ready_ = false;
-    DLOG(INFO) << id_ << " became a leader";
+    DLOG(INFO) << id_ << " became a leader: ballot: " << old_ballot << " -> "
+               << ballot_;
     cv_leader_.notify_one();
     return ballot_;
   }
 
   void SetBallot(int64_t ballot) {
     if ((ballot_ & kIdBits) == id_ && (ballot & kIdBits) != id_) {
-      DLOG(INFO) << id_ << " became a follower";
+      DLOG(INFO) << id_ << " became a follower: ballot: " << ballot_ << " -> "
+                 << ballot;
       cv_follower_.notify_one();
     }
     ballot_ = ballot;
