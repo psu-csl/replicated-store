@@ -115,6 +115,8 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
   std::atomic<long> last_heartbeat_;
   std::vector<rpc_peer_t> rpc_peers_;
   rpc_server_t rpc_server_;
+  bool rpc_server_running_;
+  std::condition_variable rpc_server_running_cv_;
   mutable std::mutex mu_;
   asio::thread_pool thread_pool_;
 
