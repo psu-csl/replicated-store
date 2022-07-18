@@ -97,6 +97,7 @@ void MultiPaxos::HeartbeatThread() {
         std::scoped_lock lock(mu_);
         heartbeat_request_.set_ballot(ballot_);
       }
+      heartbeat_request_.set_sender(id_);
       heartbeat_request_.set_last_executed(log_->LastExecuted());
       heartbeat_request_.set_global_last_executed(global_last_executed);
       for (auto& peer : rpc_peers_) {
@@ -146,6 +147,7 @@ void MultiPaxos::PrepareThread() {
 
       prepare_num_rpcs_ = 0;
       prepare_ok_responses_.clear();
+      prepare_request_.set_sender(id_);
       prepare_request_.set_ballot(NextBallot());
       for (auto& peer : rpc_peers_) {
         asio::post(thread_pool_, [this, &peer] {
