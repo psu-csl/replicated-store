@@ -32,6 +32,17 @@ import multipaxos.PrepareResponse;
 import multipaxos.ResponseType;
 import org.slf4j.LoggerFactory;
 
+class RpcPeer {
+
+  public long id;
+  public ManagedChannel stub;
+
+  public RpcPeer(long id, ManagedChannel stub) {
+    this.id = id;
+    this.stub = stub;
+  }
+}
+
 public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
 
   protected static final long kIdBits = 0xff;
@@ -55,7 +66,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
   private ReentrantLock heartbeatMu;
   private Condition heartbeatCv;
   private Builder heartbeatRequestBuilder;
-  private List<ManagedChannel> rpcPeers;
+  private List<RpcPeer> rpcPeers;
   private ExecutorService threadPool;
   private int heartbeatDelta;
   private boolean ready;
@@ -92,9 +103,10 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     heartbeatRequestBuilder = HeartbeatRequest.newBuilder();
     threadPool = Executors.newFixedThreadPool(config.getThreadPoolSize());
     rpcPeers = new ArrayList<>();
+    long rpcId = 0;
     for (var peer : config.getPeers()) {
       ManagedChannel channel = ManagedChannelBuilder.forTarget(peer).usePlaintext().build();
-      rpcPeers.add(channel);
+      rpcPeers.add(new RpcPeer(rpcId++, channel));
     }
     server = ServerBuilder.forPort(config.getPort()).addService(this).build();
   }
@@ -275,7 +287,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
       logger.info(id + " stopping rpc at " + server.getPort());
       server.shutdown().awaitTermination(30, TimeUnit.SECONDS);
       for (var peer : rpcPeers) {
-        peer.shutdown();
+        peer.stub.shutdown();
       }
     } catch (InterruptedException e) {
       e.printStackTrace();
@@ -301,9 +313,9 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
         for (var peer : rpcPeers) {
           threadPool.submit(() -> {
 
-            var response = MultiPaxosRPCGrpc.newBlockingStub(peer)
+            var response = MultiPaxosRPCGrpc.newBlockingStub(peer.stub)
                 .heartbeat(heartbeatRequestBuilder.build());
-            logger.info(id + " sent heartbeat to " + peer);
+            logger.info(id + " sent heartbeat to " + peer.id);
             heartbeatMu.lock();
             ++heartbeatNumRpcs;
             heartbeatResponses.add((long) response.getLastExecuted());
@@ -337,7 +349,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
   @Override
   public void heartbeat(HeartbeatRequest heartbeatRequest,
       StreamObserver<HeartbeatResponse> responseObserver) {
-    logger.info(id + " received heartbeat rpc");
+    logger.info(id + " received heartbeat rpc from " + heartbeatRequest.getSender());
     mu.lock();
     try {
       if (heartbeatRequest.getBallot() >= ballot) {
@@ -358,7 +370,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
 
   @Override
   public void prepare(PrepareRequest request, StreamObserver<PrepareResponse> responseObserver) {
-    logger.info(id + " received prepare rpc");
+    logger.info(id + " received prepare rpc from " + request.getSender());
     mu.lock();
     PrepareResponse.Builder responseBuilder = PrepareResponse.newBuilder();
     try {
@@ -407,9 +419,9 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
 
         for (var peer : rpcPeers) {
           threadPool.submit(() -> {
-            var response = MultiPaxosRPCGrpc.newBlockingStub(peer)
+            var response = MultiPaxosRPCGrpc.newBlockingStub(peer.stub)
                 .prepare(prepareRequestBuilder.build());
-            logger.info(id + " sent prepare request to " + peer);
+            logger.info(id + " sent prepare request to " + peer.id);
             prepareMu.lock();
             ++prepareNumRpcs;
             if (response.getType() == ResponseType.OK) {
