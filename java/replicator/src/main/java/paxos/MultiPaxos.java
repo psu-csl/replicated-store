@@ -53,7 +53,9 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
   private final Condition cvLeader;
   private final Condition cvFollower;
   private Log log_;
-  private Server server;
+  private Server rpcServer;
+  private boolean rpcServerRunning;
+  private Condition rpcServerRunningCv;
   private long lastHeartbeat;
   private long heartbeatInterval;
   private long id;
@@ -90,15 +92,19 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     heartbeatThread = Executors.newSingleThreadExecutor();
     prepareThread = Executors.newSingleThreadExecutor();
     heartbeatNumRpcs = 0;
+    lastHeartbeat = 0;
     heartbeatResponses = new ArrayList<>();
     heartbeatMu = new ReentrantLock();
     heartbeatCv = heartbeatMu.newCondition();
+    rpcServerRunning = false;
 
     prepareNumRpcs = 0;
     prepareOkResponses = new ArrayList<>();
     prepareMu = new ReentrantLock();
     prepareCv = prepareMu.newCondition();
     prepareRequestBuilder = PrepareRequest.newBuilder();
+
+    rpcServerRunningCv = mu.newCondition();
 
     heartbeatRequestBuilder = HeartbeatRequest.newBuilder();
     threadPool = Executors.newFixedThreadPool(config.getThreadPoolSize());
@@ -108,7 +114,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
       ManagedChannel channel = ManagedChannelBuilder.forTarget(peer).usePlaintext().build();
       rpcPeers.add(new RpcPeer(rpcId++, channel));
     }
-    server = ServerBuilder.forPort(config.getPort()).addService(this).build();
+    rpcServer = ServerBuilder.forPort(config.getPort()).addService(this).build();
   }
 
   public static Command makeProtoCommand(command.Command command) {
@@ -229,32 +235,37 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     // heartbeatThread.submit()
     heartbeatThread.submit(this::heartbeatThread);
     prepareThread.submit(this::prepareThread);
-    assert (server != null);
+    assert (rpcServer != null);
     try {
-      server.start();
+      rpcServer.start();
+      mu.lock();
+      rpcServerRunning = true;
+      rpcServerRunningCv.signal();
     } catch (IOException e) {
       e.printStackTrace();
+    } finally {
+      mu.unlock();
     }
     // System.out.println("Server started listening on port: " + server.getPort());
     // Runtime.getRuntime().addShutdownHook(new Thread(() -> {
     // shutdown();
     // System.out.println("Server is successfully shut down");
     // }));
-    logger.info(id + " starting rpc server at " + server.getPort());
+    logger.info(id + " starting rpc server at " + rpcServer.getPort());
     blockUntilShutDown();
   }
 
   private void blockUntilShutDown() {
-    if (server != null) {
+    if (rpcServer != null) {
       try {
-        server.awaitTermination();
+        rpcServer.awaitTermination();
       } catch (InterruptedException e) {
         e.printStackTrace();
       }
     }
   }
 
-  public void shutdown() {
+  public void stop() {
     assert (running.get());
     running.set(false);
     mu.lock();
@@ -282,10 +293,15 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     } catch (InterruptedException e) {
       e.printStackTrace();
     }
-    assert (server != null);
+    //assert (rpcServer != null);
     try {
-      logger.info(id + " stopping rpc at " + server.getPort());
-      server.shutdown().awaitTermination(30, TimeUnit.SECONDS);
+      mu.lock();
+      while (!rpcServerRunning) {
+        rpcServerRunningCv.await();
+      }
+      mu.unlock();
+      logger.info(id + " stopping rpc at " + rpcServer.getPort());
+      rpcServer.shutdown().awaitTermination(30, TimeUnit.SECONDS);
       for (var peer : rpcPeers) {
         peer.stub.shutdown();
       }
@@ -309,6 +325,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
 
         heartbeatRequestBuilder.setLastExecuted(log_.getLastExecuted());
         heartbeatRequestBuilder.setGlobalLastExecuted(globalLastExecuted);
+        heartbeatRequestBuilder.setSender(id);
 
         for (var peer : rpcPeers) {
           threadPool.submit(() -> {
@@ -416,7 +433,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
         prepareNumRpcs = 0;
         prepareOkResponses.clear();
         prepareRequestBuilder.setBallot(nextBallot());
-
+        prepareRequestBuilder.setSender(id);
         for (var peer : rpcPeers) {
           threadPool.submit(() -> {
             var response = MultiPaxosRPCGrpc.newBlockingStub(peer.stub)

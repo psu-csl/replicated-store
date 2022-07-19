@@ -106,7 +106,7 @@ class MultiPaxosTest {
     assertEquals(1, response.getLastExecuted());
     assertEquals(log0.get(2L).getState(), InstanceState.kCommitted);
     assertNull(log0.get(1L));
-    peer0.shutdown();
+    peer0.stop();
     channel.shutdown();
   }
 
@@ -141,7 +141,7 @@ class MultiPaxosTest {
     assertEquals(log0.get(3L).getState(), InstanceState.kInProgress);
     assertNull(log0.get(1L));
 
-    peer0.shutdown();
+    peer0.stop();
     channel.shutdown();
   }
 
@@ -161,7 +161,7 @@ class MultiPaxosTest {
     blockingStub.heartbeat(request);
 
     assertTrue(peer0.isLeader());
-    peer0.shutdown();
+    peer0.stop();
     channel.shutdown();
   }
 
@@ -180,7 +180,7 @@ class MultiPaxosTest {
 
     assertFalse(peer0.isLeader());
     assertEquals(1, peer0.leader());
-    peer0.shutdown();
+    peer0.stop();
     channel.shutdown();
   }
 
