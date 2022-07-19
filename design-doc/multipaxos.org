@@ -131,6 +131,7 @@
       - ballot_: ballot of the leader sending the heartbeat RPC
       - last_executed_: last_executed_ of the leader sending the heartbeat RPC
       - global_last_executed_: global_last_executed of the leader sending the heartbeat RPC
+      - sender: id of the sender
 
     - heartbeat_rpc_response
       - last_executed_: last_executed_ of the follower responding to the
@@ -138,12 +139,21 @@
 
     - prepare_rpc_request
       - ballot_: ballot of the sender
+      - sender: id of the sender
 
     - prepare_rpc_response
       - type_: enum {ok, reject}
       - ballot_: ballot of the peer (valid only if type_ == reject)
       - instances_: Instances of the peer since global_last_executed_ (valid
         only if type_ == ok)
+
+    - accept_rpc_request
+      - instance: Instance sent by the leader
+      - sender: id of the sender
+
+    - accept_rpc_response
+      - type_: enum {ok, reject}
+      - ballot_: ballot of the peer (valid only if type_ == reject)
 
   - methods
 
@@ -300,9 +310,23 @@
                                     ballot_: N/A,
                                     log_: log_.instances_since_global_last_executed()}
       # reject stale RPC requests
-      return prepare_rpc_response{type_: reject, ballot_: N/A, log_: N/A}
+      return prepare_rpc_response{type_: reject, ballot_: ballot_, log_: N/A}
 
     - prepare_thread()
+
+    - accept_handler(request: accept_rpc_request)
+      # description: handler for the accept RPC
+      # preconditions:
+      # postconditions:
+
+      if request.ballot_ >= ballot_:
+        ballot_ = request.ballot_
+        log_.append(request.instance_)
+        return accept_rpc_response{type_: ok, ballot_: N/A}
+      # stale message
+      return accept_rpc_response{type_: reject, ballot_: ballot_}
+
+
 
 - unit tests
 

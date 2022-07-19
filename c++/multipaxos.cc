@@ -17,6 +17,8 @@ using multipaxos::MultiPaxosRPC;
 using multipaxos::ResponseType::OK;
 using multipaxos::ResponseType::REJECT;
 
+using multipaxos::AcceptRequest;
+using multipaxos::AcceptResponse;
 using multipaxos::HeartbeatRequest;
 using multipaxos::HeartbeatResponse;
 using multipaxos::PrepareRequest;
@@ -224,6 +226,22 @@ Status MultiPaxos::Prepare(ServerContext*,
     SetBallot(request->ballot());
     for (auto& i : log_->InstancesSinceGlobalLastExecuted())
       *response->add_instances() = std::move(i);
+    response->set_type(OK);
+  } else {
+    response->set_ballot(ballot_);
+    response->set_type(REJECT);
+  }
+  return Status::OK;
+}
+
+Status MultiPaxos::Accept(ServerContext*,
+                          const AcceptRequest* request,
+                          AcceptResponse* response) {
+  DLOG(INFO) << id_ << " received accept rpc from " << request->sender();
+  std::scoped_lock lock(mu_);
+  if (request->instance().ballot() >= ballot_) {
+    SetBallot(request->instance().ballot());
+    log_->Append(request->instance());
     response->set_type(OK);
   } else {
     response->set_ballot(ballot_);

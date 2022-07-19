@@ -167,19 +167,6 @@
       # RPCs timed out
       return accept_result_t{type_: retry, leader_: N/A}
 
-    - accept_handler(message: accept_rpc_request)
-      if message.ballot_ >= ballot_:
-        ballot_ = message.ballot_
-        instance = instance_t{ballot_: message.ballot_,
-                              command_: message.command_,
-                              index_: message.index_,
-                              state_: in-progress
-                              client-id_: message.client-id_}
-        log_.append(instance)
-        return accept_rpc_response{type_: ok, ballot_: N/A}
-      # stale message
-      return accept_rpc_response{type: reject, ballot: ballot_}
-
     - prepare() -> prepare_result_t:
       num_responses = 0
       ok_logs = vector<instance_t[]>

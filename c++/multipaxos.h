@@ -108,6 +108,10 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
                        const multipaxos::PrepareRequest*,
                        multipaxos::PrepareResponse*) override;
 
+  grpc::Status Accept(grpc::ServerContext*,
+                      const multipaxos::AcceptRequest*,
+                      multipaxos::AcceptResponse*) override;
+
   std::atomic<bool> running_;
   bool ready_;
   int64_t ballot_;

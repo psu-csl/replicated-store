@@ -55,7 +55,18 @@ message PrepareResponse {
   repeated Instance instances = 3;
 }
 
+message AcceptRequest {
+  Instance instance = 1;
+  int64 sender = 2;
+}
+
+message AcceptResponse {
+  ResponseType type = 1;
+  int64 ballot = 2;
+}
+
 service MultiPaxosRPC {
   rpc Heartbeat (HeartbeatRequest) returns (HeartbeatResponse) {}
   rpc Prepare (PrepareRequest) returns (PrepareResponse) {}
+  rpc Accept (AcceptRequest) returns (AcceptResponse) {}
 }
