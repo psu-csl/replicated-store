@@ -59,7 +59,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
   private ExecutorService threadPool;
   private int heartbeatDelta;
   private boolean ready;
-  private long prepareNumResponses;
+  private long prepareNumRpcs;
   private List<List<Instance>> prepareOkResponses;
   private ReentrantLock prepareMu;
   private Condition prepareCv;
@@ -83,7 +83,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     heartbeatMu = new ReentrantLock();
     heartbeatCv = heartbeatMu.newCondition();
 
-    prepareNumResponses = 0;
+    prepareNumRpcs = 0;
     prepareOkResponses = new ArrayList<>();
     prepareMu = new ReentrantLock();
     prepareCv = prepareMu.newCondition();
@@ -401,7 +401,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
           continue;
         }
 
-        prepareNumResponses = 0;
+        prepareNumRpcs = 0;
         prepareOkResponses.clear();
         prepareRequestBuilder.setBallot(nextBallot());
 
@@ -411,9 +411,16 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
                 .prepare(prepareRequestBuilder.build());
             logger.info(id + " sent prepare request to " + peer);
             prepareMu.lock();
-            ++prepareNumResponses;
-            ArrayList<Instance> tempLog = new ArrayList<>(response.getInstancesList());
-            prepareOkResponses.add(tempLog);
+            ++prepareNumRpcs;
+            if (response.getType() == ResponseType.OK) {
+              ArrayList<Instance> tempLog = new ArrayList<>(response.getInstancesList());
+              prepareOkResponses.add(tempLog);
+            } else {
+              assert (response.getType() == ResponseType.REJECT);
+              mu.lock();
+              setBallot(response.getBallot());
+              mu.unlock();
+            }
             prepareCv.signal();
             prepareMu.unlock();
           });
@@ -421,7 +428,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
 
         prepareMu.lock();
         while (isLeader() && prepareOkResponses.size() <= rpcPeers.size() / 2
-            && prepareNumResponses != rpcPeers.size()) {
+            && prepareNumRpcs != rpcPeers.size()) {
           try {
             prepareCv.await();
           } catch (InterruptedException e) {
