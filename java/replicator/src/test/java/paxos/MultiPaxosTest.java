@@ -184,49 +184,4 @@ class MultiPaxosTest {
     channel.shutdown();
   }
 
-  @Test
-  void heartbeatUpdatesLeaderOnFollowers() throws InterruptedException {
-    ExecutorService executor0 = Executors.newSingleThreadExecutor();
-    ExecutorService executor1 = Executors.newSingleThreadExecutor();
-    ExecutorService executor2 = Executors.newSingleThreadExecutor();
-
-    executor0.submit(() -> peer0.start());
-    executor1.submit(() -> peer1.start());
-    executor2.submit(() -> peer2.start());
-
-    var pause = 2 * config0.getHeartbeatPause();
-
-    assertFalse(peer0.isLeader());
-    assertFalse(peer1.isLeader());
-    assertFalse(peer2.isLeader());
-
-    peer0.nextBallot();
-    Thread.sleep(1000);
-    assertTrue(peer0.isLeader());
-    assertFalse(peer1.isLeader());
-    assertEquals(0, peer1.leader());
-    assertFalse(peer2.isLeader());
-    assertEquals(0, peer2.leader());
-
-    peer1.nextBallot();
-    Thread.sleep(pause);
-    assertTrue(peer1.isLeader());
-    assertFalse(peer0.isLeader());
-    assertEquals(1, peer0.leader());
-    assertFalse(peer2.isLeader());
-    assertEquals(1, peer2.leader());
-
-    peer2.nextBallot();
-    Thread.sleep(pause);
-    assertTrue(peer2.isLeader());
-    assertFalse(peer0.isLeader());
-    assertEquals(2, peer0.leader());
-    assertFalse(peer1.isLeader());
-    assertEquals(2, peer2.leader());
-
-    peer0.shutdown();
-    peer1.shutdown();
-    peer2.shutdown();
-  }
-
 }
