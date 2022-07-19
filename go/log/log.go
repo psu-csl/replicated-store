@@ -2,7 +2,6 @@ package log
 
 import (
 	"github.com/golang/protobuf/proto"
-	"github.com/psu-csl/replicated-store/go/command"
 	pb "github.com/psu-csl/replicated-store/go/consensus/multipaxos/comm"
 	"github.com/psu-csl/replicated-store/go/store"
 	"log"
@@ -132,7 +131,7 @@ func (l *Log) Commit(index int64) {
 	l.mu.Unlock()
 }
 
-func (l *Log) Execute(kv *store.MemKVStore) (int64, command.Result) {
+func (l *Log) Execute(kv *store.MemKVStore) (int64, store.Result) {
 	l.mu.Lock()
 	for !l.IsExecutable() {
 		l.cvExecutable.Wait()

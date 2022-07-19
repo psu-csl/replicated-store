@@ -1,7 +1,6 @@
 package store
 
 import (
-	"github.com/psu-csl/replicated-store/go/command"
 	pb "github.com/psu-csl/replicated-store/go/consensus/multipaxos/comm"
 )
 
@@ -9,6 +8,11 @@ const (
 	KeyNotFound string = "key not found"
 	Empty              = ""
 )
+
+type Result struct {
+	Ok    bool
+	Value string
+}
 
 type MemKVStore struct {
 	store map[string]string
@@ -43,19 +47,19 @@ func (s *MemKVStore) Del(key string) bool {
 	}
 }
 
-func (s *MemKVStore) Execute(cmd *pb.Command) command.Result {
+func (s *MemKVStore) Execute(cmd *pb.Command) Result {
 	if cmd.Type == pb.CommandType_GET {
 		value := s.Get(cmd.Key)
 		if value != nil {
-			return command.Result{Ok: true, Value: *value}
+			return Result{Ok: true, Value: *value}
 		} else {
-			return command.Result{Ok: false, Value: KeyNotFound}
+			return Result{Ok: false, Value: KeyNotFound}
 		}
 	}
 
 	if cmd.Type == pb.CommandType_PUT {
 		s.Put(cmd.Key, cmd.Value)
-		return command.Result{Ok: true, Value: Empty}
+		return Result{Ok: true, Value: Empty}
 	}
 
 	if cmd.Type != pb.CommandType_DEL {
@@ -63,7 +67,7 @@ func (s *MemKVStore) Execute(cmd *pb.Command) command.Result {
 	}
 
 	if s.Del(cmd.Key) {
-		return command.Result{Ok: true, Value: Empty}
+		return Result{Ok: true, Value: Empty}
 	}
-	return command.Result{Ok: false, Value: KeyNotFound}
+	return Result{Ok: false, Value: KeyNotFound}
 }
