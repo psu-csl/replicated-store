@@ -465,7 +465,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
           }
         }
         prepareMu.unlock();
-        if (prepareOkResponses.size() <= rpcPeers.size()) {
+        if (prepareOkResponses.size() <= rpcPeers.size() / 2) {
           continue;
         }
         mu.lock();
