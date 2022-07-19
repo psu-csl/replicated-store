@@ -52,7 +52,8 @@ message PrepareRequest {
 
 message PrepareResponse {
   ResponseType type = 1;
-  repeated Instance instances = 2;
+  int64  ballot = 2;
+  repeated Instance instances = 3;
 }
 
 service MultiPaxosRPC {
