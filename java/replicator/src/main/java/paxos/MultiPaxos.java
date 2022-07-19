@@ -393,11 +393,13 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     try {
       if (request.getBallot() >= ballot) {
         setBallot(request.getBallot());
-        responseBuilder.setType(ResponseType.OK);
+
         for (var i : log_.instancesSinceGlobalLastExecuted()) {
           responseBuilder.addInstances(makeProtoInstance(i));
         }
+        responseBuilder.setType(ResponseType.OK);
       } else {
+        responseBuilder.setBallot(ballot);
         responseBuilder.setType(ResponseType.REJECT);
       }
       var response = responseBuilder.build();
