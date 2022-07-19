@@ -35,10 +35,10 @@ using rpc_server_t = std::unique_ptr<grpc::Server>;
 class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
  public:
   MultiPaxos(Log* log, nlohmann::json const& config);
-  MultiPaxos(MultiPaxos const& log) = delete;
-  MultiPaxos& operator=(MultiPaxos const& log) = delete;
-  MultiPaxos(MultiPaxos&& log) = delete;
-  MultiPaxos& operator=(MultiPaxos&& log) = delete;
+  MultiPaxos(MultiPaxos const& mp) = delete;
+  MultiPaxos& operator=(MultiPaxos const& mp) = delete;
+  MultiPaxos(MultiPaxos&& mp) = delete;
+  MultiPaxos& operator=(MultiPaxos&& mp) = delete;
 
   int64_t NextBallot() {
     std::scoped_lock lock(mu_);
