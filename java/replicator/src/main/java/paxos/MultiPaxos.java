@@ -157,7 +157,9 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
   }
 
   public void setBallot(long ballot) {
-    if ((this.ballot & kIdBits) == id && (ballot & kIdBits) != id) {
+    var oldId = this.ballot & kIdBits;
+    var newId = this.ballot & kIdBits;
+    if ((oldId == id || oldId == kMaxNumPeers) && oldId != newId) {
       logger.info(id + " became a follower: ballot: " + this.ballot + " -> " + ballot);
       cvFollower.signal();
     }
