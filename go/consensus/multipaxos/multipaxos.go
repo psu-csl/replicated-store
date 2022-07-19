@@ -28,6 +28,7 @@ type Multipaxos struct {
 	log                *consensusLog.Log
 	id                 int64
 	heartbeatInterval  int64
+	heartbeatDelta     int64
 	ports              string
 	lastHeartbeat      int64
 	rpcPeers           []pb.MultiPaxosRPCClient
@@ -62,6 +63,7 @@ func NewMultipaxos(config config.Config, log *consensusLog.Log) *Multipaxos {
 		log:                log,
 		id:                 config.Id,
 		heartbeatInterval:  config.HeartbeatInterval,
+		heartbeatDelta:     config.HeartbeatDelta,
 		ports:              config.Peers[config.Id],
 		lastHeartbeat:      0,
 		rpcPeers:           make([]pb.MultiPaxosRPCClient, len(config.Peers)),
@@ -112,9 +114,10 @@ func (p *Multipaxos) PrepareThread() {
 	for p.running == 1 {
 		p.waitUntilFollower()
 		for p.running == 1 && !p.IsLeader() {
-			sleepTime := p.heartbeatInterval + rand.Int63n(p.heartbeatInterval)
+			sleepTime := p.heartbeatInterval + p.heartbeatDelta +
+				rand.Int63n(p.heartbeatInterval-p.heartbeatDelta)
 			time.Sleep(time.Duration(sleepTime))
-			if time.Now().UnixNano() / 1e6 - p.lastHeartbeat <
+			if time.Now().UnixNano()/1e6-p.lastHeartbeat <
 				p.heartbeatInterval {
 				continue
 			}
