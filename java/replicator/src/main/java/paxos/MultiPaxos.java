@@ -50,8 +50,8 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
   private AtomicBoolean running;
   private ExecutorService heartbeatThread;
   private ExecutorService prepareThread;
-  private long heartbeatNumResponses;
-  private List<Long> heartbeatOkResponses;
+  private long heartbeatNumRpcs;
+  private List<Long> heartbeatResponses;
   private ReentrantLock heartbeatMu;
   private Condition heartbeatCv;
   private Builder heartbeatRequestBuilder;
@@ -78,8 +78,8 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     cvFollower = mu.newCondition();
     heartbeatThread = Executors.newSingleThreadExecutor();
     prepareThread = Executors.newSingleThreadExecutor();
-    heartbeatNumResponses = 0;
-    heartbeatOkResponses = new ArrayList<>();
+    heartbeatNumRpcs = 0;
+    heartbeatResponses = new ArrayList<>();
     heartbeatMu = new ReentrantLock();
     heartbeatCv = heartbeatMu.newCondition();
 
@@ -288,8 +288,8 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
       waitUntilLeader();
       var globalLastExecuted = log_.getGlobalLastExecuted();
       while (running.get() && isLeader()) {
-        heartbeatNumResponses = 0;
-        heartbeatOkResponses.clear();
+        heartbeatNumRpcs = 0;
+        heartbeatResponses.clear();
 
         mu.lock();
         heartbeatRequestBuilder.setBallot(ballot);
@@ -305,23 +305,23 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
                 .heartbeat(heartbeatRequestBuilder.build());
             logger.info(id + " sent heartbeat to " + peer);
             heartbeatMu.lock();
-            ++heartbeatNumResponses;
-            heartbeatOkResponses.add((long) response.getLastExecuted());
+            ++heartbeatNumRpcs;
+            heartbeatResponses.add((long) response.getLastExecuted());
 
             heartbeatMu.unlock();
             heartbeatCv.signal();
           });
         }
         heartbeatMu.lock();
-        while (isLeader() && heartbeatNumResponses != rpcPeers.size()) {
+        while (isLeader() && heartbeatNumRpcs != rpcPeers.size()) {
           try {
             heartbeatCv.await();
           } catch (InterruptedException e) {
             e.printStackTrace();
           }
         }
-        if (heartbeatOkResponses.size() == rpcPeers.size()) {
-          globalLastExecuted = heartbeatOkResponses.stream().mapToLong(v -> v).min()
+        if (heartbeatResponses.size() == rpcPeers.size()) {
+          globalLastExecuted = heartbeatResponses.stream().mapToLong(v -> v).min()
               .orElseThrow(NoSuchElementException::new);
         }
         try {
