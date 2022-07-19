@@ -1,8 +1,9 @@
 package log
 
 import (
+	"github.com/golang/protobuf/proto"
 	"github.com/psu-csl/replicated-store/go/command"
-	"github.com/psu-csl/replicated-store/go/instance"
+	pb "github.com/psu-csl/replicated-store/go/consensus/multipaxos/comm"
 	"github.com/psu-csl/replicated-store/go/store"
 	"log"
 	"sync"
@@ -15,7 +16,7 @@ type Log struct {
 	lastIndex          int64
 	lastExecuted       int64
 	globalLastExecuted int64
-	log                map[int64]*instance.Instance
+	log                map[int64]*pb.Instance
 }
 
 func NewLog() *Log {
@@ -24,7 +25,7 @@ func NewLog() *Log {
 		lastIndex:          0,
 		lastExecuted:       0,
 		globalLastExecuted: 0,
-		log:                make(map[int64]*instance.Instance),
+		log:                make(map[int64]*pb.Instance),
 	}
 	l.cvExecutable = sync.NewCond(&l.mu)
 	l.cvCommitable = sync.NewCond(&l.mu)
@@ -55,22 +56,22 @@ func (l *Log) LastExecuted() int64 {
 
 func (l *Log) IsExecutable() bool {
 	inst, ok := l.log[l.lastExecuted+ 1]
-	if ok && inst.State() == instance.Committed {
+	if ok && inst.GetState() == pb.InstanceState_COMMITTED {
 		return true
 	}
 	return false
 }
 
-func (l *Log) Append(inst instance.Instance) {
+func (l *Log) Append(inst *pb.Instance) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	i := inst.Index()
+	i := inst.GetIndex()
 	if i <= l.globalLastExecuted {
 		return
 	}
 
-	if l.Insert(l.log, inst) {
+	if Insert(l.log, inst) {
 		l.cvCommitable.Broadcast()
 		if i > l.lastIndex {
 			l.lastIndex = i
@@ -78,32 +79,31 @@ func (l *Log) Append(inst instance.Instance) {
 	}
 }
 
-func (l *Log) Insert(log1 map[int64]*instance.Instance,
-	inst instance.Instance) bool {
+func Insert(insertLog map[int64]*pb.Instance, inst *pb.Instance) bool {
 	// Case 1
-	i := inst.Index()
-	if _, ok := log1[i]; !ok {
-		log1[i] = &inst
+	i := inst.GetIndex()
+	if _, ok := insertLog[i]; !ok {
+		insertLog[i] = inst
 		return true
 	}
 
 	// Case 2
-	if log1[i].State() == instance.Committed || log1[i].State() == instance.
-		Executed {
-		if log1[i].Command() != inst.Command() {
+	if insertLog[i].GetState() == pb.InstanceState_COMMITTED ||
+		insertLog[i].GetState() == pb.InstanceState_EXECUTED {
+		if insertLog[i].GetCommand() != inst.GetCommand() {
 			log.Panicf("case 3 violation\n")
 		}
 		return false
 	}
 
 	// Case 3
-	if log1[i].Ballot() < inst.Ballot() {
-		l.log[i] = &inst
+	if insertLog[i].GetBallot() < inst.GetBallot() {
+		insertLog[i] = inst
 		return false
 	}
 
-	if log1[i].Ballot() == inst.Ballot() {
-		if log1[i].Command() != inst.Command() {
+	if insertLog[i].GetBallot() == inst.GetBallot() {
+		if insertLog[i].GetCommand() != inst.GetCommand() {
 			log.Panicf("case 4 violation\n")
 		}
 	}
@@ -123,8 +123,8 @@ func (l *Log) Commit(index int64) {
 		_, ok = l.log[index]
 	}
 
-	if l.log[index].State() == instance.InProgress {
-		l.log[index].SetCommitted()
+	if l.log[index].GetState() == pb.InstanceState_INPROGRESS {
+		l.log[index].State = pb.InstanceState_COMMITTED
 	}
 	if l.IsExecutable() {
 		l.cvExecutable.Signal()
@@ -141,15 +141,15 @@ func (l *Log) Execute(kv *store.MemKVStore) (int64, command.Result) {
 	if !ok {
 		log.Panicf("Instance at Index %v empty\n", l.lastExecuted+ 1)
 	}
-	result := kv.Execute(inst.Command())
-	l.log[l.lastExecuted+ 1].SetExecuted()
+	result := kv.Execute(inst.GetCommand())
+	l.log[l.lastExecuted+ 1].State = pb.InstanceState_EXECUTED
 	l.lastExecuted += 1
 	l.mu.Unlock()
 	return 0, result
 }
 
 func (l *Log) CommitUntil(leaderLastExecuted int64, ballot int64) {
-	if leaderLastExecuted <=0 {
+	if leaderLastExecuted <0 {
 		log.Panic("invalid leader_last_executed in commit_until")
 	}
 	if ballot < 0 {
@@ -164,11 +164,11 @@ func (l *Log) CommitUntil(leaderLastExecuted int64, ballot int64) {
 		if !ok {
 			break
 		}
-		if ballot < inst.Ballot() {
+		if ballot < inst.GetBallot() {
 			log.Panic("CommitUntil case 2 - a smaller ballot")
 		}
-		if inst.Ballot() == ballot {
-			inst.SetCommitted()
+		if inst.GetBallot() == ballot {
+			inst.State = pb.InstanceState_COMMITTED
 		}
 	}
 	if l.IsExecutable() {
@@ -182,26 +182,27 @@ func (l *Log) TrimUntil(minTailLeader int64) {
 
 	for l.globalLastExecuted < minTailLeader {
 		l.globalLastExecuted += 1
-		if l.log[l.globalLastExecuted].State() != instance.Executed {
+		if l.log[l.globalLastExecuted].GetState() != pb.InstanceState_EXECUTED {
 			log.Panicf("Not Executed at Index %d\n", l.globalLastExecuted)
 		}
 		delete(l.log, l.globalLastExecuted)
 	}
 }
 
-func (l *Log) InstancesForPrepare() []instance.Instance {
+func (l *Log) InstancesForPrepare() []*pb.Instance {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	instances := make([]instance.Instance, 0, len(l.log))
+	instances := make([]*pb.Instance, 0, len(l.log))
 	for index := l.globalLastExecuted + 1; index <= l.lastIndex; index++ {
-		instances = append(instances, *l.log[index])
+		instance := proto.Clone(l.log[index]).(*pb.Instance)
+		instances = append(instances, instance)
 	}
 	return instances
 }
 
 // Helper functions for testing
-func (l *Log) Find(index int64) *instance.Instance {
+func (l *Log) Find(index int64) *pb.Instance {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if inst, ok := l.log[index]; ok {

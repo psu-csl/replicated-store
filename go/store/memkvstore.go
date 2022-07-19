@@ -1,6 +1,9 @@
 package store
 
-import "github.com/psu-csl/replicated-store/go/command"
+import (
+	"github.com/psu-csl/replicated-store/go/command"
+	pb "github.com/psu-csl/replicated-store/go/consensus/multipaxos/comm"
+)
 
 const (
 	KeyNotFound string = "key not found"
@@ -40,8 +43,8 @@ func (s *MemKVStore) Del(key string) bool {
 	}
 }
 
-func (s *MemKVStore) Execute(cmd command.Command) command.Result {
-	if cmd.Type == command.Get {
+func (s *MemKVStore) Execute(cmd *pb.Command) command.Result {
+	if cmd.Type == pb.CommandType_GET {
 		value := s.Get(cmd.Key)
 		if value != nil {
 			return command.Result{Ok: true, Value: *value}
@@ -50,12 +53,12 @@ func (s *MemKVStore) Execute(cmd command.Command) command.Result {
 		}
 	}
 
-	if cmd.Type == command.Put {
+	if cmd.Type == pb.CommandType_PUT {
 		s.Put(cmd.Key, cmd.Value)
 		return command.Result{Ok: true, Value: Empty}
 	}
 
-	if cmd.Type != command.Del {
+	if cmd.Type != pb.CommandType_DEL {
 		panic("Command type not Del")
 	}
 
