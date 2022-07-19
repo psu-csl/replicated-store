@@ -2,6 +2,7 @@ package multipaxos
 
 import (
 	"context"
+	"github.com/golang/protobuf/proto"
 	"github.com/psu-csl/replicated-store/go/command"
 	"github.com/psu-csl/replicated-store/go/config"
 	pb "github.com/psu-csl/replicated-store/go/consensus/multipaxos/comm"
@@ -9,6 +10,7 @@ import (
 	consensusLog "github.com/psu-csl/replicated-store/go/log"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"math/rand"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -131,6 +133,81 @@ func (p *Multipaxos) AcceptHandler(ctx context.Context,
 		Ballot: p.ballot}, nil
 }
 
+func (p *Multipaxos) PrepareThread() {
+	for p.running == 1 {
+		p.waitUntilFollower()
+		for p.running == 1 && !p.IsLeader() {
+			sleepTime := p.heartbeatInterval + rand.Int63n(p.heartbeatInterval)
+			time.Sleep(time.Duration(sleepTime))
+			if time.Now().UnixNano() / 1e6 - p.lastHeartbeat <
+				p.heartbeatInterval {
+				continue
+			}
+
+			p.prepareRequest.Ballot = p.NextBallot()
+			for i, peer := range p.rpcPeers {
+				go func(i int, peer pb.MultiPaxosRPCClient) {
+					ctx, cancel := context.WithTimeout(context.Background(),
+						RPCTimeout * time.Millisecond)
+					defer cancel()
+
+					response, err := peer.Prepare(ctx, &p.prepareRequest)
+					p.prepareMutex.Lock()
+					defer p.prepareMutex.Unlock()
+					defer p.prepareCV.Signal()
+
+					p.prepareNumRpcs += 1
+					if err != nil {
+						return
+					}
+					if response.Type == pb.ResponseType_OK {
+						//TODO
+						recvInstances := response.GetLogs()
+						copyInstances := make([]*pb.Instance, len(recvInstances))
+						for i := 0; i < len(recvInstances); i++ {
+							//TODO
+							copyInstances = append(copyInstances,
+								proto.Clone(recvInstances[i]).(*pb.Instance))
+						}
+						p.prepareOkResponses = append(p.prepareOkResponses, copyInstances)
+					} else {
+						p.mu.Lock()
+						if response.GetBallot() > p.ballot {
+							p.setBallot(response.GetBallot())
+						}
+						p.mu.Unlock()
+					}
+				}(i, peer)
+			}
+
+			p.prepareMutex.Lock()
+			for p.IsLeader() && len(p.prepareOkResponses) <= len(p.
+				rpcPeers) / 2 && p.prepareNumRpcs != len(p.rpcPeers) {
+				p.prepareCV.Wait()
+			}
+
+			p.prepareNumRpcs = 0
+			if len(p.prepareOkResponses) <= len(p.rpcPeers) / 2 ||
+				//TODO
+				p.IsSomeoneElseLeader() {
+				p.prepareOkResponses = make([][]*pb.Instance, len(p.rpcPeers))
+				p.prepareMutex.Unlock()
+				continue
+			}
+
+			p.mu.Lock()
+			replayLog := p.merge(p.prepareOkResponses)
+			if p.replay(replayLog) {
+				p.ready = true
+			}
+			p.mu.Unlock()
+			p.prepareOkResponses = make([][]*pb.Instance, len(p.rpcPeers))
+			p.prepareMutex.Unlock()
+			break
+		}
+	}
+}
+
 func (p *Multipaxos) HeartbeatThread() {
 	for p.running == 1 {
 		p.waitUntilLeader()
@@ -182,6 +259,31 @@ func (p *Multipaxos) HeartbeatThread() {
 			time.Sleep(time.Duration(p.heartbeatInterval))
 		}
 	}
+}
+
+func (p *Multipaxos) Prepare(ctx context.Context,
+	msg *pb.PrepareRequest) (*pb.PrepareResponse, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if msg.GetBallot() >= p.ballot {
+		p.setBallot(msg.GetBallot())
+		logSlice := p.log.InstancesForPrepare()
+		grpcLogs := make([]*pb.Instance, len(logSlice))
+		for index, i := range logSlice {
+			grpcLogs[index] = i
+		}
+		return &pb.PrepareResponse{
+			Type:   pb.ResponseType_OK,
+			Ballot: -1,
+			Logs:  grpcLogs,
+		}, nil
+	}
+	return &pb.PrepareResponse{
+		Type:   pb.ResponseType_REJECT,
+		Ballot: p.ballot,
+		Logs:   nil,
+	}, nil
 }
 
 func (p *Multipaxos) Heartbeat(ctx context.Context,
@@ -255,6 +357,37 @@ func (p *Multipaxos) waitUntilFollower() {
 	for p.running == 1 && p.IsLeaderLockless() {
 		p.cvFollower.Wait()
 	}
+}
+
+func (p *Multipaxos) merge(logs [][]*pb.Instance) map[int64]*pb.Instance {
+	replayLog := make(map[int64]*pb.Instance)
+	for _, slice := range logs {
+		for _, instance := range slice {
+			consensusLog.Insert(replayLog, instance)
+		}
+	}
+	return replayLog
+}
+
+func (p *Multipaxos) replay(replayLog map[int64]*pb.Instance) bool {
+	for index, instance := range replayLog {
+		p.mu.Lock()
+		request := &pb.AcceptRequest{
+			Ballot:   p.ballot,
+			Command: instance.GetCommand(),
+			Index:    index,
+			ClientId: instance.GetClientId(),
+		}
+		p.mu.Unlock()
+
+		result := p.Accept(request)
+		if result.Type == Reject {
+			break
+		} else if result.Type == Retry {
+			continue
+		}
+	}
+	return true
 }
 
 func (p *Multipaxos) StartServer() {
