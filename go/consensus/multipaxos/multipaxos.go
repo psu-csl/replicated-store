@@ -310,7 +310,7 @@ func (p *Multipaxos) Prepare(ctx context.Context,
 
 	if msg.GetBallot() >= p.ballot {
 		p.setBallot(msg.GetBallot())
-		logSlice := p.log.InstancesForPrepare()
+		logSlice := p.log.InstancesSinceGlobalLastExecuted()
 		grpcLogs := make([]*pb.Instance, len(logSlice))
 		for index, i := range logSlice {
 			grpcLogs[index] = i

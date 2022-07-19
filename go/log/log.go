@@ -89,8 +89,8 @@ func Insert(insertLog map[int64]*pb.Instance, inst *pb.Instance) bool {
 	// Case 2
 	if insertLog[i].GetState() == pb.InstanceState_COMMITTED ||
 		insertLog[i].GetState() == pb.InstanceState_EXECUTED {
-		if insertLog[i].GetCommand() != inst.GetCommand() {
-			log.Panicf("case 3 violation\n")
+		if !IsEqualCommand(insertLog[i].GetCommand(), inst.GetCommand()) {
+			log.Panicf("case 2 violation\n")
 		}
 		return false
 	}
@@ -102,8 +102,8 @@ func Insert(insertLog map[int64]*pb.Instance, inst *pb.Instance) bool {
 	}
 
 	if insertLog[i].GetBallot() == inst.GetBallot() {
-		if insertLog[i].GetCommand() != inst.GetCommand() {
-			log.Panicf("case 4 violation\n")
+		if !IsEqualCommand(insertLog[i].GetCommand(), inst.GetCommand()) {
+			log.Panicf("case 3 violation\n")
 		}
 	}
 	return false
@@ -188,7 +188,7 @@ func (l *Log) TrimUntil(minTailLeader int64) {
 	}
 }
 
-func (l *Log) InstancesForPrepare() []*pb.Instance {
+func (l *Log) InstancesSinceGlobalLastExecuted() []*pb.Instance {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -208,4 +208,27 @@ func (l *Log) Find(index int64) *pb.Instance {
 		return inst
 	}
 	return nil
+}
+
+func IsEqualCommand(cmd1, cmd2 *pb.Command) bool {
+	return cmd1.GetType() == cmd2.GetType() && cmd1.GetKey() == cmd2.GetKey() &&
+		cmd1.GetValue() == cmd2.GetValue()
+}
+
+func IsEqualInstance(a, b *pb.Instance) bool {
+	return a.GetBallot() == b.GetBallot() && a.GetIndex() == b.GetIndex() &&
+		a.GetClientId() == b.GetClientId() && a.GetState() == b.GetState() &&
+		IsEqualCommand(a.GetCommand(), b.GetCommand())
+}
+
+func IsCommitted(instance *pb.Instance) bool {
+	return instance.GetState() == pb.InstanceState_COMMITTED
+}
+
+func IsExecuted(instance *pb.Instance) bool {
+	return instance.GetState() == pb.InstanceState_EXECUTED
+}
+
+func IsInProgress(instance *pb.Instance) bool {
+	return instance.GetState() == pb.InstanceState_INPROGRESS
 }
