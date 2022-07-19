@@ -83,6 +83,32 @@ func NewMultipaxos(config config.Config, log *consensusLog.Log) *Multipaxos {
 	return &paxos
 }
 
+func (p *Multipaxos) Start() {
+	if p.running == 1 {
+		panic("running is true before Start()")
+	}
+	p.StartThreads()
+	p.StartServer()
+	p.Connect()
+}
+
+func (p *Multipaxos) Stop() {
+	//if p.running == 0 {
+	//	panic("not running before Stop")
+	//}
+	atomic.StoreInt32(&p.running, 0)
+
+	p.cvLeader.Signal()
+	p.cvFollower.Signal()
+
+	p.mu.Lock()
+	for !p.rpcServerRunning {
+		p.rpcServerRunningCv.Wait()
+	}
+	p.mu.Unlock()
+	p.server.GracefulStop()
+}
+
 func (p *Multipaxos) AcceptHandler(ctx context.Context, 
 	msg *pb.AcceptRequest) (*pb.AcceptResponse, error) {
 	p.mu.Lock()
@@ -105,14 +131,67 @@ func (p *Multipaxos) AcceptHandler(ctx context.Context,
 		Ballot: p.ballot}, nil
 }
 
-func (p *Multipaxos) HeartbeatHandler(ctx context.Context,
+func (p *Multipaxos) HeartbeatThread() {
+	for p.running == 1 {
+		p.waitUntilLeader()
+
+		globalLastExecuted := p.log.GlobalLastExecuted()
+		for p.running == 1 && p.IsLeader() {
+			p.mu.Lock()
+			p.heartbeatRequest.Ballot = p.ballot
+			p.mu.Unlock()
+			p.heartbeatRequest.LastExecuted = p.log.LastExecuted()
+			p.heartbeatRequest.GlobalLastExecuted = globalLastExecuted
+
+			for i, peer := range p.rpcPeers {
+				go func(i int, peer pb.MultiPaxosRPCClient) {
+					ctx, cancel := context.WithTimeout(context.Background(),
+						RPCTimeout * time.Millisecond)
+					defer cancel()
+
+					response, err := peer.Heartbeat(ctx, &p.heartbeatRequest)
+					p.heartbeatMutex.Lock()
+					defer p.heartbeatMutex.Unlock()
+					defer p.heartbeatCv.Signal()
+
+					p.heartbeatNumRpcs += 1
+					if err != nil {
+						return
+					}
+					p.heartbeatResponses = append(p.heartbeatResponses, response)
+				}(i, peer)
+			}
+
+			p.heartbeatMutex.Lock()
+			for p.IsLeader() && p.heartbeatNumRpcs != len(p.rpcPeers) {
+				p.heartbeatCv.Wait()
+			}
+			if len(p.heartbeatResponses) == len(p.rpcPeers) {
+				min := p.heartbeatResponses[0].GetLastExecuted()
+				for i := 1; i < len(p.heartbeatResponses); i++ {
+					if p.heartbeatResponses[i].GetLastExecuted() < min {
+						min = p.heartbeatResponses[i].GetLastExecuted()
+					}
+				}
+				globalLastExecuted = min
+			}
+			// Clear info from previous round
+			p.heartbeatNumRpcs = 0
+			p.heartbeatResponses = make([]*pb.HeartbeatResponse, len(p.rpcPeers))
+			p.heartbeatMutex.Unlock()
+			time.Sleep(time.Duration(p.heartbeatInterval))
+		}
+	}
+}
+
+func (p *Multipaxos) Heartbeat(ctx context.Context,
 	msg *pb.HeartbeatRequest) (*pb.HeartbeatResponse, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
 	if msg.GetBallot() >= p.ballot {
-		p.lastHeartbeat = time.Now()
-		p.ballot = msg.Ballot
+		atomic.StoreInt64(&p.lastHeartbeat, time.Now().UnixNano() / 1e6)
+		p.setBallot(msg.GetBallot())
 		p.log.CommitUntil(msg.GetLastExecuted(), msg.GetBallot())
 		p.log.TrimUntil(msg.GetGlobalLastExecuted())
 	}
@@ -178,15 +257,6 @@ func (p *Multipaxos) waitUntilFollower() {
 	}
 }
 
-func (p *Multipaxos) Start() {
-	if p.running == 1 {
-		panic("running is true before Start()")
-	}
-	p.StartThreads()
-	p.StartServer()
-	p.Connect()
-}
-
 func (p *Multipaxos) StartServer() {
 	atomic.StoreInt32(&p.running, 1)
 	listener, err := net.Listen("tcp", p.ports)
@@ -207,23 +277,6 @@ func (p *Multipaxos) StartServer() {
 func (p *Multipaxos) StartThreads() {
 	go p.PrepareThread()
 	go p.HeartbeatThread()
-}
-
-func (p *Multipaxos) Stop() {
-	//if p.running == 0 {
-	//	panic("not running before Stop")
-	//}
-	atomic.StoreInt32(&p.running, 0)
-
-	p.cvLeader.Signal()
-	p.cvFollower.Signal()
-
-	p.mu.Lock()
-	for !p.rpcServerRunning {
-		p.rpcServerRunningCv.Wait()
-	}
-	p.mu.Unlock()
-	p.server.GracefulStop()
 }
 
 func (p *Multipaxos) Connect() {
