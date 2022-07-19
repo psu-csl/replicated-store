@@ -452,7 +452,9 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
             } else {
               assert (response.getType() == ResponseType.REJECT);
               mu.lock();
-              setBallot(response.getBallot());
+              if (response.getBallot() >= ballot) {
+                setBallot(response.getBallot());
+              }
               mu.unlock();
             }
             prepareCv.signal();
