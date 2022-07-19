@@ -144,10 +144,11 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
   public long nextBallot() {
     mu.lock();
     try {
+      var oldBallot = ballot;
       ballot += kRoundIncrement;
       ballot = (ballot & ~kIdBits) | id;
       ready = false;
-      logger.info(id + " became a leader");
+      logger.info(id + " became a leader: ballot: " + oldBallot + " -> " + ballot);
       cvLeader.signal();
       return ballot;
     } finally {
@@ -157,7 +158,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
 
   public void setBallot(long ballot) {
     if ((this.ballot & kIdBits) == id && (ballot & kIdBits) != id) {
-      logger.info(id + " became a follower");
+      logger.info(id + " became a follower: ballot: " + this.ballot + " -> " + ballot);
       cvFollower.signal();
     }
     this.ballot = ballot;
