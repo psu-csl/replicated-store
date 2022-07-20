@@ -9,6 +9,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"testing"
+	"time"
 )
 
 const N = 3
@@ -135,13 +136,13 @@ func TestNextBallotAfterHeartbeat(t *testing.T) {
 	peer0.Stop()
 }
 
-//func TestOneLeaderElected(t *testing.T) {
-//	setup()
-//	defer tearDown()
-//
-//	time.Sleep(1 * time.Second)
-//
-//}
+func TestOneLeaderElected(t *testing.T) {
+	setup()
+	defer tearDown()
+
+	time.Sleep(1000 * time.Millisecond)
+	assert.True(t, oneLeader())
+}
 
 func createStub() pb.MultiPaxosRPCClient {
 	conn, err := grpc.Dial(":3000", grpc.WithTransportCredentials(insecure.
@@ -151,4 +152,20 @@ func createStub() pb.MultiPaxosRPCClient {
 	}
 	stub := pb.NewMultiPaxosRPCClient(conn)
 	return stub
+}
+
+func oneLeader() bool {
+	if peer0.IsLeader() {
+		return !peer1.IsLeader() && !peer2.IsLeader() && peer1.Leader() == 0 &&
+			peer2.Leader() == 0
+	}
+	if peer1.IsLeader() {
+		return !peer0.IsLeader() && !peer2.IsLeader() && peer0.Leader() == 1 &&
+			peer2.Leader() == 1
+	}
+	if peer2.IsLeader() {
+		return !peer0.IsLeader() && !peer1.IsLeader() && peer0.Leader() == 2 &&
+			peer1.Leader() == 2
+	}
+	return false
 }

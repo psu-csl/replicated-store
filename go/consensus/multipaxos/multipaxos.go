@@ -7,6 +7,7 @@ import (
 	consensusLog "github.com/psu-csl/replicated-store/go/log"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"log"
 	"math/rand"
 	"net"
 	"sync"
@@ -88,9 +89,9 @@ func (p *Multipaxos) Start() {
 	if p.running == 1 {
 		panic("running is true before Start()")
 	}
-	p.StartThreads()
 	p.StartServer()
 	p.Connect()
+	p.StartThreads()
 }
 
 func (p *Multipaxos) Stop() {
@@ -123,6 +124,7 @@ func (p *Multipaxos) PrepareThread() {
 			}
 
 			p.prepareRequest.Ballot = p.NextBallot()
+			log.Printf("%v becomes the leader\n", p.id)
 			for i, peer := range p.rpcPeers {
 				go func(i int, peer pb.MultiPaxosRPCClient) {
 					ctx, cancel := context.WithTimeout(context.Background(),
