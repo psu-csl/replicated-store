@@ -49,8 +49,8 @@ func makeInstanceByAll(ballot int64, index int64, state pb.InstanceState,
 
 func TestConstructor(t *testing.T) {
 	setup()
-	assert.Equal(t, int64(0), log1.LastExecuted())
-	assert.Equal(t, int64(0), log1.GlobalLastExecuted())
+	assert.EqualValues(t, 0, log1.LastExecuted())
+	assert.EqualValues(t, 0, log1.GlobalLastExecuted())
 	assert.False(t, log1.IsExecutable())
 	assert.Nil(t, log1.log[0])
 	assert.Nil(t, log1.log[3])
