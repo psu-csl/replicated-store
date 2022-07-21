@@ -119,12 +119,12 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
   void PrepareThread();
 
   std::optional<int64_t> SendHeartbeats(int64_t global_last_executed);
-  std::optional<std::vector<log_vector_t>> SendPrepares();
+  std::optional<log_map_t> SendPrepares();
   bool SendAccepts(multipaxos::Command command,
                    int64_t index,
                    client_id_t client_id);
 
-  void Replay(std::vector<log_vector_t> const& logs);
+  void Replay(log_map_t const& logs);
 
  private:
   grpc::Status Heartbeat(grpc::ServerContext*,
@@ -172,7 +172,8 @@ struct heartbeat_state_t {
 
 struct prepare_state_t {
   size_t num_rpcs_ = 0;
-  std::vector<log_vector_t> responses_;
+  size_t responses_ = 0;
+  log_map_t log_;
   std::mutex mu_;
   std::condition_variable cv_;
 };

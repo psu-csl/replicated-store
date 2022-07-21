@@ -130,7 +130,7 @@ std::optional<int64_t> MultiPaxos::SendHeartbeats(
   return {};
 }
 
-std::optional<std::vector<log_vector_t>> MultiPaxos::SendPrepares() {
+std::optional<log_map_t> MultiPaxos::SendPrepares() {
   auto state = std::make_shared<prepare_state_t>();
 
   PrepareRequest request;
@@ -149,10 +149,9 @@ std::optional<std::vector<log_vector_t>> MultiPaxos::SendPrepares() {
         ++state->num_rpcs_;
         if (status.ok()) {
           if (response.type() == OK) {
-            log_vector_t log;
+            ++state->responses_;
             for (int i = 0; i < response.instances_size(); ++i)
-              log.push_back(std::move(response.instances(i)));
-            state->responses_.push_back(std::move(log));
+              Insert(&state->log_, std::move(response.instances(i)));
           } else {
             std::scoped_lock lock(mu_);
             if (response.ballot() >= ballot_)
@@ -165,11 +164,11 @@ std::optional<std::vector<log_vector_t>> MultiPaxos::SendPrepares() {
   }
   {
     std::unique_lock lock(state->mu_);
-    while (IsLeader() && state->responses_.size() <= rpc_peers_.size() / 2 &&
+    while (IsLeader() && state->responses_ <= rpc_peers_.size() / 2 &&
            state->num_rpcs_ != rpc_peers_.size())
       state->cv_.wait(lock);
-    if (state->responses_.size() > rpc_peers_.size() / 2)
-      return std::move(state->responses_);
+    if (state->responses_ > rpc_peers_.size() / 2)
+      return std::move(state->log_);
   }
   return {};
 }
@@ -227,13 +226,8 @@ bool MultiPaxos::SendAccepts(Command command,
   return false;
 }
 
-void MultiPaxos::Replay(std::vector<log_vector_t> const& logs) {
-  log_map_t merged_log;
-  for (auto const& log : logs)
-    for (auto const& instance : log)
-      Insert(&merged_log, instance);
-
-  for (auto const& [_, instance] : merged_log) {
+void MultiPaxos::Replay(log_map_t const& log) {
+  for (auto const& [_, instance] : log) {
     if (!SendAccepts(instance.command(), instance.index(),
                      instance.client_id()))
       break;
