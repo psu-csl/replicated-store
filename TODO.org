@@ -14,6 +14,11 @@
     - and make sure to insert PAUSEs below, per recommendation of Thiago on C++
       slack: https://herbsutter.com/2012/08/31/reader-qa-how-to-write-a-cas-loop-using-stdatomics/
 
+
+*** consider merging xxx_state_t variables into one
+    - using std::variant and using the same function for quorum detection in the
+      while loop at the end of SendXXX functions.
+
 ** All
 
 *** handle timeouts in RPCs
