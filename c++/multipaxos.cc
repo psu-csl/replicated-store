@@ -37,8 +37,7 @@ MultiPaxos::MultiPaxos(Log* log, json const& config)
       port_(config["peers"][id_]),
       last_heartbeat_(0),
       rpc_server_running_(false),
-      thread_pool_(config["threadpool_size"]),
-      prepare_num_rpcs_(0) {
+      thread_pool_(config["threadpool_size"]) {
   int64_t id = 0;
   for (std::string const peer : config["peers"])
     rpc_peers_.emplace_back(id++,
@@ -124,6 +123,48 @@ std::optional<int64_t> MultiPaxos::SendHeartbeats(
   return {};
 }
 
+std::optional<std::vector<log_vector_t>> MultiPaxos::SendPrepares() {
+  auto state = std::make_shared<prepare_state_t>();
+  PrepareRequest request;
+  request.set_sender(id_);
+  request.set_ballot(NextBallot());
+  for (auto& peer : rpc_peers_) {
+    asio::post(thread_pool_, [this, state, &peer, request] {
+      ClientContext context;
+      PrepareResponse response;
+      Status status =
+          peer.stub_->Prepare(&context, std::move(request), &response);
+      DLOG(INFO) << id_ << " sent prepare request to " << peer.id_;
+      {
+        std::scoped_lock lock(state->mu_);
+        ++state->num_rpcs_;
+        if (status.ok()) {
+          if (response.type() == OK) {
+            log_vector_t log;
+            for (int i = 0; i < response.instances_size(); ++i)
+              log.push_back(std::move(response.instances(i)));
+            state->responses_.push_back(std::move(log));
+          } else {
+            std::scoped_lock lock(mu_);
+            if (response.ballot() >= ballot_)
+              SetBallot(response.ballot());
+          }
+        }
+      }
+      state->cv_.notify_one();
+    });
+  }
+  {
+    std::unique_lock lock(state->mu_);
+    while (IsLeader() && state->responses_.size() <= rpc_peers_.size() / 2 &&
+           state->num_rpcs_ != rpc_peers_.size())
+      state->cv_.wait(lock);
+    if (state->responses_.size() > rpc_peers_.size() / 2)
+      return std::move(state->responses_);
+  }
+  return {};
+}
+
 void MultiPaxos::HeartbeatThread() {
   DLOG(INFO) << id_ << " starting heartbeat thread";
   while (running_) {
@@ -153,47 +194,9 @@ void MultiPaxos::PrepareThread() {
       if (now - last_heartbeat_ < heartbeat_interval_)
         continue;
 
-      prepare_num_rpcs_ = 0;
-      prepare_ok_responses_.clear();
-      prepare_request_.set_sender(id_);
-      prepare_request_.set_ballot(NextBallot());
-      for (auto& peer : rpc_peers_) {
-        asio::post(thread_pool_, [this, &peer] {
-          ClientContext context;
-          PrepareResponse response;
-          Status status =
-              peer.stub_->Prepare(&context, prepare_request_, &response);
-          DLOG(INFO) << id_ << " sent prepare request to " << peer.id_;
-          {
-            std::scoped_lock lock(prepare_mu_);
-            ++prepare_num_rpcs_;
-            if (status.ok()) {
-              if (response.type() == OK) {
-                log_vector_t log;
-                for (int i = 0; i < response.instances_size(); ++i)
-                  log.push_back(std::move(response.instances(i)));
-                prepare_ok_responses_.push_back(std::move(log));
-              } else {
-                CHECK(response.type() == REJECT);
-                std::scoped_lock lock(mu_);
-                if (response.ballot() >= ballot_)
-                  SetBallot(response.ballot());
-              }
-            }
-          }
-          prepare_cv_.notify_one();
-        });
-      }
-      {
-        std::unique_lock lock(prepare_mu_);
-        while (IsLeader() &&
-               prepare_ok_responses_.size() <= rpc_peers_.size() / 2 &&
-               prepare_num_rpcs_ != rpc_peers_.size()) {
-          prepare_cv_.wait(lock);
-        }
-        if (prepare_ok_responses_.size() <= rpc_peers_.size() / 2)
-          continue;
-      }
+      auto r = SendPrepares();
+      if (!r)
+        continue;
       {
         std::scoped_lock lock(mu_);
         if (IsLeaderLockless()) {
