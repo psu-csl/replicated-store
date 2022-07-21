@@ -1,5 +1,12 @@
 package paxos;
 
+import static command.Command.CommandType.kDel;
+import static command.Command.CommandType.kGet;
+import static command.Command.CommandType.kPut;
+import static multipaxos.CommandType.DEL;
+import static multipaxos.CommandType.GET;
+import static multipaxos.CommandType.PUT;
+
 import ch.qos.logback.classic.Logger;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
@@ -19,6 +26,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 import log.Log;
+import multipaxos.AcceptRequest;
+import multipaxos.AcceptResponse;
 import multipaxos.Command;
 import multipaxos.CommandType;
 import multipaxos.HeartbeatRequest;
@@ -120,9 +129,9 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
   public static Command makeProtoCommand(command.Command command) {
     CommandType commandType = null;
     switch (command.getCommandType()) {
-      case kDel -> commandType = CommandType.DEL;
-      case kGet -> commandType = CommandType.GET;
-      case kPut -> commandType = CommandType.PUT;
+      case kDel -> commandType = DEL;
+      case kGet -> commandType = GET;
+      case kPut -> commandType = PUT;
     }
     return Command.newBuilder().setType(commandType).setKey(command.getKey())
         .setValue(command.getValue()).build();
@@ -139,6 +148,31 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     return Instance.newBuilder().setBallot(inst.getBallot()).setIndex(inst.getIndex())
         .setClientId(inst.getClientId()).setState(state)
         .setCommand(makeProtoCommand(inst.getCommand())).build();
+  }
+
+  public static command.Command makeCommand(Command cmd) {
+    command.Command command = new command.Command();
+    command.Command.CommandType commandType = null;
+    switch (cmd.getType()) {
+      case DEL -> commandType = kDel;
+      case GET -> commandType = kGet;
+      case PUT -> commandType = kPut;
+      case UNRECOGNIZED -> {
+      }
+    }
+    command.setCommandType(commandType);
+    command.setKey(cmd.getKey());
+    command.setValue(cmd.getValue());
+    return command;
+  }
+
+  public static log.Instance makeInstance(Instance inst) {
+    log.Instance instance = new log.Instance();
+    instance.setBallot(inst.getBallot());
+    instance.setIndex(inst.getIndex());
+    instance.setClientId(inst.getClientId());
+    instance.setCommand(makeCommand(inst.getCommand()));
+    return instance;
   }
 
   public long nextBallot() {
@@ -400,10 +434,9 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
         for (var i : log_.instancesSinceGlobalLastExecuted()) {
           responseBuilder.addInstances(makeProtoInstance(i));
         }
-        responseBuilder.setType(ResponseType.OK);
+        responseBuilder = responseBuilder.setType(ResponseType.OK);
       } else {
-        responseBuilder.setBallot(ballot);
-        responseBuilder.setType(ResponseType.REJECT);
+        responseBuilder = responseBuilder.setBallot(ballot).setType(ResponseType.REJECT);
       }
       var response = responseBuilder.build();
       logger.info("sending response : " + response);
@@ -485,6 +518,27 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
       }
     }
     logger.info(id + " stopping prepare thread");
+  }
+
+  @Override
+  public void accept(AcceptRequest request, StreamObserver<AcceptResponse> responseObserver) {
+    logger.info(this.id + " received rpc from " + request.getSender());
+    mu.lock();
+    AcceptResponse.Builder responseBuilder = AcceptResponse.newBuilder();
+    try {
+      if (request.getInstance().getBallot() >= this.ballot) {
+        setBallot(request.getInstance().getBallot());
+        log_.append(makeInstance(request.getInstance()));
+        responseBuilder = responseBuilder.setType(ResponseType.OK);
+      } else {
+        responseBuilder = responseBuilder.setBallot(ballot).setType(ResponseType.REJECT);
+      }
+      var response = responseBuilder.build();
+      responseObserver.onNext(response);
+      responseObserver.onCompleted();
+    } finally {
+      mu.unlock();
+    }
   }
 
 }
