@@ -233,9 +233,9 @@ void MultiPaxos::Replay(std::vector<log_vector_t> const& logs) {
     for (auto const& instance : log)
       Insert(&merged_log, instance);
 
-  for (auto const& p : merged_log) {
-    if (!SendAccepts(p.second.command(), p.second.index(),
-                     p.second.client_id()))
+  for (auto const& [_, instance] : merged_log) {
+    if (!SendAccepts(instance.command(), instance.index(),
+                     instance.client_id()))
       break;
   }
   {
