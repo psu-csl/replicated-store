@@ -1,20 +1,35 @@
 #+title: TODO
 
-* Java
-1. Currently we have both proto generated and custom implementations for Instance and Command;
-   We transform from custom implementation to proto generated one. Refactor such that we have only proto generated classes.
+* TODO
 
-* C++
+** Java
+*** avoid class duplication
+    - currently we have both proto generated and custom implementations for
+      Instance and Command; We transform from custom implementation to proto
+      generated one. Refactor such that we have only proto generated classes.
 
-  - consider replacing ballot with atomic and using the CAS loop, and make sure
-    to insert PAUSEs below, per recommendation of Thiago on C++ slack.
+** C++
 
-    https://herbsutter.com/2012/08/31/reader-qa-how-to-write-a-cas-loop-using-stdatomics/
+*** consider replacing ballot with atomic and using the CAS loop
+    - and make sure to insert PAUSEs below, per recommendation of Thiago on C++
+      slack: https://herbsutter.com/2012/08/31/reader-qa-how-to-write-a-cas-loop-using-stdatomics/
 
-* All
+** All
 
-  - The current design may push stale prepare responses to prepare_ok_reponses
-    and increase the prepare_num_responses. Then the prepare_thread proceed to
-    replay as it reaches prepare_num_responses, though the instances for replay
-    are not from majority peers. (heartbeat_thread and accept might have similar
-    issues, though it seems that they won't fail the correctness so far)
+*** handle timeouts in RPCs
+    - with the most recent design (heap-allocated refcounted state), this should
+      just work, but we need to actually try and see if it works.
+
+
+* DONE
+
+*** DONE avoid tsan warnings due to stale threads
+    - The current design may push stale prepare responses to prepare_ok_reponses
+      and increase the prepare_num_responses. Then the prepare_thread proceed to
+      replay as it reaches prepare_num_responses, though the instances for
+      replay are not from majority peers. (heartbeat_thread and accept might
+      have similar issues, though it seems that they won't fail the correctness
+      so far)
+    - we fixed it by storing the common state among threads in a heap-allocated
+      and reference counted struct that is shared among threads; the last thread
+      that exits frees the state
