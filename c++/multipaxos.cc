@@ -151,7 +151,7 @@ log_map_t MultiPaxos::SendPrepares() {
         ++state->num_rpcs_;
         if (status.ok()) {
           if (response.type() == OK) {
-            ++state->responses_;
+            ++state->num_oks_;
             for (int i = 0; i < response.instances_size(); ++i)
               Insert(&state->log_, std::move(response.instances(i)));
           } else {
@@ -166,10 +166,10 @@ log_map_t MultiPaxos::SendPrepares() {
   }
   {
     std::unique_lock lock(state->mu_);
-    while (IsLeader() && state->responses_ <= rpc_peers_.size() / 2 &&
+    while (IsLeader() && state->num_oks_ <= rpc_peers_.size() / 2 &&
            state->num_rpcs_ != rpc_peers_.size())
       state->cv_.wait(lock);
-    if (state->responses_ > rpc_peers_.size() / 2)
+    if (state->num_oks_ > rpc_peers_.size() / 2)
       return std::move(state->log_);
   }
   return {};
@@ -206,7 +206,7 @@ bool MultiPaxos::SendAccepts(Command command,
         ++state->num_rpcs_;
         if (status.ok()) {
           if (response.type() == OK) {
-            ++state->responses_;
+            ++state->num_oks_;
           } else {
             std::scoped_lock lock(mu_);
             if (response.ballot() >= ballot_)
@@ -219,10 +219,10 @@ bool MultiPaxos::SendAccepts(Command command,
   }
   {
     std::unique_lock lock(state->mu_);
-    while (IsLeader() && state->responses_ <= rpc_peers_.size() / 2 &&
+    while (IsLeader() && state->num_oks_ <= rpc_peers_.size() / 2 &&
            state->num_rpcs_ != rpc_peers_.size())
       state->cv_.wait(lock);
-    if (state->responses_ > rpc_peers_.size() / 2)
+    if (state->num_oks_ > rpc_peers_.size() / 2)
       return true;
   }
   return false;
