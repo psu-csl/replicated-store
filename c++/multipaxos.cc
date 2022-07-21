@@ -90,8 +90,7 @@ void MultiPaxos::Stop() {
   rpc_server_->Shutdown();
 }
 
-std::optional<int64_t> MultiPaxos::SendHeartbeats(
-    int64_t global_last_executed) {
+int64_t MultiPaxos::SendHeartbeats(int64_t global_last_executed) {
   auto state = std::make_shared<heartbeat_state_t>();
 
   HeartbeatRequest request;
@@ -127,7 +126,7 @@ std::optional<int64_t> MultiPaxos::SendHeartbeats(
       return *min_element(std::begin(state->responses_),
                           std::end(state->responses_));
   }
-  return {};
+  return global_last_executed;
 }
 
 std::optional<log_map_t> MultiPaxos::SendPrepares() {
@@ -247,9 +246,7 @@ void MultiPaxos::HeartbeatThread() {
     WaitUntilLeader();
     auto gle = log_->GlobalLastExecuted();
     while (running_ && IsLeader()) {
-      auto new_gle = SendHeartbeats(gle);
-      if (gle)
-        gle = *new_gle;
+      gle = SendHeartbeats(gle);
       SleepForHeartbeatInterval();
     }
   }
