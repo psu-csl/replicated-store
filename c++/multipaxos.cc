@@ -227,12 +227,24 @@ bool MultiPaxos::SendAccepts(Command command,
   return false;
 }
 
-void MultiPaxos::Replay(log_vector_t const& log) {
-  ;
-}
+void MultiPaxos::Replay(std::vector<log_vector_t> const& logs) {
+  log_map_t merged_log;
+  for (auto const& log : logs)
+    for (auto const& instance : log)
+      Insert(&merged_log, instance);
 
-log_vector_t MultiPaxos::Merge(std::vector<log_vector_t> const& logs) {
-  return {};
+  for (auto const& p : merged_log) {
+    if (!SendAccepts(p.second.command(), p.second.index(),
+                     p.second.client_id()))
+      break;
+  }
+  {
+    std::scoped_lock lock(mu_);
+    if (IsLeaderLockless()) {
+      ready_ = true;
+      DLOG(INFO) << id_ << " leader is ready to serve";
+    }
+  }
 }
 
 void MultiPaxos::HeartbeatThread() {
@@ -260,7 +272,7 @@ void MultiPaxos::PrepareThread() {
         continue;
       auto logs = SendPrepares();
       if (logs)
-        Replay(Merge(*logs));
+        Replay(*logs);
     }
   }
   DLOG(INFO) << id_ << " stopping prepare thread";

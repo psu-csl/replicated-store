@@ -124,8 +124,7 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
                    int64_t index,
                    client_id_t client_id);
 
-  log_vector_t Merge(std::vector<log_vector_t> const& logs);
-  void Replay(log_vector_t const& log);
+  void Replay(std::vector<log_vector_t> const& logs);
 
  private:
   grpc::Status Heartbeat(grpc::ServerContext*,
