@@ -13,7 +13,12 @@ using grpc::ServerBuilder;
 using grpc::ServerContext;
 using grpc::Status;
 
+using multipaxos::Command;
+using multipaxos::Instance;
 using multipaxos::MultiPaxosRPC;
+
+using multipaxos::InstanceState::INPROGRESS;
+
 using multipaxos::ResponseType::OK;
 using multipaxos::ResponseType::REJECT;
 
@@ -163,6 +168,57 @@ std::optional<std::vector<log_vector_t>> MultiPaxos::SendPrepares() {
       return std::move(state->responses_);
   }
   return {};
+}
+
+bool MultiPaxos::SendAccepts(Command command,
+                             int64_t index,
+                             client_id_t client_id) {
+  auto state = std::make_shared<accept_state_t>();
+  AcceptRequest request;
+  request.set_sender(id_);
+
+  Instance instance;
+  {
+    std::scoped_lock lock(mu_);
+    instance.set_ballot(ballot_);
+  }
+  instance.set_index(index);
+  instance.set_client_id(client_id);
+  instance.set_state(INPROGRESS);
+  *instance.mutable_command() = std::move(command);
+  *request.mutable_instance() = std::move(instance);
+  for (auto& peer : rpc_peers_) {
+    asio::post(thread_pool_, [this, state, &peer, request] {
+      ClientContext context;
+      AcceptResponse response;
+      Status status =
+          peer.stub_->Accept(&context, std::move(request), &response);
+      DLOG(INFO) << id_ << " sent accept request to " << peer.id_;
+      {
+        std::scoped_lock lock(state->mu_);
+        ++state->num_rpcs_;
+        if (status.ok()) {
+          if (response.type() == OK) {
+            ++state->responses_;
+          } else {
+            std::scoped_lock lock(mu_);
+            if (response.ballot() >= ballot_)
+              SetBallot(response.ballot());
+          }
+        }
+      }
+      state->cv_.notify_one();
+    });
+  }
+  {
+    std::unique_lock lock(state->mu_);
+    while (IsLeader() && state->responses_ <= rpc_peers_.size() / 2 &&
+           state->num_rpcs_ != rpc_peers_.size())
+      state->cv_.wait(lock);
+    if (state->responses_ > rpc_peers_.size() / 2)
+      return true;
+  }
+  return false;
 }
 
 void MultiPaxos::HeartbeatThread() {
