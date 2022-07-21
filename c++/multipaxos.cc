@@ -38,7 +38,6 @@ MultiPaxos::MultiPaxos(Log* log, json const& config)
       last_heartbeat_(0),
       rpc_server_running_(false),
       thread_pool_(config["threadpool_size"]),
-      heartbeat_num_rpcs_(0),
       prepare_num_rpcs_(0) {
   int64_t id = 0;
   for (std::string const peer : config["peers"])
@@ -87,45 +86,51 @@ void MultiPaxos::Stop() {
   rpc_server_->Shutdown();
 }
 
+std::optional<int64_t> MultiPaxos::SendHeartbeats(
+    int64_t global_last_executed) {
+  auto state = std::make_shared<heartbeat_state_t>();
+  HeartbeatRequest request;
+  {
+    std::scoped_lock lock(mu_);
+    request.set_ballot(ballot_);
+  }
+  request.set_sender(id_);
+  request.set_last_executed(log_->LastExecuted());
+  request.set_global_last_executed(global_last_executed);
+  for (auto& peer : rpc_peers_) {
+    asio::post(thread_pool_, [this, state, &peer, &request] {
+      ClientContext context;
+      HeartbeatResponse response;
+      Status status = peer.stub_->Heartbeat(&context, request, &response);
+      DLOG(INFO) << id_ << " sent heartbeat to " << peer.id_;
+      {
+        std::scoped_lock lock(state->mu_);
+        ++state->num_rpcs_;
+        if (status.ok())
+          state->responses_.push_back(response.last_executed());
+      }
+      state->cv_.notify_one();
+    });
+  }
+  {
+    std::unique_lock lock(state->mu_);
+    while (IsLeader() && state->num_rpcs_ != rpc_peers_.size())
+      state->cv_.wait(lock);
+    if (state->responses_.size() == rpc_peers_.size())
+      return *min_element(std::begin(state->responses_),
+                          std::end(state->responses_));
+  }
+  return {};
+}
+
 void MultiPaxos::HeartbeatThread() {
   DLOG(INFO) << id_ << " starting heartbeat thread";
   while (running_) {
     WaitUntilLeader();
     auto global_last_executed = log_->GlobalLastExecuted();
     while (running_ && IsLeader()) {
-      heartbeat_num_rpcs_ = 0;
-      heartbeat_responses_.clear();
-      {
-        std::scoped_lock lock(mu_);
-        heartbeat_request_.set_ballot(ballot_);
-      }
-      heartbeat_request_.set_sender(id_);
-      heartbeat_request_.set_last_executed(log_->LastExecuted());
-      heartbeat_request_.set_global_last_executed(global_last_executed);
-      for (auto& peer : rpc_peers_) {
-        asio::post(thread_pool_, [this, &peer] {
-          ClientContext context;
-          HeartbeatResponse response;
-          Status status =
-              peer.stub_->Heartbeat(&context, heartbeat_request_, &response);
-          DLOG(INFO) << id_ << " sent heartbeat to " << peer.id_;
-          {
-            std::scoped_lock lock(heartbeat_mu_);
-            ++heartbeat_num_rpcs_;
-            if (status.ok())
-              heartbeat_responses_.push_back(response.last_executed());
-          }
-          heartbeat_cv_.notify_one();
-        });
-      }
-      {
-        std::unique_lock lock(heartbeat_mu_);
-        while (IsLeader() && heartbeat_num_rpcs_ != rpc_peers_.size())
-          heartbeat_cv_.wait(lock);
-        if (heartbeat_responses_.size() == rpc_peers_.size())
-          global_last_executed = *min_element(std::begin(heartbeat_responses_),
-                                              std::end(heartbeat_responses_));
-      }
+      if (auto r = SendHeartbeats(global_last_executed))
+        global_last_executed = *r;
       std::this_thread::sleep_for(milliseconds(heartbeat_interval_));
     }
   }

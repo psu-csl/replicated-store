@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <random>
 #include <vector>
 
@@ -99,6 +100,9 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
   void HeartbeatThread();
   void PrepareThread();
 
+  std::optional<int64_t> SendHeartbeats(int64_t global_last_executed);
+  std::optional<log_vector_t> SendPrepares();
+
  private:
   grpc::Status Heartbeat(grpc::ServerContext*,
                          const multipaxos::HeartbeatRequest*,
@@ -131,11 +135,6 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
 
   std::thread heartbeat_thread_;
   std::condition_variable cv_leader_;
-  multipaxos::HeartbeatRequest heartbeat_request_;
-  size_t heartbeat_num_rpcs_;
-  std::vector<int64_t> heartbeat_responses_;
-  std::mutex heartbeat_mu_;
-  std::condition_variable heartbeat_cv_;
 
   std::thread prepare_thread_;
   std::condition_variable cv_follower_;
@@ -144,6 +143,13 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
   std::vector<log_vector_t> prepare_ok_responses_;
   std::mutex prepare_mu_;
   std::condition_variable prepare_cv_;
+};
+
+struct heartbeat_state_t {
+  size_t num_rpcs_ = 0;
+  std::vector<int64_t> responses_;
+  std::mutex mu_;
+  std::condition_variable cv_;
 };
 
 #endif
