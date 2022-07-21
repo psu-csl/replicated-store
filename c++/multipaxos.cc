@@ -92,6 +92,7 @@ void MultiPaxos::Stop() {
 
 int64_t MultiPaxos::SendHeartbeats(int64_t global_last_executed) {
   auto state = std::make_shared<heartbeat_state_t>();
+  state->min_last_executed = log_->LastExecuted();
 
   HeartbeatRequest request;
   {
@@ -99,7 +100,7 @@ int64_t MultiPaxos::SendHeartbeats(int64_t global_last_executed) {
     request.set_ballot(ballot_);
   }
   request.set_sender(id_);
-  request.set_last_executed(log_->LastExecuted());
+  request.set_last_executed(state->min_last_executed);
   request.set_global_last_executed(global_last_executed);
 
   for (auto& peer : rpc_peers_) {
@@ -112,8 +113,11 @@ int64_t MultiPaxos::SendHeartbeats(int64_t global_last_executed) {
       {
         std::scoped_lock lock(state->mu_);
         ++state->num_rpcs_;
-        if (status.ok())
-          state->responses_.push_back(response.last_executed());
+        if (status.ok()) {
+          ++state->num_oks_;
+          if (response.last_executed() < state->min_last_executed)
+            state->min_last_executed = response.last_executed();
+        }
       }
       state->cv_.notify_one();
     });
@@ -122,9 +126,8 @@ int64_t MultiPaxos::SendHeartbeats(int64_t global_last_executed) {
     std::unique_lock lock(state->mu_);
     while (IsLeader() && state->num_rpcs_ != rpc_peers_.size())
       state->cv_.wait(lock);
-    if (state->responses_.size() == rpc_peers_.size())
-      return *min_element(std::begin(state->responses_),
-                          std::end(state->responses_));
+    if (state->num_oks_ == rpc_peers_.size())
+      return state->min_last_executed;
   }
   return global_last_executed;
 }

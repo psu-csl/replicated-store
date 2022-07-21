@@ -164,7 +164,8 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
 
 struct heartbeat_state_t {
   size_t num_rpcs_ = 0;
-  std::vector<int64_t> responses_;
+  size_t num_oks_ = 0;
+  int64_t min_last_executed = 0;
   std::mutex mu_;
   std::condition_variable cv_;
 };
