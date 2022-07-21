@@ -239,11 +239,11 @@ void MultiPaxos::HeartbeatThread() {
   DLOG(INFO) << id_ << " starting heartbeat thread";
   while (running_) {
     WaitUntilLeader();
-    auto global_last_executed = log_->GlobalLastExecuted();
+    auto gle = log_->GlobalLastExecuted();
     while (running_ && IsLeader()) {
-      auto new_global_last_executed = SendHeartbeats(global_last_executed);
-      if (new_global_last_executed)
-        global_last_executed = *new_global_last_executed;
+      auto new_gle = SendHeartbeats(gle);
+      if (gle)
+        gle = *new_gle;
       SleepForHeartbeatInterval();
     }
   }
