@@ -10,7 +10,6 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
-#include <optional>
 #include <random>
 #include <thread>
 #include <vector>
@@ -119,7 +118,7 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
   void PrepareThread();
 
   int64_t SendHeartbeats(int64_t global_last_executed);
-  std::optional<log_map_t> SendPrepares();
+  log_map_t SendPrepares();
   bool SendAccepts(multipaxos::Command command,
                    int64_t index,
                    client_id_t client_id);

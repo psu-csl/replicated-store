@@ -129,7 +129,7 @@ int64_t MultiPaxos::SendHeartbeats(int64_t global_last_executed) {
   return global_last_executed;
 }
 
-std::optional<log_map_t> MultiPaxos::SendPrepares() {
+log_map_t MultiPaxos::SendPrepares() {
   auto state = std::make_shared<prepare_state_t>();
 
   PrepareRequest request;
@@ -261,9 +261,7 @@ void MultiPaxos::PrepareThread() {
       SleepForRandomInterval();
       if (ReceivedHeartbeat())
         continue;
-      auto logs = SendPrepares();
-      if (logs)
-        Replay(*logs);
+      Replay(SendPrepares());
     }
   }
   DLOG(INFO) << id_ << " stopping prepare thread";
