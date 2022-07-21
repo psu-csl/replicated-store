@@ -12,6 +12,7 @@
 #include <mutex>
 #include <optional>
 #include <random>
+#include <thread>
 #include <vector>
 
 #include "json_fwd.h"
@@ -94,6 +95,23 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
       cv_follower_.wait(lock);
   }
 
+  void SleepForHeartbeatInterval() {
+    std::this_thread::sleep_for(std::chrono::milliseconds(heartbeat_interval_));
+  }
+
+  void SleepForRandomInterval() {
+    auto sleep_time = heartbeat_interval_ + dist_(engine_);
+    std::this_thread::sleep_for(std::chrono::milliseconds(sleep_time));
+  }
+
+  bool ReceivedHeartbeat() {
+    auto now = std::chrono::time_point_cast<std::chrono::milliseconds>(
+                   std::chrono::steady_clock::now())
+                   .time_since_epoch()
+                   .count();
+    return now - last_heartbeat_ < heartbeat_interval_;
+  }
+
   void Start();
   void Stop();
 
@@ -105,6 +123,9 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
   bool SendAccepts(multipaxos::Command command,
                    int64_t index,
                    client_id_t client_id);
+
+  log_vector_t Merge(std::vector<log_vector_t> const& logs);
+  void Replay(log_vector_t const& log);
 
  private:
   grpc::Status Heartbeat(grpc::ServerContext*,

@@ -93,6 +93,7 @@ void MultiPaxos::Stop() {
 std::optional<int64_t> MultiPaxos::SendHeartbeats(
     int64_t global_last_executed) {
   auto state = std::make_shared<heartbeat_state_t>();
+
   HeartbeatRequest request;
   {
     std::scoped_lock lock(mu_);
@@ -101,6 +102,7 @@ std::optional<int64_t> MultiPaxos::SendHeartbeats(
   request.set_sender(id_);
   request.set_last_executed(log_->LastExecuted());
   request.set_global_last_executed(global_last_executed);
+
   for (auto& peer : rpc_peers_) {
     asio::post(thread_pool_, [this, state, &peer, request] {
       ClientContext context;
@@ -130,9 +132,11 @@ std::optional<int64_t> MultiPaxos::SendHeartbeats(
 
 std::optional<std::vector<log_vector_t>> MultiPaxos::SendPrepares() {
   auto state = std::make_shared<prepare_state_t>();
+
   PrepareRequest request;
   request.set_sender(id_);
   request.set_ballot(NextBallot());
+
   for (auto& peer : rpc_peers_) {
     asio::post(thread_pool_, [this, state, &peer, request] {
       ClientContext context;
@@ -174,8 +178,6 @@ bool MultiPaxos::SendAccepts(Command command,
                              int64_t index,
                              client_id_t client_id) {
   auto state = std::make_shared<accept_state_t>();
-  AcceptRequest request;
-  request.set_sender(id_);
 
   Instance instance;
   {
@@ -186,7 +188,11 @@ bool MultiPaxos::SendAccepts(Command command,
   instance.set_client_id(client_id);
   instance.set_state(INPROGRESS);
   *instance.mutable_command() = std::move(command);
+
+  AcceptRequest request;
+  request.set_sender(id_);
   *request.mutable_instance() = std::move(instance);
+
   for (auto& peer : rpc_peers_) {
     asio::post(thread_pool_, [this, state, &peer, request] {
       ClientContext context;
@@ -221,15 +227,24 @@ bool MultiPaxos::SendAccepts(Command command,
   return false;
 }
 
+void MultiPaxos::Replay(log_vector_t const& log) {
+  ;
+}
+
+log_vector_t MultiPaxos::Merge(std::vector<log_vector_t> const& logs) {
+  return {};
+}
+
 void MultiPaxos::HeartbeatThread() {
   DLOG(INFO) << id_ << " starting heartbeat thread";
   while (running_) {
     WaitUntilLeader();
     auto global_last_executed = log_->GlobalLastExecuted();
     while (running_ && IsLeader()) {
-      if (auto r = SendHeartbeats(global_last_executed))
-        global_last_executed = *r;
-      std::this_thread::sleep_for(milliseconds(heartbeat_interval_));
+      auto new_global_last_executed = SendHeartbeats(global_last_executed);
+      if (new_global_last_executed)
+        global_last_executed = *new_global_last_executed;
+      SleepForHeartbeatInterval();
     }
   }
   DLOG(INFO) << id_ << " stopping heartbeat thread";
@@ -240,26 +255,12 @@ void MultiPaxos::PrepareThread() {
   while (running_) {
     WaitUntilFollower();
     while (running_ && !IsLeader()) {
-      auto sleep_time = heartbeat_interval_ + dist_(engine_);
-      DLOG(INFO) << id_ << " prepare thread sleeping for " << sleep_time;
-      std::this_thread::sleep_for(milliseconds(sleep_time));
-      DLOG(INFO) << id_ << " prepare thread woke up";
-      auto now = time_point_cast<milliseconds>(steady_clock::now())
-                     .time_since_epoch()
-                     .count();
-      if (now - last_heartbeat_ < heartbeat_interval_)
+      SleepForRandomInterval();
+      if (ReceivedHeartbeat())
         continue;
-
-      auto r = SendPrepares();
-      if (!r)
-        continue;
-      {
-        std::scoped_lock lock(mu_);
-        if (IsLeaderLockless()) {
-          ready_ = true;
-          DLOG(INFO) << id_ << " leader and ready to serve";
-        }
-      }
+      auto logs = SendPrepares();
+      if (logs)
+        Replay(Merge(*logs));
     }
   }
   DLOG(INFO) << id_ << " stopping prepare thread";
