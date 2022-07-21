@@ -20,6 +20,7 @@
     - with the most recent design (heap-allocated refcounted state), this should
       just work, but we need to actually try and see if it works.
 
+*** rethink class interface and hide methods that don't need to be public
 
 * DONE
 
