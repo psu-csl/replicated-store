@@ -69,4 +69,5 @@ message AcceptResponse {
 service MultiPaxosRPC {
   rpc Heartbeat (HeartbeatRequest) returns (HeartbeatResponse) {}
   rpc Prepare (PrepareRequest) returns (PrepareResponse) {}
+  rpc Accept(AcceptRequest) returns (AcceptResponse) {}
 }
