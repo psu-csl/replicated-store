@@ -98,10 +98,11 @@ std::optional<int64_t> MultiPaxos::SendHeartbeats(
   request.set_last_executed(log_->LastExecuted());
   request.set_global_last_executed(global_last_executed);
   for (auto& peer : rpc_peers_) {
-    asio::post(thread_pool_, [this, state, &peer, &request] {
+    asio::post(thread_pool_, [this, state, &peer, request] {
       ClientContext context;
       HeartbeatResponse response;
-      Status status = peer.stub_->Heartbeat(&context, request, &response);
+      Status status =
+          peer.stub_->Heartbeat(&context, std::move(request), &response);
       DLOG(INFO) << id_ << " sent heartbeat to " << peer.id_;
       {
         std::scoped_lock lock(state->mu_);
