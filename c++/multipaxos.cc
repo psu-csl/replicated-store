@@ -31,7 +31,7 @@ using multipaxos::PrepareResponse;
 
 MultiPaxos::MultiPaxos(Log* log, json const& config)
     : running_(false),
-      ready_(false),
+      is_ready_(false),
       ballot_(kMaxNumPeers),
       log_(log),
       id_(config["id"]),
@@ -263,7 +263,7 @@ void MultiPaxos::Replay(log_map_t const& log) {
   {
     std::scoped_lock lock(mu_);
     if (IsLeaderLockless()) {
-      ready_ = true;
+      is_ready_ = true;
       DLOG(INFO) << id_ << " leader is ready to serve";
     }
   }
