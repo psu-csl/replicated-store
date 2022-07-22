@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <random>
 #include <thread>
 #include <vector>
@@ -34,6 +35,17 @@ struct rpc_peer_t {
 using rpc_server_t = std::unique_ptr<grpc::Server>;
 
 int64_t Now();
+
+enum class MultiPaxosResultType {
+  kOk,
+  kRetry,
+  kSomeoneElseLeader,
+};
+
+struct MultiPaxosResult {
+  MultiPaxosResultType type_;
+  std::optional<int64_t> leader_;
+};
 
 class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
  public:
@@ -68,8 +80,10 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
 
   int64_t Leader() const {
     std::scoped_lock lock(mu_);
-    return ballot_ & kIdBits;
+    return LeaderLockless();
   }
+
+  int64_t LeaderLockless() const { return ballot_ & kIdBits; }
 
   bool IsLeader() const {
     std::scoped_lock lock(mu_);
@@ -117,9 +131,9 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
 
   int64_t SendHeartbeats(int64_t global_last_executed);
   log_map_t SendPrepares();
-  bool SendAccepts(multipaxos::Command command,
-                   int64_t index,
-                   client_id_t client_id);
+  MultiPaxosResult SendAccepts(multipaxos::Command command,
+                               int64_t index,
+                               client_id_t client_id);
 
   void Replay(log_map_t const& logs);
 
