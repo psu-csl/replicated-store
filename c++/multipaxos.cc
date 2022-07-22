@@ -107,13 +107,12 @@ int64_t MultiPaxos::SendHeartbeats(int64_t global_last_executed) {
     asio::post(thread_pool_, [this, state, &peer, request] {
       ClientContext context;
       HeartbeatResponse response;
-      Status status =
-          peer.stub_->Heartbeat(&context, std::move(request), &response);
+      Status s = peer.stub_->Heartbeat(&context, std::move(request), &response);
       DLOG(INFO) << id_ << " sent heartbeat to " << peer.id_;
       {
         std::scoped_lock lock(state->mu_);
         ++state->num_rpcs_;
-        if (status.ok()) {
+        if (s.ok()) {
           ++state->num_oks_;
           if (response.last_executed() < state->min_last_executed)
             state->min_last_executed = response.last_executed();
@@ -143,13 +142,12 @@ log_map_t MultiPaxos::SendPrepares() {
     asio::post(thread_pool_, [this, state, &peer, request] {
       ClientContext context;
       PrepareResponse response;
-      Status status =
-          peer.stub_->Prepare(&context, std::move(request), &response);
+      Status s = peer.stub_->Prepare(&context, std::move(request), &response);
       DLOG(INFO) << id_ << " sent prepare request to " << peer.id_;
       {
         std::scoped_lock lock(state->mu_);
         ++state->num_rpcs_;
-        if (status.ok()) {
+        if (s.ok()) {
           if (response.type() == OK) {
             ++state->num_oks_;
             for (int i = 0; i < response.instances_size(); ++i)
@@ -198,13 +196,12 @@ bool MultiPaxos::SendAccepts(Command command,
     asio::post(thread_pool_, [this, state, &peer, request] {
       ClientContext context;
       AcceptResponse response;
-      Status status =
-          peer.stub_->Accept(&context, std::move(request), &response);
+      Status s = peer.stub_->Accept(&context, std::move(request), &response);
       DLOG(INFO) << id_ << " sent accept request to " << peer.id_;
       {
         std::scoped_lock lock(state->mu_);
         ++state->num_rpcs_;
-        if (status.ok()) {
+        if (s.ok()) {
           if (response.type() == OK) {
             ++state->num_oks_;
           } else {
