@@ -368,42 +368,9 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
       waitUntilLeader();
       var globalLastExecuted = log_.getGlobalLastExecuted();
       while (running.get() && isLeader()) {
-        heartbeatNumRpcs = 0;
-        heartbeatResponses.clear();
-
-        mu.lock();
-        heartbeatRequestBuilder.setBallot(ballot);
-        mu.unlock();
-
-        heartbeatRequestBuilder.setLastExecuted(log_.getLastExecuted());
-        heartbeatRequestBuilder.setGlobalLastExecuted(globalLastExecuted);
-        heartbeatRequestBuilder.setSender(id);
-
-        for (var peer : rpcPeers) {
-          threadPool.submit(() -> {
-
-            var response = MultiPaxosRPCGrpc.newBlockingStub(peer.stub)
-                .heartbeat(heartbeatRequestBuilder.build());
-            logger.info(id + " sent heartbeat to " + peer.id);
-            heartbeatMu.lock();
-            ++heartbeatNumRpcs;
-            heartbeatResponses.add((long) response.getLastExecuted());
-
-            heartbeatMu.unlock();
-            heartbeatCv.signal();
-          });
-        }
-        heartbeatMu.lock();
-        while (isLeader() && heartbeatNumRpcs != rpcPeers.size()) {
-          try {
-            heartbeatCv.await();
-          } catch (InterruptedException e) {
-            e.printStackTrace();
-          }
-        }
-        if (heartbeatResponses.size() == rpcPeers.size()) {
-          globalLastExecuted = heartbeatResponses.stream().mapToLong(v -> v).min()
-              .orElseThrow(NoSuchElementException::new);
+        var res = sendHeartbeats(globalLastExecuted);
+        if (res != null) {
+          globalLastExecuted = res;
         }
         try {
           Thread.sleep(heartbeatInterval);
@@ -413,6 +380,43 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
       }
       logger.info(id + " stopping heartbeat thread");
     }
+  }
+
+  public Long sendHeartbeats(long globalLastExecuted) {
+    var state = new HeartbeatState();
+    HeartbeatRequest.Builder request = HeartbeatRequest.newBuilder();
+    mu.lock();
+    request.setBallot(ballot);
+    mu.unlock();
+    request.setSender(this.id);
+    request.setLastExecuted(log_.getLastExecuted());
+    request.setGlobalLastExecuted(globalLastExecuted);
+    for (var peer : rpcPeers) {
+      threadPool.submit(() -> {
+
+        var response = MultiPaxosRPCGrpc.newBlockingStub(peer.stub)
+            .heartbeat(request.build());
+        logger.info(id + " sent heartbeat to " + peer.id);
+        state.mu.lock();
+        ++state.numRpcs;
+        state.responses.add((long) response.getLastExecuted());
+        state.mu.unlock();
+        state.cv.signal();
+      });
+    }
+    state.mu.lock();
+    while (isLeader() && state.numRpcs != rpcPeers.size()) {
+      try {
+        state.cv.await();
+      } catch (InterruptedException e) {
+        e.printStackTrace();
+      }
+    }
+    if (state.responses.size() == rpcPeers.size()) {
+      return heartbeatResponses.stream().mapToLong(v -> v).min()
+          .orElseThrow(NoSuchElementException::new);
+    }
+    return null;
   }
 
   @Override
