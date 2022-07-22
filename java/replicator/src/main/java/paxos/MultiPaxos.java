@@ -20,7 +20,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.NoSuchElementException;
 import java.util.Random;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -79,13 +78,15 @@ class PrepareState {
 class HeartbeatState {
 
   public long numRpcs;
-  List<Long> responses;
-  ReentrantLock mu;
-  Condition cv;
+  public long numOks;
+  public long minLastExecuted;
+  public ReentrantLock mu;
+  public Condition cv;
 
   public HeartbeatState() {
     this.numRpcs = 0;
-    this.responses = new ArrayList<>();
+    this.numOks = 0;
+    this.minLastExecuted = 0;
     this.mu = new ReentrantLock();
     this.cv = mu.newCondition();
   }
@@ -398,7 +399,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     request.setBallot(ballot);
     mu.unlock();
     request.setSender(this.id);
-    request.setLastExecuted(log_.getLastExecuted());
+    request.setLastExecuted(state.minLastExecuted);
     request.setGlobalLastExecuted(globalLastExecuted);
     for (var peer : rpcPeers) {
       threadPool.submit(() -> {
@@ -408,7 +409,10 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
         logger.info(id + " sent heartbeat to " + peer.id);
         state.mu.lock();
         ++state.numRpcs;
-        state.responses.add((long) response.getLastExecuted());
+        ++state.numOks;
+        if (response.getLastExecuted() < state.minLastExecuted) {
+          state.minLastExecuted = response.getLastExecuted();
+        }
         state.mu.unlock();
         state.cv.signal();
       });
@@ -421,10 +425,9 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
         e.printStackTrace();
       }
     }
-    if (state.responses.size() == rpcPeers.size()) {
+    if (state.numOks == rpcPeers.size()) {
       state.mu.unlock();
-      return heartbeatResponses.stream().mapToLong(v -> v).min()
-          .orElseThrow(NoSuchElementException::new);
+      return state.minLastExecuted;
     }
     state.mu.unlock();
     return globalLastExecuted;
