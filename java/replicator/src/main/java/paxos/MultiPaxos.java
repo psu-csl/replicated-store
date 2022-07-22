@@ -90,26 +90,21 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
   private final ReentrantLock mu;
   private final Condition cvLeader;
   private final Condition cvFollower;
-  private Log log_;
-  private Server rpcServer;
+  private final Log log_;
+  private final Server rpcServer;
+  private final Condition rpcServerRunningCv;
+  private final long heartbeatInterval;
+  private final AtomicBoolean running;
+  private final ExecutorService heartbeatThread;
+  private final ExecutorService prepareThread;
+  private final List<Long> heartbeatResponses;
+  private final List<RpcPeer> rpcPeers;
+  private final ExecutorService threadPool;
+  private final int heartbeatDelta;
   private boolean rpcServerRunning;
-  private Condition rpcServerRunningCv;
   private long lastHeartbeat;
-  private long heartbeatInterval;
   private long id;
   private long ballot;
-  private AtomicBoolean running;
-  private ExecutorService heartbeatThread;
-  private ExecutorService prepareThread;
-  private List<Long> heartbeatResponses;
-  private List<RpcPeer> rpcPeers;
-  private ExecutorService threadPool;
-  private int heartbeatDelta;
-  private long prepareNumRpcs;
-  private List<List<Instance>> prepareOkResponses;
-  private ReentrantLock prepareMu;
-  private Condition prepareCv;
-  private PrepareRequest.Builder prepareRequestBuilder;
 
   public MultiPaxos(Log log, Configuration config) {
     this.heartbeatDelta = config.getHeartbeatDelta();
@@ -126,11 +121,6 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     lastHeartbeat = 0;
     heartbeatResponses = new ArrayList<>();
     rpcServerRunning = false;
-
-    prepareOkResponses = new ArrayList<>();
-    prepareMu = new ReentrantLock();
-    prepareCv = prepareMu.newCondition();
-    prepareRequestBuilder = PrepareRequest.newBuilder();
 
     rpcServerRunningCv = mu.newCondition();
 
@@ -483,7 +473,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     if (state.responses.size() > rpcPeers.size() / 2) {
       return state.responses;
     }
-    state.mu.unlock();
+    state.mu.unlock(); // TODO: verify moving this above if
 
     return null;
   }
