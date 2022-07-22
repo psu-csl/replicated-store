@@ -90,17 +90,15 @@ void MultiPaxos::Stop() {
   rpc_server_->Shutdown();
 }
 
-MultiPaxosResult MultiPaxos::Replicate(multipaxos::Command command,
-                                       client_id_t client_id) {
+Result MultiPaxos::Replicate(Command command, client_id_t client_id) {
   if (IsLeaderAndReady())
     return SendAccepts(command, log_->AdvanceLastIndex(), client_id);
   {
     std::scoped_lock lock(mu_);
     if (IsSomeoneElseLeaderLockless())
-      return MultiPaxosResult{MultiPaxosResultType::kSomeoneElseLeader,
-                              LeaderLockless()};
+      return Result{ResultType::kSomeoneElseLeader, LeaderLockless()};
   }
-  return MultiPaxosResult{MultiPaxosResultType::kRetry, std::nullopt};
+  return Result{ResultType::kRetry, std::nullopt};
 }
 
 int64_t MultiPaxos::SendHeartbeats(int64_t global_last_executed) {
@@ -186,9 +184,9 @@ log_map_t MultiPaxos::SendPrepares() {
   return {};
 }
 
-MultiPaxosResult MultiPaxos::SendAccepts(Command command,
-                                         int64_t index,
-                                         client_id_t client_id) {
+Result MultiPaxos::SendAccepts(Command command,
+                               int64_t index,
+                               client_id_t client_id) {
   auto state = std::make_shared<accept_state_t>();
 
   Instance instance;
@@ -233,14 +231,13 @@ MultiPaxosResult MultiPaxos::SendAccepts(Command command,
            state->num_rpcs_ != rpc_peers_.size())
       state->cv_.wait(lock);
     if (state->num_oks_ > rpc_peers_.size() / 2)
-      return MultiPaxosResult{MultiPaxosResultType::kOk, std::nullopt};
+      return Result{ResultType::kOk, std::nullopt};
   }
   {
     std::scoped_lock lock(mu_);
     if (!IsLeaderLockless())
-      return MultiPaxosResult{MultiPaxosResultType::kSomeoneElseLeader,
-                              LeaderLockless()};
-    return MultiPaxosResult{MultiPaxosResultType::kRetry, std::nullopt};
+      return Result{ResultType::kSomeoneElseLeader, LeaderLockless()};
+    return Result{ResultType::kRetry, std::nullopt};
   }
 }
 
@@ -248,7 +245,7 @@ void MultiPaxos::Replay(log_map_t const& log) {
   for (auto const& [_, instance] : log) {
     auto r =
         SendAccepts(instance.command(), instance.index(), instance.client_id());
-    if (r.type_ != MultiPaxosResultType::kOk)
+    if (r.type_ != ResultType::kOk)
       break;
   }
   {

@@ -36,14 +36,14 @@ using rpc_server_t = std::unique_ptr<grpc::Server>;
 
 int64_t Now();
 
-enum class MultiPaxosResultType {
+enum class ResultType {
   kOk,
   kRetry,
   kSomeoneElseLeader,
 };
 
-struct MultiPaxosResult {
-  MultiPaxosResultType type_;
+struct Result {
+  ResultType type_;
   std::optional<int64_t> leader_;
 };
 
@@ -134,17 +134,16 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
 
   void Start();
   void Stop();
-  MultiPaxosResult Replicate(multipaxos::Command command,
-                             client_id_t client_id);
+  Result Replicate(multipaxos::Command command, client_id_t client_id);
 
   void HeartbeatThread();
   void PrepareThread();
 
   int64_t SendHeartbeats(int64_t global_last_executed);
   log_map_t SendPrepares();
-  MultiPaxosResult SendAccepts(multipaxos::Command command,
-                               int64_t index,
-                               client_id_t client_id);
+  Result SendAccepts(multipaxos::Command command,
+                     int64_t index,
+                     client_id_t client_id);
 
   void Replay(log_map_t const& logs);
 
