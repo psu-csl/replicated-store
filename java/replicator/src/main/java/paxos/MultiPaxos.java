@@ -441,7 +441,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     mu.lock();
     try {
       if (heartbeatRequest.getBallot() >= ballot) {
-        lastHeartbeat = Instant.now().toEpochMilli();
+        lastHeartbeat = Now();
         setBallot(heartbeatRequest.getBallot());
         log_.commitUntil(heartbeatRequest.getLastExecuted(), heartbeatRequest.getBallot());
         log_.trimUntil(heartbeatRequest.getGlobalLastExecuted());
@@ -639,6 +639,10 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     } catch (InterruptedException e) {
       e.printStackTrace();
     }
+  }
+
+  public long Now() {
+    return Instant.now().toEpochMilli();
   }
 
   public boolean receivedHeartbeat() {
