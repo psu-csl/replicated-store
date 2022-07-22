@@ -90,6 +90,19 @@ void MultiPaxos::Stop() {
   rpc_server_->Shutdown();
 }
 
+MultiPaxosResult MultiPaxos::Replicate(multipaxos::Command command,
+                                       client_id_t client_id) {
+  if (IsLeaderAndReady())
+    return SendAccepts(command, log_->AdvanceLastIndex(), client_id);
+  {
+    std::scoped_lock lock(mu_);
+    if (IsSomeoneElseLeaderLockless())
+      return MultiPaxosResult{MultiPaxosResultType::kSomeoneElseLeader,
+                              LeaderLockless()};
+  }
+  return MultiPaxosResult{MultiPaxosResultType::kRetry, std::nullopt};
+}
+
 int64_t MultiPaxos::SendHeartbeats(int64_t global_last_executed) {
   auto state = std::make_shared<heartbeat_state_t>();
   state->min_last_executed = log_->LastExecuted();

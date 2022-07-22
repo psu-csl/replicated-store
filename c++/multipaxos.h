@@ -85,6 +85,11 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
 
   int64_t LeaderLockless() const { return ballot_ & kIdBits; }
 
+  bool IsLeaderAndReady() const {
+    std::scoped_lock lock(mu_);
+    return IsLeaderLockless() && ready_;
+  }
+
   bool IsLeader() const {
     std::scoped_lock lock(mu_);
     return IsLeaderLockless();
@@ -94,6 +99,10 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
 
   bool IsSomeoneElseLeader() const {
     std::scoped_lock lock(mu_);
+    return IsSomeoneElseLeaderLockless();
+  }
+
+  bool IsSomeoneElseLeaderLockless() const {
     auto id = ballot_ & kIdBits;
     return id != id_ && id < kMaxNumPeers;
   }
@@ -125,6 +134,8 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
 
   void Start();
   void Stop();
+  MultiPaxosResult Replicate(multipaxos::Command command,
+                             client_id_t client_id);
 
   void HeartbeatThread();
   void PrepareThread();
