@@ -130,8 +130,10 @@ int64_t MultiPaxos::SendHeartbeats(int64_t global_last_executed) {
               state->min_last_executed = response.last_executed();
           } else {
             std::scoped_lock lock(mu_);
-            if (response.ballot() >= ballot_)
+            if (response.ballot() >= ballot_) {
               SetBallot(response.ballot());
+              state->is_leader_ = false;
+            }
           }
         }
       }
@@ -140,7 +142,7 @@ int64_t MultiPaxos::SendHeartbeats(int64_t global_last_executed) {
   }
   {
     std::unique_lock lock(state->mu_);
-    while (IsLeader() && state->num_rpcs_ != rpc_peers_.size())
+    while (state->is_leader_ && state->num_rpcs_ != rpc_peers_.size())
       state->cv_.wait(lock);
     if (state->num_oks_ == rpc_peers_.size())
       return state->min_last_executed;
@@ -171,8 +173,10 @@ log_map_t MultiPaxos::SendPrepares() {
               Insert(&state->log_, std::move(response.instances(i)));
           } else {
             std::scoped_lock lock(mu_);
-            if (response.ballot() >= ballot_)
+            if (response.ballot() >= ballot_) {
               SetBallot(response.ballot());
+              state->is_leader_ = false;
+            }
           }
         }
       }
@@ -181,7 +185,7 @@ log_map_t MultiPaxos::SendPrepares() {
   }
   {
     std::unique_lock lock(state->mu_);
-    while (IsLeader() && state->num_oks_ <= rpc_peers_.size() / 2 &&
+    while (state->is_leader_ && state->num_oks_ <= rpc_peers_.size() / 2 &&
            state->num_rpcs_ != rpc_peers_.size())
       state->cv_.wait(lock);
     if (state->num_oks_ > rpc_peers_.size() / 2)
@@ -223,8 +227,10 @@ Result MultiPaxos::SendAccepts(Command command,
             ++state->num_oks_;
           } else {
             std::scoped_lock lock(mu_);
-            if (response.ballot() >= ballot_)
+            if (response.ballot() >= ballot_) {
               SetBallot(response.ballot());
+              state->is_leader_ = false;
+            }
           }
         }
       }
@@ -233,7 +239,7 @@ Result MultiPaxos::SendAccepts(Command command,
   }
   {
     std::unique_lock lock(state->mu_);
-    while (IsLeader() && state->num_oks_ <= rpc_peers_.size() / 2 &&
+    while (state->is_leader_ && state->num_oks_ <= rpc_peers_.size() / 2 &&
            state->num_rpcs_ != rpc_peers_.size())
       state->cv_.wait(lock);
     if (state->num_oks_ > rpc_peers_.size() / 2)
