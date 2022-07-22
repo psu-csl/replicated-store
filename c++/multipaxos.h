@@ -60,7 +60,7 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
     auto old_ballot = ballot_;
     ballot_ += kRoundIncrement;
     ballot_ = (ballot_ & ~kIdBits) | id_;
-    ready_ = false;
+    is_ready_ = false;
     DLOG(INFO) << id_ << " became a leader: ballot: " << old_ballot << " -> "
                << ballot_;
     cv_leader_.notify_one();
@@ -87,7 +87,7 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
 
   bool IsLeaderAndReady() const {
     std::scoped_lock lock(mu_);
-    return IsLeaderLockless() && ready_;
+    return IsLeaderLockless() && is_ready_;
   }
 
   bool IsLeader() const {
@@ -161,7 +161,7 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
                       multipaxos::AcceptResponse*) override;
 
   std::atomic<bool> running_;
-  bool ready_;
+  bool is_ready_;
   int64_t ballot_;
   Log* log_;
   int64_t id_;
