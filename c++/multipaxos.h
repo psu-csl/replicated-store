@@ -119,7 +119,7 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
       cv_follower_.wait(lock);
   }
 
-  void SleepForHeartbeatInterval() {
+  void SleepForHeartbeatInterval() const {
     std::this_thread::sleep_for(std::chrono::milliseconds(heartbeat_interval_));
   }
 
@@ -128,7 +128,7 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
     std::this_thread::sleep_for(std::chrono::milliseconds(sleep_time));
   }
 
-  bool ReceivedHeartbeat() {
+  bool ReceivedHeartbeat() const {
     return Now() - last_heartbeat_ < heartbeat_interval_;
   }
 
