@@ -62,13 +62,15 @@ class AcceptState {
 class PrepareState {
 
   public long numRpcs;
-  public List<ArrayList<Instance>> responses;
+  public long responses;
+  public HashMap<Long, log.Instance> log;
   public ReentrantLock mu;
   public Condition cv;
 
   public PrepareState() {
     this.numRpcs = 0;
-    this.responses = new ArrayList<ArrayList<Instance>>();
+    this.responses = 0;
+    this.log = new HashMap<>();
     this.mu = new ReentrantLock();
     this.cv = mu.newCondition();
   }
@@ -455,7 +457,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     }
   }
 
-  public List<ArrayList<Instance>> sendPrepares() {
+  public HashMap<Long, log.Instance> sendPrepares() {
     var state = new PrepareState();
     PrepareRequest.Builder request = PrepareRequest.newBuilder();
     request.setSender(this.id);
@@ -468,8 +470,10 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
         state.mu.lock();
         ++state.numRpcs;
         if (response.getType() == ResponseType.OK) {
-          ArrayList<Instance> tempLog = new ArrayList<>(response.getInstancesList());
-          state.responses.add(tempLog);
+          ++state.responses;
+          for (int i = 0; i < response.getInstancesCount(); ++i) {
+            insert(state.log, makeInstance(response.getInstances(i)));
+          }
         } else {
           assert (response.getType() == ResponseType.REJECT);
           mu.lock();
@@ -483,7 +487,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
       });
     }
     state.mu.lock();
-    while (isLeader() && state.responses.size() <= rpcPeers.size() / 2
+    while (isLeader() && state.responses <= rpcPeers.size() / 2
         && state.numRpcs != rpcPeers.size()) {
       try {
         state.cv.await();
@@ -492,9 +496,9 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
       }
     }
 
-    if (state.responses.size() > rpcPeers.size() / 2) {
+    if (state.responses > rpcPeers.size() / 2) {
       state.mu.unlock();
-      return state.responses;
+      return state.log;
     }
     state.mu.unlock(); // TODO: verify moving this above if and deleting unlock inside if
 
@@ -643,16 +647,10 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     return now - lastHeartbeat < heartbeatInterval;
   }
 
-  public List<List<log.Instance>> merge(List<ArrayList<Instance>> logs) {
-    return null;
-  }
-
-  public void replay(List<ArrayList<Instance>> logs) {
+  public void replay(HashMap<Long, log.Instance> logs) {
     HashMap<Long, log.Instance> mergedLog = new HashMap<>();
-    for (var log : logs) {
-      for (var instance : log) {
-        insert(mergedLog, makeInstance(instance));
-      }
+    for (Map.Entry<Long, log.Instance> entry : logs.entrySet()) {
+      insert(mergedLog, entry.getValue());
     }
 
     for (Map.Entry<Long, log.Instance> entry : mergedLog.entrySet()) {
