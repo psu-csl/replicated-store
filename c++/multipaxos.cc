@@ -273,9 +273,7 @@ Status MultiPaxos::Heartbeat(ServerContext*,
   DLOG(INFO) << id_ << " received heartbeat rpc from " << request->sender();
   std::scoped_lock lock(mu_);
   if (request->ballot() >= ballot_) {
-    last_heartbeat_ = time_point_cast<milliseconds>(steady_clock::now())
-                          .time_since_epoch()
-                          .count();
+    last_heartbeat_ = Now();
     SetBallot(request->ballot());
     log_->CommitUntil(request->last_executed(), request->ballot());
     log_->TrimUntil(request->global_last_executed());
@@ -315,4 +313,11 @@ Status MultiPaxos::Accept(ServerContext*,
     response->set_type(REJECT);
   }
   return Status::OK;
+}
+
+int64_t Now() {
+  return std::chrono::time_point_cast<std::chrono::milliseconds>(
+             std::chrono::steady_clock::now())
+      .time_since_epoch()
+      .count();
 }

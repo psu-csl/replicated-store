@@ -33,6 +33,8 @@ struct rpc_peer_t {
 
 using rpc_server_t = std::unique_ptr<grpc::Server>;
 
+int64_t Now();
+
 class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
  public:
   MultiPaxos(Log* log, nlohmann::json const& config);
@@ -104,11 +106,7 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
   }
 
   bool ReceivedHeartbeat() {
-    auto now = std::chrono::time_point_cast<std::chrono::milliseconds>(
-                   std::chrono::steady_clock::now())
-                   .time_since_epoch()
-                   .count();
-    return now - last_heartbeat_ < heartbeat_interval_;
+    return Now() - last_heartbeat_ < heartbeat_interval_;
   }
 
   void Start();
