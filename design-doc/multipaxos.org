@@ -237,6 +237,16 @@
         cv_leader_.wait(mu_)
       mu_.unlock()
 
+    - replicate(cmd: command, client-id: int) -> accept_result_t
+      if i_am_leader()
+        if ready_
+          return accept(cmd, log_.advance_last_index(), client-id)
+        return accept_result_t{type_: retry, leader_: N/A}
+      if someone_else_is_leader()
+        return accept_result_t{type_: reject, leader_: leader()}
+      # election in progress
+      return accept_result_t{type_: retry, leader_: N/A}
+
     - heartbeat_handler(request: heartbeat_rpc_request)
       # description: handler for the heartbeat RPC
       # preconditions:
@@ -312,7 +322,59 @@
       # reject stale RPC requests
       return prepare_rpc_response{type_: reject, ballot_: ballot_, log_: N/A}
 
+
+    - prepare() -> prepare_result_t:
+      num_responses = 0
+      ok_logs = vector<instance_t[]>
+      cv, mu
+      request = prepare_rpc_request{ballot_: next_ballot#()}
+      for each peer p {
+        run closure in a separate thread {
+          response = p.prepareRPC(request)
+          lock(mu)
+          ++num_responses
+          if response.type_ == ok:
+            ok_logs.push(response.log_)
+          else if response.type_ == reject:
+            ballot_ = response.ballot_
+          # else it is a timeout error; we do nothing
+          unlock(mu)
+          cv.notify_one()
+        }
+      }
+      lock(mu)
+      while i_am_leader() &&
+            num_ok_responses <= peers_.size()/2 &&
+            num_responses != peers_.size()
+        cv.wait(mu)
+      # one of the above three conditions is false; handle each, starting with the
+      # most likely one
+      if num_ok_responses > peers_.size()/2: # we have quorum
+        return prepare_result_t{type_: ok, log_: ok_logs}
+      if someone_else_is_leader():
+        return prepare_result_t{type_: reject}
+      # multiple timeout responses
+      return prepare_result_t{type_: timeout}
+
     - prepare_thread()
+      for (;;) {
+        sleep until follower
+        for (;;) {
+          sleep(heartbeat_interval_ + random(10, heartbeat_interval_))
+          if time::now() - last_heartbeat_ < heartbeat_interval_:
+            continue
+          prepare_result_t result = prepare()
+          if result.type_ != ok:
+            continue
+          # we are a leader
+          wake up heartbeat_thread
+          ready_ = false
+          log_.merge(result.logs_)
+          if (replay())
+            ready_ = true
+          break
+        }
+      }
 
     - accept_handler(request: accept_rpc_request)
       # description: handler for the accept RPC
@@ -326,7 +388,50 @@
       # stale message
       return accept_rpc_response{type_: reject, ballot_: ballot_}
 
+    - accept(cmd: command, index: int, client-id: int) -> accept_result_t
+      num_responses = 0
+      num_ok_responses = 0
+      cv, mu
+      request = accept_rpc_request{command_: cmd,
+                                   index_: index,
+                                   ballot_: ballot_,
+                                   client-id_: client-id}
+      for each peer p {
+        run closure in a separate thread {
+          response = p.acceptRPC(request)
+          lock(mu)
+          ++num_responses
+          if response.type_ == ok:
+            ++ok_responses
+          else if response.type_ == reject:
+            ballot_ = response.ballot_
+          # else it is a timeout error; we do nothing
+          unlock(mu)
+          cv.notify_one()
+        }
+      }
+      lock(mu)
+      while i_am_leader() &&
+            num_ok_responses <= peers_.size()/2 &&
+            num_responses != peers_.size():
+        cv.wait(mu)
 
+      if num_ok_responses > peers_.size() / 2
+        log_.commit(index)
+        return accept_result_t{type_: ok, leader_: N/A}
+      if someone_else_is_leader()
+        return accept_result_t{type_: reject, leader_: leader()}
+      # RPCs timed out
+      return accept_result_t{type_: retry, leader_: N/A}
+
+    - replay() -> bool
+      for i in log_.new_instances()
+        accept_result_t r = accept(i.command_, i.index, i.client-id_)
+        if r.type_ == leader
+          return false
+        if r.type_ == retry
+          continue
+      return true
 
 - unit tests
 
