@@ -124,9 +124,15 @@ int64_t MultiPaxos::SendHeartbeats(int64_t global_last_executed) {
         std::scoped_lock lock(state->mu_);
         ++state->num_rpcs_;
         if (s.ok()) {
-          ++state->num_oks_;
-          if (response.last_executed() < state->min_last_executed)
-            state->min_last_executed = response.last_executed();
+          if (response.type() == OK) {
+            ++state->num_oks_;
+            if (response.last_executed() < state->min_last_executed)
+              state->min_last_executed = response.last_executed();
+          } else {
+            std::scoped_lock lock(mu_);
+            if (response.ballot() >= ballot_)
+              SetBallot(response.ballot());
+          }
         }
       }
       state->cv_.notify_one();
