@@ -384,12 +384,8 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
       waitUntilLeader();
       var gle = log_.getGlobalLastExecuted();
       while (running.get() && isLeader()) {
-        var newGle = sendHeartbeats(gle);
-        if (newGle != null) {
-          gle = newGle;
-        }
+        gle = sendHeartbeats(gle);
         sleepForHeartbeatInterval();
-
       }
       logger.info(id + " stopping heartbeat thread");
     }
@@ -431,7 +427,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
           .orElseThrow(NoSuchElementException::new);
     }
     state.mu.unlock();
-    return null;
+    return globalLastExecuted;
   }
 
 
