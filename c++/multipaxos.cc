@@ -91,25 +91,22 @@ void MultiPaxos::Stop() {
 }
 
 Result MultiPaxos::Replicate(Command command, client_id_t client_id) {
-  if (IsLeaderAndReady())
-    return SendAccepts(command, log_->AdvanceLastIndex(), client_id);
-  {
-    std::scoped_lock lock(mu_);
-    if (IsSomeoneElseLeaderLockless())
-      return Result{ResultType::kSomeoneElseLeader, LeaderLockless()};
+  auto [is_leader, is_ready, ballot] = GetBallotOrLeader();
+  if (is_leader) {
+    if (is_ready)
+      return SendAccepts(ballot, log_->AdvanceLastIndex(), command, client_id);
+    return Result{ResultType::kRetry, std::nullopt};
   }
-  return Result{ResultType::kRetry, std::nullopt};
+  return Result{ResultType::kSomeoneElseLeader, ballot};
 }
 
-int64_t MultiPaxos::SendHeartbeats(int64_t global_last_executed) {
+int64_t MultiPaxos::SendHeartbeats(int64_t ballot,
+                                   int64_t global_last_executed) {
   auto state = std::make_shared<heartbeat_state_t>();
   state->min_last_executed = log_->LastExecuted();
 
   HeartbeatRequest request;
-  {
-    std::scoped_lock lock(mu_);
-    request.set_ballot(ballot_);
-  }
+  request.set_ballot(ballot);
   request.set_sender(id_);
   request.set_last_executed(state->min_last_executed);
   request.set_global_last_executed(global_last_executed);
@@ -150,12 +147,12 @@ int64_t MultiPaxos::SendHeartbeats(int64_t global_last_executed) {
   return global_last_executed;
 }
 
-log_map_t MultiPaxos::SendPrepares() {
+std::optional<log_map_t> MultiPaxos::SendPrepares(int64_t ballot) {
   auto state = std::make_shared<prepare_state_t>();
 
   PrepareRequest request;
   request.set_sender(id_);
-  request.set_ballot(NextBallot());
+  request.set_ballot(ballot);
 
   for (auto& peer : rpc_peers_) {
     asio::post(thread_pool_, [this, state, &peer, request] {
@@ -190,20 +187,20 @@ log_map_t MultiPaxos::SendPrepares() {
       state->cv_.wait(lock);
     if (state->num_oks_ > rpc_peers_.size() / 2)
       return std::move(state->log_);
+    if (!state->is_leader_)
+      return std::nullopt;
   }
   return {};
 }
 
-Result MultiPaxos::SendAccepts(Command command,
+Result MultiPaxos::SendAccepts(int64_t ballot,
                                int64_t index,
+                               Command command,
                                client_id_t client_id) {
   auto state = std::make_shared<accept_state_t>();
 
   Instance instance;
-  {
-    std::scoped_lock lock(mu_);
-    instance.set_ballot(ballot_);
-  }
+  instance.set_ballot(ballot);
   instance.set_index(index);
   instance.set_client_id(client_id);
   instance.set_state(INPROGRESS);
@@ -253,20 +250,23 @@ Result MultiPaxos::SendAccepts(Command command,
   }
 }
 
-void MultiPaxos::Replay(log_map_t const& log) {
+bool MultiPaxos::Replay(log_map_t const& log) {
   for (auto const& [_, instance] : log) {
-    auto r =
-        SendAccepts(instance.command(), instance.index(), instance.client_id());
-    if (r.type_ != ResultType::kOk)
-      break;
+    auto [is_leader, __, ballot] = GetBallotOrLeader();
+    if (!is_leader)
+      return false;
+    SendAccepts(ballot, instance.index(), instance.command(),
+                instance.client_id());
   }
   {
     std::scoped_lock lock(mu_);
     if (IsLeaderLockless()) {
       is_ready_ = true;
       DLOG(INFO) << id_ << " leader is ready to serve";
+      return true;
     }
   }
+  return false;
 }
 
 void MultiPaxos::HeartbeatThread() {
@@ -274,8 +274,11 @@ void MultiPaxos::HeartbeatThread() {
   while (running_) {
     WaitUntilLeader();
     auto gle = log_->GlobalLastExecuted();
-    while (running_ && IsLeader()) {
-      gle = SendHeartbeats(gle);
+    while (running_) {
+      auto [is_leader, _, ballot] = GetBallotOrLeader();
+      if (!is_leader)
+        break;
+      gle = SendHeartbeats(ballot, gle);
       SleepForHeartbeatInterval();
     }
   }
@@ -286,11 +289,15 @@ void MultiPaxos::PrepareThread() {
   DLOG(INFO) << id_ << " starting prepare thread";
   while (running_) {
     WaitUntilFollower();
-    while (running_ && !IsLeader()) {
+    while (running_) {
       SleepForRandomInterval();
       if (ReceivedHeartbeat())
         continue;
-      Replay(SendPrepares());
+      auto log = SendPrepares(NextBallot());
+      if (!log)
+        break;
+      if (!Replay(*log))
+        break;
     }
   }
   DLOG(INFO) << id_ << " stopping prepare thread";

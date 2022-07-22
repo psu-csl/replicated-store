@@ -78,6 +78,13 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
     ballot_ = ballot;
   }
 
+  std::tuple<bool, bool, int64_t> GetBallotOrLeader() const {
+    std::scoped_lock lock(mu_);
+    if (IsLeaderLockless())
+      return {true, is_ready_, ballot_};
+    return {false, false, LeaderLockless()};
+  }
+
   int64_t Leader() const {
     std::scoped_lock lock(mu_);
     return LeaderLockless();
@@ -139,13 +146,14 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
   void HeartbeatThread();
   void PrepareThread();
 
-  int64_t SendHeartbeats(int64_t global_last_executed);
-  log_map_t SendPrepares();
-  Result SendAccepts(multipaxos::Command command,
+  int64_t SendHeartbeats(int64_t ballot, int64_t global_last_executed);
+  std::optional<log_map_t> SendPrepares(int64_t ballot);
+  Result SendAccepts(int64_t ballot,
                      int64_t index,
+                     multipaxos::Command command,
                      client_id_t client_id);
 
-  void Replay(log_map_t const& logs);
+  bool Replay(log_map_t const& logs);
 
  private:
   grpc::Status Heartbeat(grpc::ServerContext*,
