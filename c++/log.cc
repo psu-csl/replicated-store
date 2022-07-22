@@ -78,7 +78,7 @@ void Log::Commit(int64_t index) {
     cv_executable_.notify_one();
 }
 
-std::tuple<client_id_t, Result> Log::Execute(KVStore* kv) {
+std::tuple<client_id_t, KVResult> Log::Execute(KVStore* kv) {
   std::unique_lock lock(mu_);
   while (!IsExecutable())
     cv_executable_.wait(lock);
@@ -88,7 +88,7 @@ std::tuple<client_id_t, Result> Log::Execute(KVStore* kv) {
   Instance* instance = &it->second;
 
   CHECK_NOTNULL(kv);
-  Result result = kv->Execute(instance->command());
+  KVResult result = kv->Execute(instance->command());
   instance->set_state(EXECUTED);
   ++last_executed_;
   return {instance->client_id(), result};

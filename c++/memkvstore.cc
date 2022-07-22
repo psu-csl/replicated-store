@@ -21,22 +21,22 @@ bool MemKVStore::Del(const std::string& key) {
   return map_.erase(key) != 0;
 }
 
-Result MemKVStore::Execute(const Command& cmd) {
+KVResult MemKVStore::Execute(const Command& cmd) {
   if (cmd.type() == multipaxos::CommandType::GET) {
     auto r = Get(cmd.key());
     if (!r)
-      return Result{false, &kKeyNotFound};
-    return Result{true, r};
+      return KVResult{false, &kKeyNotFound};
+    return KVResult{true, r};
   }
 
   if (cmd.type() == multipaxos::CommandType::PUT) {
     Put(cmd.key(), cmd.value());
-    return Result{true, &kEmpty};
+    return KVResult{true, &kEmpty};
   }
 
   CHECK(cmd.type() == multipaxos::CommandType::DEL);
 
   if (Del(cmd.key()))
-    return Result{true, &kEmpty};
-  return Result{false, &kKeyNotFound};
+    return KVResult{true, &kEmpty};
+  return KVResult{false, &kKeyNotFound};
 }

@@ -53,45 +53,45 @@ Command MakeCommand(CommandType type,
 TEST(MemKVStoreTest, Execute) {
   MemKVStore store;
   {
-    Result r = store.Execute(MakeCommand(GET, key1, ""));
+    KVResult r = store.Execute(MakeCommand(GET, key1, ""));
     EXPECT_TRUE(!r.ok_ && *r.value_ == kKeyNotFound);
   }
   {
-    Result r = store.Execute(MakeCommand(DEL, key1, ""));
+    KVResult r = store.Execute(MakeCommand(DEL, key1, ""));
     EXPECT_TRUE(!r.ok_ && *r.value_ == kKeyNotFound);
   }
   {
-    Result r1 = store.Execute(MakeCommand(PUT, key1, val1));
+    KVResult r1 = store.Execute(MakeCommand(PUT, key1, val1));
     EXPECT_TRUE(r1.ok_ && *r1.value_ == kEmpty);
 
-    Result r2 = store.Execute(MakeCommand(GET, key1, ""));
+    KVResult r2 = store.Execute(MakeCommand(GET, key1, ""));
     EXPECT_TRUE(r2.ok_ && *r2.value_ == val1);
   }
   {
-    Result r1 = store.Execute(MakeCommand(PUT, key2, val2));
+    KVResult r1 = store.Execute(MakeCommand(PUT, key2, val2));
     EXPECT_TRUE(r1.ok_ && *r1.value_ == kEmpty);
 
-    Result r2 = store.Execute(MakeCommand(GET, key2, ""));
+    KVResult r2 = store.Execute(MakeCommand(GET, key2, ""));
     EXPECT_TRUE(r2.ok_ && *r2.value_ == val2);
   }
   {
-    Result r1 = store.Execute(MakeCommand(PUT, key1, val2));
+    KVResult r1 = store.Execute(MakeCommand(PUT, key1, val2));
     EXPECT_TRUE(r1.ok_ && *r1.value_ == kEmpty);
 
-    Result r2 = store.Execute(MakeCommand(GET, key1, ""));
+    KVResult r2 = store.Execute(MakeCommand(GET, key1, ""));
     EXPECT_TRUE(r2.ok_ && *r2.value_ == val2);
 
-    Result r3 = store.Execute(MakeCommand(GET, key2, ""));
+    KVResult r3 = store.Execute(MakeCommand(GET, key2, ""));
     EXPECT_TRUE(r3.ok_ && *r3.value_ == val2);
   }
   {
-    Result r1 = store.Execute(MakeCommand(DEL, key1, ""));
+    KVResult r1 = store.Execute(MakeCommand(DEL, key1, ""));
     EXPECT_TRUE(r1.ok_ && *r1.value_ == kEmpty);
 
-    Result r2 = store.Execute(MakeCommand(GET, key1, ""));
+    KVResult r2 = store.Execute(MakeCommand(GET, key1, ""));
     EXPECT_FALSE(r2.ok_ && *r2.value_ == kKeyNotFound);
 
-    Result r3 = store.Execute(MakeCommand(GET, key2, ""));
+    KVResult r3 = store.Execute(MakeCommand(GET, key2, ""));
     EXPECT_TRUE(r3.ok_ && *r3.value_ == val2);
   }
 }

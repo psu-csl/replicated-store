@@ -17,7 +17,7 @@ class MemKVStore : public KVStore {
   std::string* Get(const std::string& key) override;
   bool Put(const std::string& key, const std::string& value) override;
   bool Del(const std::string& key) override;
-  Result Execute(const multipaxos::Command& cmd) override;
+  KVResult Execute(const multipaxos::Command& cmd) override;
 
  private:
   std::map<std::string, std::string> map_;

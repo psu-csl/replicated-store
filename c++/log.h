@@ -49,7 +49,7 @@ class Log {
 
   void Append(multipaxos::Instance instance);
   void Commit(int64_t index);
-  std::tuple<client_id_t, Result> Execute(KVStore* kv);
+  std::tuple<client_id_t, KVResult> Execute(KVStore* kv);
 
   void CommitUntil(int64_t leader_last_executed, int64_t ballot);
   void TrimUntil(int64_t leader_global_last_executed);
