@@ -41,6 +41,21 @@ import multipaxos.PrepareResponse;
 import multipaxos.ResponseType;
 import org.slf4j.LoggerFactory;
 
+class HeartbeatState {
+
+  public long numRpcs;
+  List<Long> responses;
+  ReentrantLock mu;
+  Condition cv;
+
+  public HeartbeatState() {
+    this.numRpcs = 0;
+    this.responses = new ArrayList<>();
+    this.mu = new ReentrantLock();
+    this.cv = mu.newCondition();
+  }
+}
+
 class RpcPeer {
 
   public long id;
