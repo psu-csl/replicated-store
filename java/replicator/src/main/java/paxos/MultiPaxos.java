@@ -40,6 +40,22 @@ import multipaxos.PrepareResponse;
 import multipaxos.ResponseType;
 import org.slf4j.LoggerFactory;
 
+class AcceptState {
+
+  public long numRpcs;
+  public long responses;
+  public ReentrantLock mu;
+  public Condition cv;
+
+  public AcceptState() {
+    this.numRpcs = 0;
+    this.responses = 0;
+    this.mu = new ReentrantLock();
+    this.cv = mu.newCondition();
+  }
+
+}
+
 class PrepareState {
 
   public long numRpcs;
@@ -405,11 +421,14 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
       }
     }
     if (state.responses.size() == rpcPeers.size()) {
+      state.mu.unlock();
       return heartbeatResponses.stream().mapToLong(v -> v).min()
           .orElseThrow(NoSuchElementException::new);
     }
+    state.mu.unlock();
     return null;
   }
+
 
   @Override
   public void heartbeat(HeartbeatRequest heartbeatRequest,
@@ -471,9 +490,10 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     }
 
     if (state.responses.size() > rpcPeers.size() / 2) {
+      state.mu.unlock();
       return state.responses;
     }
-    state.mu.unlock(); // TODO: verify moving this above if
+    state.mu.unlock(); // TODO: verify moving this above if and deleting unlock inside if
 
     return null;
   }
@@ -559,6 +579,56 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     } finally {
       mu.unlock();
     }
+  }
+
+  public boolean sendAccepts(command.Command command, long index, long clientId) {
+    var state = new AcceptState();
+    AcceptRequest.Builder request = AcceptRequest.newBuilder();
+    request.setSender(this.id);
+    log.Instance instance = new log.Instance();
+    mu.lock();
+    instance.setBallot(this.ballot);
+    mu.unlock();
+    instance.setIndex(index);
+    instance.setClientId(clientId);
+    instance.setState(log.Instance.InstanceState.kInProgress);
+    instance.setCommand(command);
+    request.setInstance(makeProtoInstance(instance));
+    for (var peer : rpcPeers) {
+      threadPool.submit(() -> {
+        var response = MultiPaxosRPCGrpc.newBlockingStub(peer.stub)
+            .accept(request.build());
+        logger.info(id + " sent accept request to " + peer.id);
+        state.mu.lock();
+        ++state.numRpcs;
+        if (response.getType() == ResponseType.OK) {
+          ++state.responses;
+        } else {
+          mu.lock();
+          if (response.getBallot() >= this.ballot) {
+            setBallot(response.getBallot());
+          }
+          mu.unlock();
+        }
+        state.cv.signal();
+        state.mu.unlock();
+      });
+    }
+    state.mu.lock();
+    while (isLeader() && state.responses <= rpcPeers.size() / 2
+        && state.numRpcs != rpcPeers.size()) {
+      try {
+        state.cv.await();
+      } catch (InterruptedException e) {
+        e.printStackTrace();
+      }
+    }
+    if (state.responses > rpcPeers.size() / 2) {
+      state.mu.unlock();
+      return true;
+    }
+    state.mu.unlock(); // TODO: verify whether it's safe to unlock before if
+    return false;
   }
 
 }
