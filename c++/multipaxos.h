@@ -92,11 +92,6 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
 
   int64_t LeaderLockless() const { return ballot_ & kIdBits; }
 
-  bool IsLeaderAndReady() const {
-    std::scoped_lock lock(mu_);
-    return IsLeaderLockless() && is_ready_;
-  }
-
   bool IsLeader() const {
     std::scoped_lock lock(mu_);
     return IsLeaderLockless();
