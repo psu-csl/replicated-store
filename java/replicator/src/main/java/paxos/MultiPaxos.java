@@ -31,7 +31,6 @@ import multipaxos.AcceptResponse;
 import multipaxos.Command;
 import multipaxos.CommandType;
 import multipaxos.HeartbeatRequest;
-import multipaxos.HeartbeatRequest.Builder;
 import multipaxos.HeartbeatResponse;
 import multipaxos.Instance;
 import multipaxos.InstanceState;
@@ -40,6 +39,21 @@ import multipaxos.PrepareRequest;
 import multipaxos.PrepareResponse;
 import multipaxos.ResponseType;
 import org.slf4j.LoggerFactory;
+
+class PrepareState {
+
+  public long numRpcs;
+  public List<ArrayList<Instance>> responses;
+  public ReentrantLock mu;
+  public Condition cv;
+
+  public PrepareState() {
+    this.numRpcs = 0;
+    this.responses = new ArrayList<ArrayList<Instance>>();
+    this.mu = new ReentrantLock();
+    this.cv = mu.newCondition();
+  }
+}
 
 class HeartbeatState {
 
@@ -87,15 +101,10 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
   private AtomicBoolean running;
   private ExecutorService heartbeatThread;
   private ExecutorService prepareThread;
-  private long heartbeatNumRpcs;
   private List<Long> heartbeatResponses;
-  private ReentrantLock heartbeatMu;
-  private Condition heartbeatCv;
-  private Builder heartbeatRequestBuilder;
   private List<RpcPeer> rpcPeers;
   private ExecutorService threadPool;
   private int heartbeatDelta;
-  private boolean ready;
   private long prepareNumRpcs;
   private List<List<Instance>> prepareOkResponses;
   private ReentrantLock prepareMu;
@@ -109,20 +118,15 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     this.heartbeatInterval = config.getHeartbeatPause();
     this.log_ = log;
     this.running = new AtomicBoolean(false);
-    ready = false;
     mu = new ReentrantLock();
     cvLeader = mu.newCondition();
     cvFollower = mu.newCondition();
     heartbeatThread = Executors.newSingleThreadExecutor();
     prepareThread = Executors.newSingleThreadExecutor();
-    heartbeatNumRpcs = 0;
     lastHeartbeat = 0;
     heartbeatResponses = new ArrayList<>();
-    heartbeatMu = new ReentrantLock();
-    heartbeatCv = heartbeatMu.newCondition();
     rpcServerRunning = false;
 
-    prepareNumRpcs = 0;
     prepareOkResponses = new ArrayList<>();
     prepareMu = new ReentrantLock();
     prepareCv = prepareMu.newCondition();
@@ -130,7 +134,6 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
 
     rpcServerRunningCv = mu.newCondition();
 
-    heartbeatRequestBuilder = HeartbeatRequest.newBuilder();
     threadPool = Executors.newFixedThreadPool(config.getThreadPoolSize());
     rpcPeers = new ArrayList<>();
     long rpcId = 0;
@@ -196,7 +199,6 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
       var oldBallot = ballot;
       ballot += kRoundIncrement;
       ballot = (ballot & ~kIdBits) | id;
-      ready = false;
       logger.info(id + " became a leader: ballot: " + oldBallot + " -> " + ballot);
       cvLeader.signal();
       return ballot;
@@ -441,6 +443,51 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     }
   }
 
+  public List<ArrayList<Instance>> sendPrepares() {
+    var state = new PrepareState();
+    PrepareRequest.Builder request = PrepareRequest.newBuilder();
+    request.setSender(this.id);
+    request.setBallot(nextBallot());
+    for (var peer : rpcPeers) {
+      threadPool.submit(() -> {
+        var response = MultiPaxosRPCGrpc.newBlockingStub(peer.stub)
+            .prepare(request.build());
+        logger.info(id + " sent prepare request to " + peer.id);
+        state.mu.lock();
+        ++state.numRpcs;
+        if (response.getType() == ResponseType.OK) {
+          ArrayList<Instance> tempLog = new ArrayList<>(response.getInstancesList());
+          state.responses.add(tempLog);
+        } else {
+          assert (response.getType() == ResponseType.REJECT);
+          mu.lock();
+          if (response.getBallot() >= ballot) {
+            setBallot(response.getBallot());
+          }
+          mu.unlock();
+        }
+        state.cv.signal();
+        state.mu.unlock();
+      });
+    }
+    state.mu.lock();
+    while (isLeader() && state.responses.size() <= rpcPeers.size() / 2
+        && state.numRpcs != rpcPeers.size()) {
+      try {
+        state.cv.await();
+      } catch (InterruptedException e) {
+        e.printStackTrace();
+      }
+    }
+
+    if (state.responses.size() > rpcPeers.size() / 2) {
+      return state.responses;
+    }
+    state.mu.unlock();
+
+    return null;
+  }
+
   @Override
   public void prepare(PrepareRequest request, StreamObserver<PrepareResponse> responseObserver) {
     logger.info(id + " received prepare rpc from " + request.getSender());
@@ -487,49 +534,13 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
           continue;
         }
 
-        prepareNumRpcs = 0;
-        prepareOkResponses.clear();
-        prepareRequestBuilder.setBallot(nextBallot());
-        prepareRequestBuilder.setSender(id);
-        for (var peer : rpcPeers) {
-          threadPool.submit(() -> {
-            var response = MultiPaxosRPCGrpc.newBlockingStub(peer.stub)
-                .prepare(prepareRequestBuilder.build());
-            logger.info(id + " sent prepare request to " + peer.id);
-            prepareMu.lock();
-            ++prepareNumRpcs;
-            if (response.getType() == ResponseType.OK) {
-              ArrayList<Instance> tempLog = new ArrayList<>(response.getInstancesList());
-              prepareOkResponses.add(tempLog);
-            } else {
-              assert (response.getType() == ResponseType.REJECT);
-              mu.lock();
-              if (response.getBallot() >= ballot) {
-                setBallot(response.getBallot());
-              }
-              mu.unlock();
-            }
-            prepareCv.signal();
-            prepareMu.unlock();
-          });
-        }
-
-        prepareMu.lock();
-        while (isLeader() && prepareOkResponses.size() <= rpcPeers.size() / 2
-            && prepareNumRpcs != rpcPeers.size()) {
-          try {
-            prepareCv.await();
-          } catch (InterruptedException e) {
-            e.printStackTrace();
-          }
-        }
-        prepareMu.unlock();
-        if (prepareOkResponses.size() <= rpcPeers.size() / 2) {
+        var res = sendPrepares();
+        if (res != null) {
           continue;
         }
+
         mu.lock();
         if (isLeaderLockless()) {
-          ready = true;
           logger.info(id + " leader and ready to serve");
         }
         mu.unlock();
