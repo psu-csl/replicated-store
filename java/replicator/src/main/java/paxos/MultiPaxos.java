@@ -45,13 +45,13 @@ import org.slf4j.LoggerFactory;
 class AcceptState {
 
   public long numRpcs;
-  public long responses;
+  public long numOks;
   public ReentrantLock mu;
   public Condition cv;
 
   public AcceptState() {
     this.numRpcs = 0;
-    this.responses = 0;
+    this.numOks = 0;
     this.mu = new ReentrantLock();
     this.cv = mu.newCondition();
   }
@@ -61,14 +61,14 @@ class AcceptState {
 class PrepareState {
 
   public long numRpcs;
-  public long responses;
+  public long numOks;
   public HashMap<Long, log.Instance> log;
   public ReentrantLock mu;
   public Condition cv;
 
   public PrepareState() {
     this.numRpcs = 0;
-    this.responses = 0;
+    this.numOks = 0;
     this.log = new HashMap<>();
     this.mu = new ReentrantLock();
     this.cv = mu.newCondition();
@@ -469,7 +469,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
         state.mu.lock();
         ++state.numRpcs;
         if (response.getType() == ResponseType.OK) {
-          ++state.responses;
+          ++state.numOks;
           for (int i = 0; i < response.getInstancesCount(); ++i) {
             insert(state.log, makeInstance(response.getInstances(i)));
           }
@@ -486,7 +486,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
       });
     }
     state.mu.lock();
-    while (isLeader() && state.responses <= rpcPeers.size() / 2
+    while (isLeader() && state.numOks <= rpcPeers.size() / 2
         && state.numRpcs != rpcPeers.size()) {
       try {
         state.cv.await();
@@ -495,7 +495,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
       }
     }
 
-    if (state.responses > rpcPeers.size() / 2) {
+    if (state.numOks > rpcPeers.size() / 2) {
       state.mu.unlock();
       return state.log;
     }
@@ -594,7 +594,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
         state.mu.lock();
         ++state.numRpcs;
         if (response.getType() == ResponseType.OK) {
-          ++state.responses;
+          ++state.numOks;
         } else {
           mu.lock();
           if (response.getBallot() >= this.ballot) {
@@ -607,7 +607,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
       });
     }
     state.mu.lock();
-    while (isLeader() && state.responses <= rpcPeers.size() / 2
+    while (isLeader() && state.numOks <= rpcPeers.size() / 2
         && state.numRpcs != rpcPeers.size()) {
       try {
         state.cv.await();
@@ -615,7 +615,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
         e.printStackTrace();
       }
     }
-    if (state.responses > rpcPeers.size() / 2) {
+    if (state.numOks > rpcPeers.size() / 2) {
       state.mu.unlock();
       return true;
     }
