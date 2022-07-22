@@ -376,15 +376,12 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
       waitUntilLeader();
       var globalLastExecuted = log_.getGlobalLastExecuted();
       while (running.get() && isLeader()) {
-        var res = sendHeartbeats(globalLastExecuted);
-        if (res != null) {
-          globalLastExecuted = res;
+        var newGlobalLastExecuted = sendHeartbeats(globalLastExecuted);
+        if (newGlobalLastExecuted != null) {
+          globalLastExecuted = newGlobalLastExecuted;
         }
-        try {
-          Thread.sleep(heartbeatInterval);
-        } catch (InterruptedException e) {
-          e.printStackTrace();
-        }
+        sleepForHeartbeatInterval();
+
       }
       logger.info(id + " stopping heartbeat thread");
     }
@@ -528,33 +525,17 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     Random random = new Random();
     logger.info(id + " starting prepare thread");
     while (running.get()) {
-      waitUntilLeader();
+      waitUntilFollower();
       while (running.get() && !isLeader()) {
-        var sleepTime = heartbeatInterval + random.nextInt(heartbeatDelta,
-            (int) heartbeatInterval); // check whether to add with heartbeatInterval or not
-        logger.info(id + " prepare thread sleeping for " + sleepTime);
-        try {
-          Thread.sleep(sleepTime);
-        } catch (InterruptedException e) {
-          e.printStackTrace();
-        }
-        logger.info(id + " prepare thread woke up");
-        var now = Instant.now().toEpochMilli();
-        if (now - lastHeartbeat < heartbeatInterval) {
+        sleepForRandomInterval();
+        if (receivedHeartbeat()) {
           continue;
         }
 
-        var res = sendPrepares();
-        if (res != null) {
-          continue;
+        var logs = sendPrepares();
+        if (logs != null) {
+          replay(merge(logs));
         }
-
-        mu.lock();
-        if (isLeaderLockless()) {
-          logger.info(id + " leader and ready to serve");
-        }
-        mu.unlock();
-
       }
     }
     logger.info(id + " stopping prepare thread");
@@ -583,8 +564,6 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
 
   public boolean sendAccepts(command.Command command, long index, long clientId) {
     var state = new AcceptState();
-    AcceptRequest.Builder request = AcceptRequest.newBuilder();
-    request.setSender(this.id);
     log.Instance instance = new log.Instance();
     mu.lock();
     instance.setBallot(this.ballot);
@@ -593,7 +572,11 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     instance.setClientId(clientId);
     instance.setState(log.Instance.InstanceState.kInProgress);
     instance.setCommand(command);
+
+    AcceptRequest.Builder request = AcceptRequest.newBuilder();
+    request.setSender(this.id);
     request.setInstance(makeProtoInstance(instance));
+
     for (var peer : rpcPeers) {
       threadPool.submit(() -> {
         var response = MultiPaxosRPCGrpc.newBlockingStub(peer.stub)
@@ -631,4 +614,35 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     return false;
   }
 
+  public void sleepForHeartbeatInterval() {
+    try {
+      Thread.sleep(heartbeatInterval);
+    } catch (InterruptedException e) {
+      e.printStackTrace();
+    }
+  }
+
+  public void sleepForRandomInterval() {
+    Random random = new Random();
+    var sleepTime = heartbeatInterval + random.nextInt(heartbeatDelta, (int) heartbeatInterval);
+    try {
+      Thread.sleep(sleepTime);
+    } catch (InterruptedException e) {
+      e.printStackTrace();
+    }
+  }
+
+  public boolean receivedHeartbeat() {
+    var now = Instant.now().toEpochMilli();
+    return now - lastHeartbeat < heartbeatInterval;
+  }
+
+  public List<List<log.Instance>> merge(List<ArrayList<Instance>> logs) {
+    return null;
+  }
+
+  public void replay(List<List<log.Instance>> log) {
+  }
+
 }
+
