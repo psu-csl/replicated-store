@@ -3,6 +3,7 @@ package paxos;
 import static command.Command.CommandType.kDel;
 import static command.Command.CommandType.kGet;
 import static command.Command.CommandType.kPut;
+import static log.Log.insert;
 import static multipaxos.CommandType.DEL;
 import static multipaxos.CommandType.GET;
 import static multipaxos.CommandType.PUT;
@@ -16,7 +17,9 @@ import io.grpc.stub.StreamObserver;
 import java.io.IOException;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Random;
 import java.util.concurrent.ExecutorService;
@@ -117,6 +120,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
   private final List<RpcPeer> rpcPeers;
   private final ExecutorService threadPool;
   private final int heartbeatDelta;
+  private boolean ready;
   private boolean rpcServerRunning;
   private long lastHeartbeat;
   private long id;
@@ -137,6 +141,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     lastHeartbeat = 0;
     heartbeatResponses = new ArrayList<>();
     rpcServerRunning = false;
+    ready = false;
 
     rpcServerRunningCv = mu.newCondition();
 
@@ -205,6 +210,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
       var oldBallot = ballot;
       ballot += kRoundIncrement;
       ballot = (ballot & ~kIdBits) | id;
+      ready = false;
       logger.info(id + " became a leader: ballot: " + oldBallot + " -> " + ballot);
       cvLeader.signal();
       return ballot;
@@ -374,11 +380,11 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     logger.info(id + " starting heartbeat thread");
     while (running.get()) {
       waitUntilLeader();
-      var globalLastExecuted = log_.getGlobalLastExecuted();
+      var gle = log_.getGlobalLastExecuted();
       while (running.get() && isLeader()) {
-        var newGlobalLastExecuted = sendHeartbeats(globalLastExecuted);
-        if (newGlobalLastExecuted != null) {
-          globalLastExecuted = newGlobalLastExecuted;
+        var newGle = sendHeartbeats(gle);
+        if (newGle != null) {
+          gle = newGle;
         }
         sleepForHeartbeatInterval();
 
@@ -534,7 +540,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
 
         var logs = sendPrepares();
         if (logs != null) {
-          replay(merge(logs));
+          replay(logs);
         }
       }
     }
@@ -641,7 +647,26 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     return null;
   }
 
-  public void replay(List<List<log.Instance>> log) {
+  public void replay(List<ArrayList<Instance>> logs) {
+    HashMap<Long, log.Instance> mergedLog = new HashMap<>();
+    for (var log : logs) {
+      for (var instance : log) {
+        insert(mergedLog, makeInstance(instance));
+      }
+    }
+
+    for (Map.Entry<Long, log.Instance> entry : mergedLog.entrySet()) {
+      if (!sendAccepts(entry.getValue().getCommand(), entry.getValue().getIndex(),
+          entry.getValue().getClientId())) {
+        break;
+      }
+    }
+
+    mu.lock();
+    if (isLeaderLockless()) {
+      ready = true;
+      logger.info(this.id + " leader is ready to server");
+    }
   }
 
 }
