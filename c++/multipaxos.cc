@@ -250,13 +250,12 @@ Result MultiPaxos::SendAccepts(int64_t ballot,
   }
 }
 
-bool MultiPaxos::Replay(log_map_t const& log) {
+bool MultiPaxos::Replay(int64_t ballot, log_map_t const& log) {
   for (auto const& [_, instance] : log) {
-    auto [is_leader, __, ballot] = GetBallotOrLeader();
-    if (!is_leader)
+    auto [r, __] = SendAccepts(ballot, instance.index(), instance.command(),
+                               instance.client_id());
+    if (r != ResultType::kOk)
       return false;
-    SendAccepts(ballot, instance.index(), instance.command(),
-                instance.client_id());
   }
   {
     std::scoped_lock lock(mu_);
@@ -293,10 +292,11 @@ void MultiPaxos::PrepareThread() {
       SleepForRandomInterval();
       if (ReceivedHeartbeat())
         continue;
-      auto log = SendPrepares(NextBallot());
+      auto ballot = NextBallot();
+      auto log = SendPrepares(ballot);
       if (!log)
         break;
-      if (!Replay(*log))
+      if (!Replay(ballot, *log))
         break;
     }
   }
