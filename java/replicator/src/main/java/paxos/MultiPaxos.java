@@ -441,9 +441,17 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
         logger.info(id + " sent heartbeat to " + peer.id);
         state.mu.lock();
         ++state.numRpcs;
-        ++state.numOks;
+        if(response.getType() == ResponseType.OK) {
+          ++state.numOks;
+        }
         if (response.getLastExecuted() < state.minLastExecuted) {
           state.minLastExecuted = response.getLastExecuted();
+        }else{
+          mu.lock();
+          if(response.getBallot() >= this.ballot){
+            setBallot(response.getBallot());
+          }
+          mu.unlock();
         }
         state.mu.unlock();
         state.cv.signal();

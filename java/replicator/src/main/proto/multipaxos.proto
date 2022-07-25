@@ -44,7 +44,9 @@ message HeartbeatRequest {
 }
 
 message HeartbeatResponse {
-  int64 last_executed = 1;
+  ResponseType type = 1;
+  int64 ballot = 2;
+  int64 last_executed = 3;
 }
 
 message PrepareRequest {
