@@ -44,7 +44,7 @@ message HeartbeatRequest {
 }
 
 message HeartbeatResponse {
-  int32 last_executed = 1;
+  int64 last_executed = 1;
 }
 
 message PrepareRequest {
