@@ -601,11 +601,12 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
         if (receivedHeartbeat()) {
           continue;
         }
-        var log = sendPrepares(nextBallot());
-        if(log!=null){
+        var ballot = nextBallot();
+        var log = sendPrepares(ballot);
+        if(log==null){
           break;
         }
-        if(!replay(log)){
+        if(!replay(ballot,log)){
           break;
         }
       }
@@ -719,19 +720,11 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     return now - lastHeartbeat < heartbeatInterval;
   }
 
-  public boolean replay(HashMap<Long, log.Instance> logs) {
-    HashMap<Long, log.Instance> mergedLog = new HashMap<>();
-    for (Map.Entry<Long, log.Instance> entry : logs.entrySet()) {
-      insert(mergedLog, entry.getValue());
-    }
-
-    for (Map.Entry<Long, log.Instance> entry : mergedLog.entrySet()) {
-      var res  = getBallotOrLeader();
-      var isLeader = res.isLeader;
-      var ballot = res.ballot;
-      if(!isLeader)
-          return false;
-      sendAccepts(ballot, entry.getValue().getIndex(), entry.getValue().getCommand(), entry.getValue().getClientId());
+  public boolean replay(long ballot, HashMap<Long, log.Instance> log) {
+    for (Map.Entry<Long, log.Instance> entry : log.entrySet()) {
+      var res = sendAccepts(ballot, entry.getValue().getIndex(), entry.getValue().getCommand(), entry.getValue().getClientId());
+      if(res.type!=MultiPaxosResultType.kOk)
+        return false;
     }
 
     mu.lock();
