@@ -2,7 +2,7 @@ package log;
 
 import static java.lang.Math.max;
 
-import command.Result;
+import command.KVResult;
 import java.util.AbstractMap.SimpleEntry;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -134,7 +134,7 @@ public class Log {
     }
   }
 
-  public Map.Entry<Long, Result> execute(KVStore kv) {
+  public Map.Entry<Long, KVResult> execute(KVStore kv) {
     mu.lock();
     try {
       while (!isExecutable()) {
@@ -144,7 +144,7 @@ public class Log {
       assert it != null;
 
       assert kv != null;
-      Result result = kv.execute(it.getCommand());
+      KVResult result = kv.execute(it.getCommand());
       it.setExecuted();
       ++lastExecuted;
       return new SimpleEntry<>(it.getClientId(), result);

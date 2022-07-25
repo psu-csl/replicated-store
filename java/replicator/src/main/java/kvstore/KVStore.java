@@ -1,7 +1,7 @@
 package kvstore;
 
 import command.Command;
-import command.Result;
+import command.KVResult;
 
 public interface KVStore {
 
@@ -11,5 +11,5 @@ public interface KVStore {
 
   boolean del(String key);
 
-  Result execute(Command cmd);
+  KVResult execute(Command cmd);
 }

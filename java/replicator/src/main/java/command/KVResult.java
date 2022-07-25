@@ -1,11 +1,11 @@
 package command;
 
-public class Result {
+public class KVResult {
 
   private boolean ok;
   private String value;
 
-  public Result(boolean ok, String value) {
+  public KVResult(boolean ok, String value) {
     this.ok = ok;
     this.value = value;
   }

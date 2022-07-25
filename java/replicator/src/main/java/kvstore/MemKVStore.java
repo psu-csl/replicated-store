@@ -2,7 +2,7 @@ package kvstore;
 
 import command.Command;
 import command.Command.CommandType;
-import command.Result;
+import command.KVResult;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class MemKVStore implements KVStore {
@@ -33,23 +33,23 @@ public class MemKVStore implements KVStore {
   }
 
   @Override
-  public Result execute(Command cmd) {
+  public KVResult execute(Command cmd) {
     CommandType cmdType = cmd.getCommandType();
     if (cmdType == CommandType.kGet) {
       String r = get(cmd.getKey());
       if (r == null) {
-        return new Result(false, kKeyNotFound);
+        return new KVResult(false, kKeyNotFound);
       } else {
-        return new Result(true, r);
+        return new KVResult(true, r);
       }
     } else if (cmdType == CommandType.kPut) {
       put(cmd.getKey(), cmd.getValue());
-      return new Result(true, kEmpty);
+      return new KVResult(true, kEmpty);
     } else if (cmdType == CommandType.kDel && del(cmd.getKey())) {
-      return new Result(true, kEmpty);
+      return new KVResult(true, kEmpty);
     } else {
       // default action if command type is not matched
-      return new Result(false, kKeyNotFound);
+      return new KVResult(false, kKeyNotFound);
     }
   }
 }

@@ -8,7 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import command.Command;
 import command.Command.CommandType;
-import command.Result;
+import command.KVResult;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -342,7 +342,7 @@ class LogTest {
   @Test
   void appendCommitUntilExecute() {
     ExecutorService executor = Executors.newFixedThreadPool(1);
-    List<Future<Map.Entry<Long, Result>>> futures = new ArrayList<>();
+    List<Future<Map.Entry<Long, KVResult>>> futures = new ArrayList<>();
     for (int i = 0; i < 10; i++) {
       futures.add(executor.submit(() -> log_.execute(store_)));
     }
@@ -353,7 +353,7 @@ class LogTest {
     index--;
     log_.commitUntil(index, ballot);
     try {
-      for (Future<Map.Entry<Long, Result>> future : futures) {
+      for (Future<Map.Entry<Long, KVResult>> future : futures) {
         future.get();
       }
     } catch (InterruptedException | ExecutionException e) {
@@ -368,7 +368,7 @@ class LogTest {
   @Test
   void appendCommitUntilExecuteTrimUntil() {
     ExecutorService executor = Executors.newFixedThreadPool(1);
-    List<Future<Map.Entry<Long, Result>>> futures = new ArrayList<>();
+    List<Future<Map.Entry<Long, KVResult>>> futures = new ArrayList<>();
     for (int i = 0; i < 10; i++) {
       futures.add(executor.submit(() -> log_.execute(store_)));
     }
@@ -397,7 +397,7 @@ class LogTest {
   @Test
   void appendAtTrimmedIndex() {
     ExecutorService executor = Executors.newFixedThreadPool(1);
-    List<Future<Map.Entry<Long, Result>>> futures = new ArrayList<>();
+    List<Future<Map.Entry<Long, KVResult>>> futures = new ArrayList<>();
     for (int i = 0; i < 10; i++) {
       futures.add(executor.submit(() -> log_.execute(store_)));
     }
@@ -435,7 +435,7 @@ class LogTest {
   @Test
   void instancesForPrepare() {
     ExecutorService executor = Executors.newFixedThreadPool(1);
-    List<Future<Map.Entry<Long, Result>>> futures = new ArrayList<>();
+    List<Future<Map.Entry<Long, KVResult>>> futures = new ArrayList<>();
     for (int i = 0; i < 5; i++) {
       futures.add(executor.submit(() -> log_.execute(store_)));
     }
