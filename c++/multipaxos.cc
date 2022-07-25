@@ -289,7 +289,7 @@ void MultiPaxos::PrepareThread() {
       auto ballot = NextBallot();
       auto log = SendPrepares(ballot);
       if (!log)
-        break;
+        continue;
       if (!Replay(ballot, *log))
         break;
     }
