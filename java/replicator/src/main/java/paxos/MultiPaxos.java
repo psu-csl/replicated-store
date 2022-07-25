@@ -276,9 +276,22 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
   public boolean isSomeoneElseLeader() {
     mu.lock();
     try {
-      var id = ballot & kIdBits;
-      return id != this.id && id < kMaxNumPeers;
+      return isSomeoneElseLeaderLockless();
     } finally {
+      mu.unlock();
+    }
+  }
+
+  public boolean isSomeoneElseLeaderLockless(){
+    var id = ballot & kIdBits;
+    return id!=this.id && id<kMaxNumPeers;
+  }
+
+  public boolean isLeaderAndReady(){
+    mu.lock();
+    try{
+      return isLeaderLockless() && ready;
+    }finally {
       mu.unlock();
     }
   }
@@ -693,6 +706,21 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     if (isLeaderLockless()) {
       ready = true;
       logger.info(this.id + " leader is ready to server");
+    }
+  }
+
+  public MultiPaxosResult replicate(command.Command command, long clientId){
+    if(isLeaderAndReady()){
+      return sendAccepts(command,log_.advanceLastIndex(),clientId);
+    }
+    mu.lock();
+    try{
+      if (isSomeoneElseLeaderLockless()) {
+        return new MultiPaxosResult(MultiPaxosResultType.kSomeoneElseLeader, leaderLockless());
+      }
+      return new MultiPaxosResult(MultiPaxosResultType.kRetry, null);
+    }finally {
+      mu.unlock();
     }
   }
 
