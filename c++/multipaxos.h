@@ -164,7 +164,7 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
                       multipaxos::AcceptResponse*) override;
 
   std::atomic<bool> running_;
-  bool is_ready_;
+  std::atomic<bool> is_ready_;
   int64_t ballot_;
   Log* log_;
   int64_t id_;

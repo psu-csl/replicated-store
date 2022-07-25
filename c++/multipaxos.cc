@@ -257,15 +257,9 @@ bool MultiPaxos::Replay(int64_t ballot, log_map_t const& log) {
     if (r != ResultType::kOk)
       return false;
   }
-  {
-    std::scoped_lock lock(mu_);
-    if (IsLeaderLockless()) {
-      is_ready_ = true;
-      DLOG(INFO) << id_ << " leader is ready to serve";
-      return true;
-    }
-  }
-  return false;
+  is_ready_ = true;
+  DLOG(INFO) << id_ << " leader is ready to serve";
+  return true;
 }
 
 void MultiPaxos::HeartbeatThread() {
