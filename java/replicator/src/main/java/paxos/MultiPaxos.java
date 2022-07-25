@@ -42,6 +42,21 @@ import multipaxos.PrepareResponse;
 import multipaxos.ResponseType;
 import org.slf4j.LoggerFactory;
 
+enum MultiPaxosResultType{
+  kOk,
+  kRetry,
+  kSomeoneElseLeader
+}
+
+class MultiPaxosResult{
+  public MultiPaxosResultType type;
+  public long leader;
+
+  public MultiPaxosResult(MultiPaxosResultType type, Long leader){
+    this.type = type;
+    this.leader = leader;
+  }
+}
 class AcceptState {
 
   public long numRpcs;
@@ -207,6 +222,10 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     return instance;
   }
 
+  public long leaderLockless(){
+    return ballot & kIdBits;
+  }
+
   public long nextBallot() {
     mu.lock();
     try {
@@ -235,7 +254,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
   public long leader() {
     mu.lock();
     try {
-      return ballot & kIdBits;
+      return leaderLockless();
     } finally {
       mu.unlock();
     }
@@ -571,7 +590,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     }
   }
 
-  public boolean sendAccepts(command.Command command, long index, long clientId) {
+  public MultiPaxosResult sendAccepts(command.Command command, long index, long clientId) {
     var state = new AcceptState();
     log.Instance instance = new log.Instance();
     mu.lock();
@@ -617,10 +636,16 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     }
     if (state.numOks > rpcPeers.size() / 2) {
       state.mu.unlock();
-      return true;
+      return new MultiPaxosResult(MultiPaxosResultType.kOk, null);
     }
     state.mu.unlock(); // TODO: verify whether it's safe to unlock before if
-    return false;
+    mu.lock();
+    if(!isLeaderLockless()) {
+      mu.unlock();
+      return new MultiPaxosResult(MultiPaxosResultType.kSomeoneElseLeader, leaderLockless());
+    }
+    mu.unlock();
+    return  new MultiPaxosResult(MultiPaxosResultType.kRetry, null);
   }
 
   public void sleepForHeartbeatInterval() {
@@ -657,8 +682,9 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     }
 
     for (Map.Entry<Long, log.Instance> entry : mergedLog.entrySet()) {
-      if (!sendAccepts(entry.getValue().getCommand(), entry.getValue().getIndex(),
-          entry.getValue().getClientId())) {
+      var res = sendAccepts(entry.getValue().getCommand(), entry.getValue().getIndex(),
+          entry.getValue().getClientId());
+      if(res.type != MultiPaxosResultType.kOk) {
         break;
       }
     }
