@@ -48,11 +48,11 @@ enum MultiPaxosResultType{
   kSomeoneElseLeader
 }
 
-class MultiPaxosResult{
+class Result {
   public MultiPaxosResultType type;
   public long leader;
 
-  public MultiPaxosResult(MultiPaxosResultType type, Long leader){
+  public Result(MultiPaxosResultType type, Long leader){
     this.type = type;
     this.leader = leader;
   }
@@ -603,7 +603,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     }
   }
 
-  public MultiPaxosResult sendAccepts(command.Command command, long index, long clientId) {
+  public Result sendAccepts(command.Command command, long index, long clientId) {
     var state = new AcceptState();
     log.Instance instance = new log.Instance();
     mu.lock();
@@ -649,16 +649,16 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     }
     if (state.numOks > rpcPeers.size() / 2) {
       state.mu.unlock();
-      return new MultiPaxosResult(MultiPaxosResultType.kOk, null);
+      return new Result(MultiPaxosResultType.kOk, null);
     }
     state.mu.unlock(); // TODO: verify whether it's safe to unlock before if
     mu.lock();
     if(!isLeaderLockless()) {
       mu.unlock();
-      return new MultiPaxosResult(MultiPaxosResultType.kSomeoneElseLeader, leaderLockless());
+      return new Result(MultiPaxosResultType.kSomeoneElseLeader, leaderLockless());
     }
     mu.unlock();
-    return  new MultiPaxosResult(MultiPaxosResultType.kRetry, null);
+    return  new Result(MultiPaxosResultType.kRetry, null);
   }
 
   public void sleepForHeartbeatInterval() {
@@ -709,16 +709,16 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     }
   }
 
-  public MultiPaxosResult replicate(command.Command command, long clientId){
+  public Result replicate(command.Command command, long clientId){
     if(isLeaderAndReady()){
       return sendAccepts(command,log_.advanceLastIndex(),clientId);
     }
     mu.lock();
     try{
       if (isSomeoneElseLeaderLockless()) {
-        return new MultiPaxosResult(MultiPaxosResultType.kSomeoneElseLeader, leaderLockless());
+        return new Result(MultiPaxosResultType.kSomeoneElseLeader, leaderLockless());
       }
-      return new MultiPaxosResult(MultiPaxosResultType.kRetry, null);
+      return new Result(MultiPaxosResultType.kRetry, null);
     }finally {
       mu.unlock();
     }
