@@ -306,15 +306,6 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     return id!=this.id && id<kMaxNumPeers;
   }
 
-  public boolean isLeaderAndReady(){
-    mu.lock();
-    try{
-      return isLeaderLockless() && isReady;
-    }finally {
-      mu.unlock();
-    }
-  }
-
   public void waitUntilLeader() {
     mu.lock();
     try {
