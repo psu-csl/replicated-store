@@ -144,7 +144,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
   private final List<RpcPeer> rpcPeers;
   private final ExecutorService threadPool;
   private final int heartbeatDelta;
-  private boolean ready;
+  private boolean isReady;
   private boolean rpcServerRunning;
   private long lastHeartbeat;
   private long id;
@@ -165,7 +165,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     lastHeartbeat = 0;
     heartbeatResponses = new ArrayList<>();
     rpcServerRunning = false;
-    ready = false;
+    isReady = false;
 
     rpcServerRunningCv = mu.newCondition();
 
@@ -238,7 +238,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
       var oldBallot = ballot;
       ballot += kRoundIncrement;
       ballot = (ballot & ~kIdBits) | id;
-      ready = false;
+      isReady = false;
       logger.info(id + " became a leader: ballot: " + oldBallot + " -> " + ballot);
       cvLeader.signal();
       return ballot;
@@ -296,7 +296,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
   public boolean isLeaderAndReady(){
     mu.lock();
     try{
-      return isLeaderLockless() && ready;
+      return isLeaderLockless() && isReady;
     }finally {
       mu.unlock();
     }
@@ -721,7 +721,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
 
     mu.lock();
     if (isLeaderLockless()) {
-      ready = true;
+      isReady = true;
       logger.info(this.id + " leader is ready to server");
     }
   }
