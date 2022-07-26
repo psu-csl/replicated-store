@@ -604,7 +604,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
         var ballot = nextBallot();
         var log = sendPrepares(ballot);
         if(log==null){
-          break;
+          continue;
         }
         if(!replay(ballot,log)){
           break;
