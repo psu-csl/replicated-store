@@ -188,27 +188,36 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
 };
 
 struct heartbeat_state_t {
-  size_t num_rpcs_ = 0;
-  size_t num_oks_ = 0;
-  bool is_leader_ = true;
+  heartbeat_state_t(int64_t leader, int64_t min_last_executed)
+      : num_rpcs_(0),
+        num_oks_(0),
+        leader_(leader),
+        min_last_executed_(min_last_executed) {}
+  size_t num_rpcs_;
+  size_t num_oks_;
+  int64_t leader_;
   int64_t min_last_executed_ = 0;
   std::mutex mu_;
   std::condition_variable cv_;
 };
 
 struct prepare_state_t {
-  size_t num_rpcs_ = 0;
-  size_t num_oks_ = 0;
-  bool is_leader_ = true;
+  explicit prepare_state_t(int64_t leader)
+      : num_rpcs_(0), num_oks_(0), leader_(leader) {}
+  size_t num_rpcs_;
+  size_t num_oks_;
+  int64_t leader_;
   log_map_t log_;
   std::mutex mu_;
   std::condition_variable cv_;
 };
 
 struct accept_state_t {
-  size_t num_rpcs_ = 0;
-  size_t num_oks_ = 0;
-  bool is_leader_ = true;
+  explicit accept_state_t(int64_t leader)
+      : num_rpcs_(0), num_oks_(0), leader_(leader) {}
+  size_t num_rpcs_;
+  size_t num_oks_;
+  int64_t leader_;
   std::mutex mu_;
   std::condition_variable cv_;
 };

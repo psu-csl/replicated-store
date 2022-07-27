@@ -102,8 +102,7 @@ Result MultiPaxos::Replicate(Command command, client_id_t client_id) {
 
 int64_t MultiPaxos::SendHeartbeats(int64_t ballot,
                                    int64_t global_last_executed) {
-  auto state = std::make_shared<heartbeat_state_t>();
-  state->min_last_executed_ = log_->LastExecuted();
+  auto state = std::make_shared<heartbeat_state_t>(id_, log_->LastExecuted());
 
   HeartbeatRequest request;
   request.set_ballot(ballot);
@@ -129,7 +128,7 @@ int64_t MultiPaxos::SendHeartbeats(int64_t ballot,
             std::scoped_lock lock(mu_);
             if (response.ballot() >= ballot_) {
               SetBallot(response.ballot());
-              state->is_leader_ = false;
+              state->leader_ = LeaderLockless();
             }
           }
         }
@@ -139,7 +138,7 @@ int64_t MultiPaxos::SendHeartbeats(int64_t ballot,
   }
   {
     std::unique_lock lock(state->mu_);
-    while (state->is_leader_ && state->num_rpcs_ != rpc_peers_.size())
+    while (state->leader_ == id_ && state->num_rpcs_ != rpc_peers_.size())
       state->cv_.wait(lock);
     if (state->num_oks_ == rpc_peers_.size())
       return state->min_last_executed_;
@@ -148,7 +147,7 @@ int64_t MultiPaxos::SendHeartbeats(int64_t ballot,
 }
 
 std::optional<log_map_t> MultiPaxos::SendPrepares(int64_t ballot) {
-  auto state = std::make_shared<prepare_state_t>();
+  auto state = std::make_shared<prepare_state_t>(id_);
 
   PrepareRequest request;
   request.set_sender(id_);
@@ -172,7 +171,7 @@ std::optional<log_map_t> MultiPaxos::SendPrepares(int64_t ballot) {
             std::scoped_lock lock(mu_);
             if (response.ballot() >= ballot_) {
               SetBallot(response.ballot());
-              state->is_leader_ = false;
+              state->leader_ = LeaderLockless();
             }
           }
         }
@@ -182,7 +181,7 @@ std::optional<log_map_t> MultiPaxos::SendPrepares(int64_t ballot) {
   }
   {
     std::unique_lock lock(state->mu_);
-    while (state->is_leader_ && state->num_oks_ <= rpc_peers_.size() / 2 &&
+    while (state->leader_ != id_ && state->num_oks_ <= rpc_peers_.size() / 2 &&
            state->num_rpcs_ != rpc_peers_.size())
       state->cv_.wait(lock);
     if (state->num_oks_ > rpc_peers_.size() / 2)
@@ -195,7 +194,7 @@ Result MultiPaxos::SendAccepts(int64_t ballot,
                                int64_t index,
                                Command command,
                                client_id_t client_id) {
-  auto state = std::make_shared<accept_state_t>();
+  auto state = std::make_shared<accept_state_t>(id_);
 
   Instance instance;
   instance.set_ballot(ballot);
@@ -224,7 +223,7 @@ Result MultiPaxos::SendAccepts(int64_t ballot,
             std::scoped_lock lock(mu_);
             if (response.ballot() >= ballot_) {
               SetBallot(response.ballot());
-              state->is_leader_ = false;
+              state->leader_ = LeaderLockless();
             }
           }
         }
@@ -234,18 +233,15 @@ Result MultiPaxos::SendAccepts(int64_t ballot,
   }
   {
     std::unique_lock lock(state->mu_);
-    while (state->is_leader_ && state->num_oks_ <= rpc_peers_.size() / 2 &&
+    while (state->leader_ != id_ && state->num_oks_ <= rpc_peers_.size() / 2 &&
            state->num_rpcs_ != rpc_peers_.size())
       state->cv_.wait(lock);
     if (state->num_oks_ > rpc_peers_.size() / 2)
       return Result{ResultType::kOk, std::nullopt};
+    if (state->leader_ != id_)
+      return Result{ResultType::kSomeoneElseLeader, state->leader_};
   }
-  {
-    std::scoped_lock lock(mu_);
-    if (!IsLeaderLockless())
-      return Result{ResultType::kSomeoneElseLeader, LeaderLockless()};
-    return Result{ResultType::kRetry, std::nullopt};
-  }
+  return Result{ResultType::kRetry, std::nullopt};
 }
 
 void MultiPaxos::Replay(int64_t ballot, std::optional<log_map_t> const& log) {
