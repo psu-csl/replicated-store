@@ -103,12 +103,12 @@ Result MultiPaxos::Replicate(Command command, client_id_t client_id) {
 int64_t MultiPaxos::SendHeartbeats(int64_t ballot,
                                    int64_t global_last_executed) {
   auto state = std::make_shared<heartbeat_state_t>();
-  state->min_last_executed = log_->LastExecuted();
+  state->min_last_executed_ = log_->LastExecuted();
 
   HeartbeatRequest request;
   request.set_ballot(ballot);
   request.set_sender(id_);
-  request.set_last_executed(state->min_last_executed);
+  request.set_last_executed(state->min_last_executed_);
   request.set_global_last_executed(global_last_executed);
 
   for (auto& peer : rpc_peers_) {
@@ -123,8 +123,8 @@ int64_t MultiPaxos::SendHeartbeats(int64_t ballot,
         if (s.ok()) {
           if (response.type() == OK) {
             ++state->num_oks_;
-            if (response.last_executed() < state->min_last_executed)
-              state->min_last_executed = response.last_executed();
+            if (response.last_executed() < state->min_last_executed_)
+              state->min_last_executed_ = response.last_executed();
           } else {
             std::scoped_lock lock(mu_);
             if (response.ballot() >= ballot_) {
@@ -142,7 +142,7 @@ int64_t MultiPaxos::SendHeartbeats(int64_t ballot,
     while (state->is_leader_ && state->num_rpcs_ != rpc_peers_.size())
       state->cv_.wait(lock);
     if (state->num_oks_ == rpc_peers_.size())
-      return state->min_last_executed;
+      return state->min_last_executed_;
   }
   return global_last_executed;
 }

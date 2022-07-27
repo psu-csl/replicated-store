@@ -191,7 +191,7 @@ struct heartbeat_state_t {
   size_t num_rpcs_ = 0;
   size_t num_oks_ = 0;
   bool is_leader_ = true;
-  int64_t min_last_executed = 0;
+  int64_t min_last_executed_ = 0;
   std::mutex mu_;
   std::condition_variable cv_;
 };
