@@ -52,6 +52,14 @@ inline int64_t Now() {
       .count();
 }
 
+inline int64_t Leader(int64_t ballot) {
+  return ballot & kIdBits;
+}
+
+inline bool IsLeader(int64_t ballot, int64_t id) {
+  return Leader(ballot) == id;
+}
+
 class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
  public:
   MultiPaxos(Log* log, nlohmann::json const& config);
@@ -85,23 +93,19 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
 
   std::tuple<bool, bool, int64_t> GetBallotOrLeader() const {
     std::scoped_lock lock(mu_);
-    if (IsLeader())
+    if (IsLeader(ballot_, id_))
       return {true, is_ready_, ballot_};
-    return {false, false, Leader()};
+    return {false, false, Leader(ballot_)};
   }
-
-  int64_t Leader() const { return ballot_ & kIdBits; }
 
   int64_t LeaderTest() const {
     std::scoped_lock lock(mu_);
-    return Leader();
+    return Leader(ballot_);
   }
-
-  bool IsLeader() const { return Leader() == id_; }
 
   bool IsLeaderTest() const {
     std::scoped_lock lock(mu_);
-    return IsLeader();
+    return IsLeader(ballot_, id_);
   }
 
   bool IsSomeoneElseLeader() const {
@@ -116,13 +120,13 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
 
   void WaitUntilLeader() {
     std::unique_lock lock(mu_);
-    while (running_ && !IsLeader())
+    while (running_ && !IsLeader(ballot_, id_))
       cv_leader_.wait(lock);
   }
 
   void WaitUntilFollower() {
     std::unique_lock lock(mu_);
-    while (running_ && IsLeader())
+    while (running_ && IsLeader(ballot_, id_))
       cv_follower_.wait(lock);
   }
 
