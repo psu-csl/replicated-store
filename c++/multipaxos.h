@@ -97,7 +97,7 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
     return IsLeaderLockless();
   }
 
-  bool IsLeaderLockless() const { return (ballot_ & kIdBits) == id_; }
+  bool IsLeaderLockless() const { return LeaderLockless() == id_; }
 
   bool IsSomeoneElseLeader() const {
     std::scoped_lock lock(mu_);
