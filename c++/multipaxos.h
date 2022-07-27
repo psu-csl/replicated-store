@@ -148,7 +148,7 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
                      multipaxos::Command command,
                      client_id_t client_id);
 
-  bool Replay(int64_t ballot, log_map_t const& logs);
+  void Replay(int64_t ballot, std::optional<log_map_t> const& log);
 
  private:
   grpc::Status Heartbeat(grpc::ServerContext*,

@@ -248,16 +248,17 @@ Result MultiPaxos::SendAccepts(int64_t ballot,
   }
 }
 
-bool MultiPaxos::Replay(int64_t ballot, log_map_t const& log) {
-  for (auto const& [_, instance] : log) {
+void MultiPaxos::Replay(int64_t ballot, std::optional<log_map_t> const& log) {
+  if (!log)
+    return;
+  for (auto const& [_, instance] : *log) {
     auto [r, __] = SendAccepts(ballot, instance.index(), instance.command(),
                                instance.client_id());
     if (r != ResultType::kOk)
-      return false;
+      return;
   }
   is_ready_ = true;
   DLOG(INFO) << id_ << " leader is ready to serve";
-  return true;
 }
 
 void MultiPaxos::HeartbeatThread() {
@@ -285,11 +286,8 @@ void MultiPaxos::PrepareThread() {
       if (ReceivedHeartbeat())
         continue;
       auto ballot = NextBallot();
-      auto log = SendPrepares(ballot);
-      if (!log)
-        continue;
-      if (!Replay(ballot, *log))
-        break;
+      Replay(ballot, SendPrepares(ballot));
+      break;
     }
   }
   DLOG(INFO) << id_ << " stopping prepare thread";
