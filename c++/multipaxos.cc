@@ -181,7 +181,7 @@ std::optional<log_map_t> MultiPaxos::SendPrepares(int64_t ballot) {
   }
   {
     std::unique_lock lock(state->mu_);
-    while (state->leader_ != id_ && state->num_oks_ <= rpc_peers_.size() / 2 &&
+    while (state->leader_ == id_ && state->num_oks_ <= rpc_peers_.size() / 2 &&
            state->num_rpcs_ != rpc_peers_.size())
       state->cv_.wait(lock);
     if (state->num_oks_ > rpc_peers_.size() / 2)
@@ -233,7 +233,7 @@ Result MultiPaxos::SendAccepts(int64_t ballot,
   }
   {
     std::unique_lock lock(state->mu_);
-    while (state->leader_ != id_ && state->num_oks_ <= rpc_peers_.size() / 2 &&
+    while (state->leader_ == id_ && state->num_oks_ <= rpc_peers_.size() / 2 &&
            state->num_rpcs_ != rpc_peers_.size())
       state->cv_.wait(lock);
     if (state->num_oks_ > rpc_peers_.size() / 2)
