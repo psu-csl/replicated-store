@@ -38,15 +38,15 @@ class MultiPaxosTest : public testing::Test {
         peer2_(&log2_, config2_) {}
 
   bool OneLeader() const {
-    if (peer0_.IsLeader())
-      return !peer1_.IsLeader() && !peer2_.IsLeader() && peer1_.Leader() == 0 &&
-             peer2_.Leader() == 0;
-    if (peer1_.IsLeader())
-      return !peer0_.IsLeader() && !peer2_.IsLeader() && peer0_.Leader() == 1 &&
-             peer2_.Leader() == 1;
-    if (peer2_.IsLeader())
-      return !peer0_.IsLeader() && !peer1_.IsLeader() && peer0_.Leader() == 2 &&
-             peer1_.Leader() == 2;
+    if (peer0_.IsLeaderTest())
+      return !peer1_.IsLeaderTest() && !peer2_.IsLeaderTest() &&
+             peer1_.LeaderTest() == 0 && peer2_.LeaderTest() == 0;
+    if (peer1_.IsLeaderTest())
+      return !peer0_.IsLeaderTest() && !peer2_.IsLeaderTest() &&
+             peer0_.LeaderTest() == 1 && peer2_.LeaderTest() == 1;
+    if (peer2_.IsLeaderTest())
+      return !peer0_.IsLeaderTest() && !peer1_.IsLeaderTest() &&
+             peer0_.LeaderTest() == 2 && peer1_.LeaderTest() == 2;
     return false;
   }
 
@@ -57,8 +57,8 @@ class MultiPaxosTest : public testing::Test {
 };
 
 TEST_F(MultiPaxosTest, Constructor) {
-  EXPECT_EQ(kMaxNumPeers, peer0_.Leader());
-  EXPECT_FALSE(peer0_.IsLeader());
+  EXPECT_EQ(kMaxNumPeers, peer0_.LeaderTest());
+  EXPECT_FALSE(peer0_.IsLeaderTest());
   EXPECT_FALSE(peer0_.IsSomeoneElseLeader());
 }
 
@@ -71,9 +71,9 @@ TEST_F(MultiPaxosTest, NextBallot) {
   ballot += kRoundIncrement;
   EXPECT_EQ(ballot, peer2_.NextBallot());
 
-  EXPECT_TRUE(peer2_.IsLeader());
+  EXPECT_TRUE(peer2_.IsLeaderTest());
   EXPECT_FALSE(peer2_.IsSomeoneElseLeader());
-  EXPECT_EQ(peer2, peer2_.Leader());
+  EXPECT_EQ(peer2, peer2_.LeaderTest());
 }
 
 TEST_F(MultiPaxosTest, HeartbeatIgnoreStaleRPC) {
@@ -93,7 +93,7 @@ TEST_F(MultiPaxosTest, HeartbeatIgnoreStaleRPC) {
 
   stub0->Heartbeat(&context0, request0, &response0);
 
-  EXPECT_TRUE(peer0_.IsLeader());
+  EXPECT_TRUE(peer0_.IsLeaderTest());
 
   peer0_.Stop();
   t0.join();
@@ -113,8 +113,8 @@ TEST_F(MultiPaxosTest, HeartbeatChangesLeaderToFollower) {
   request0.set_ballot(peer1_.NextBallot());
   stub0->Heartbeat(&context0, request0, &response0);
 
-  EXPECT_FALSE(peer0_.IsLeader());
-  EXPECT_EQ(1, peer0_.Leader());
+  EXPECT_FALSE(peer0_.IsLeaderTest());
+  EXPECT_EQ(1, peer0_.LeaderTest());
 
   peer0_.Stop();
   t0.join();

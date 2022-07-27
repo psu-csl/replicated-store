@@ -128,7 +128,7 @@ int64_t MultiPaxos::SendHeartbeats(int64_t ballot,
             std::scoped_lock lock(mu_);
             if (response.ballot() >= ballot_) {
               SetBallot(response.ballot());
-              state->leader_ = LeaderLockless();
+              state->leader_ = Leader();
             }
           }
         }
@@ -171,7 +171,7 @@ std::optional<log_map_t> MultiPaxos::SendPrepares(int64_t ballot) {
             std::scoped_lock lock(mu_);
             if (response.ballot() >= ballot_) {
               SetBallot(response.ballot());
-              state->leader_ = LeaderLockless();
+              state->leader_ = Leader();
             }
           }
         }
@@ -223,7 +223,7 @@ Result MultiPaxos::SendAccepts(int64_t ballot,
             std::scoped_lock lock(mu_);
             if (response.ballot() >= ballot_) {
               SetBallot(response.ballot());
-              state->leader_ = LeaderLockless();
+              state->leader_ = Leader();
             }
           }
         }

@@ -80,24 +80,24 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
 
   std::tuple<bool, bool, int64_t> GetBallotOrLeader() const {
     std::scoped_lock lock(mu_);
-    if (IsLeaderLockless())
+    if (IsLeader())
       return {true, is_ready_, ballot_};
-    return {false, false, LeaderLockless()};
+    return {false, false, Leader()};
   }
 
-  int64_t Leader() const {
+  int64_t Leader() const { return ballot_ & kIdBits; }
+
+  int64_t LeaderTest() const {
     std::scoped_lock lock(mu_);
-    return LeaderLockless();
+    return Leader();
   }
 
-  int64_t LeaderLockless() const { return ballot_ & kIdBits; }
+  bool IsLeader() const { return Leader() == id_; }
 
-  bool IsLeader() const {
+  bool IsLeaderTest() const {
     std::scoped_lock lock(mu_);
-    return IsLeaderLockless();
+    return IsLeader();
   }
-
-  bool IsLeaderLockless() const { return LeaderLockless() == id_; }
 
   bool IsSomeoneElseLeader() const {
     std::scoped_lock lock(mu_);
@@ -111,13 +111,13 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
 
   void WaitUntilLeader() {
     std::unique_lock lock(mu_);
-    while (running_ && !IsLeaderLockless())
+    while (running_ && !IsLeader())
       cv_leader_.wait(lock);
   }
 
   void WaitUntilFollower() {
     std::unique_lock lock(mu_);
-    while (running_ && IsLeaderLockless())
+    while (running_ && IsLeader())
       cv_follower_.wait(lock);
   }
 
