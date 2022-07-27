@@ -187,10 +187,8 @@ std::optional<log_map_t> MultiPaxos::SendPrepares(int64_t ballot) {
       state->cv_.wait(lock);
     if (state->num_oks_ > rpc_peers_.size() / 2)
       return std::move(state->log_);
-    if (!state->is_leader_)
-      return std::nullopt;
   }
-  return {};
+  return std::nullopt;
 }
 
 Result MultiPaxos::SendAccepts(int64_t ballot,
