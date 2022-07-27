@@ -91,8 +91,8 @@ void MultiPaxos::Stop() {
 }
 
 Result MultiPaxos::Replicate(Command command, client_id_t client_id) {
-  auto [is_leader, is_ready, ballot] = Ballot();
-  if (is_leader) {
+  auto [ballot, is_ready] = Ballot();
+  if (IsLeader(ballot, id_)) {
     if (is_ready)
       return SendAccepts(ballot, log_->AdvanceLastIndex(), command, client_id);
     return Result{ResultType::kRetry, std::nullopt};
@@ -263,8 +263,8 @@ void MultiPaxos::HeartbeatThread() {
     WaitUntilLeader();
     auto gle = log_->GlobalLastExecuted();
     while (running_) {
-      auto [is_leader, is_ready, ballot] = Ballot();
-      if (!is_leader)
+      auto [ballot, is_ready] = Ballot();
+      if (!IsLeader(ballot, id_))
         break;
       gle = SendHeartbeats(ballot, gle);
       SleepForHeartbeatInterval();
