@@ -34,8 +34,6 @@ struct rpc_peer_t {
 
 using rpc_server_t = std::unique_ptr<grpc::Server>;
 
-int64_t Now();
-
 enum class ResultType {
   kOk,
   kRetry,
@@ -46,6 +44,13 @@ struct Result {
   ResultType type_;
   std::optional<int64_t> leader_;
 };
+
+inline int64_t Now() {
+  return std::chrono::time_point_cast<std::chrono::milliseconds>(
+             std::chrono::steady_clock::now())
+      .time_since_epoch()
+      .count();
+}
 
 class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
  public:

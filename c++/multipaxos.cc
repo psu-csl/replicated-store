@@ -336,10 +336,3 @@ Status MultiPaxos::Accept(ServerContext*,
   }
   return Status::OK;
 }
-
-int64_t Now() {
-  return std::chrono::time_point_cast<std::chrono::milliseconds>(
-             std::chrono::steady_clock::now())
-      .time_since_epoch()
-      .count();
-}
