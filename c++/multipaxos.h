@@ -91,11 +91,9 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
     ballot_ = ballot;
   }
 
-  std::tuple<bool, bool, int64_t> GetBallotOrLeader() const {
+  std::tuple<bool, bool, int64_t> Ballot() const {
     std::scoped_lock lock(mu_);
-    if (IsLeader(ballot_, id_))
-      return {true, is_ready_, ballot_};
-    return {false, false, Leader(ballot_)};
+    return {IsLeader(ballot_, id_), is_ready_, ballot_};
   }
 
   int64_t LeaderTest() const {
