@@ -27,6 +27,20 @@ std::string MakeConfig(int64_t id) {
             })";
 }
 
+int64_t Leader(MultiPaxos const& peer) {
+  auto [ballot, is_ready] = peer.Ballot();
+  return Leader(ballot);
+}
+
+bool IsLeader(MultiPaxos const& peer) {
+  auto [ballot, is_ready] = peer.Ballot();
+  return IsLeader(ballot, peer.Id());
+}
+
+bool IsSomeoneElseLeader(MultiPaxos const& peer) {
+  return !IsLeader(peer) && Leader(peer) < kMaxNumPeers;
+}
+
 class MultiPaxosTest : public testing::Test {
  public:
   MultiPaxosTest()
@@ -38,15 +52,15 @@ class MultiPaxosTest : public testing::Test {
         peer2_(&log2_, config2_) {}
 
   bool OneLeader() const {
-    if (peer0_.IsLeaderTest())
-      return !peer1_.IsLeaderTest() && !peer2_.IsLeaderTest() &&
-             peer1_.LeaderTest() == 0 && peer2_.LeaderTest() == 0;
-    if (peer1_.IsLeaderTest())
-      return !peer0_.IsLeaderTest() && !peer2_.IsLeaderTest() &&
-             peer0_.LeaderTest() == 1 && peer2_.LeaderTest() == 1;
-    if (peer2_.IsLeaderTest())
-      return !peer0_.IsLeaderTest() && !peer1_.IsLeaderTest() &&
-             peer0_.LeaderTest() == 2 && peer1_.LeaderTest() == 2;
+    if (IsLeader(peer0_))
+      return !IsLeader(peer1_) && !IsLeader(peer2_) && Leader(peer1_) == 0 &&
+             Leader(peer2_) == 0;
+    if (IsLeader(peer1_))
+      return !IsLeader(peer0_) && !IsLeader(peer2_) && Leader(peer0_) == 1 &&
+             Leader(peer2_) == 1;
+    if (IsLeader(peer2_))
+      return !IsLeader(peer0_) && !IsLeader(peer1_) && Leader(peer0_) == 2 &&
+             Leader(peer1_) == 2;
     return false;
   }
 
@@ -57,9 +71,9 @@ class MultiPaxosTest : public testing::Test {
 };
 
 TEST_F(MultiPaxosTest, Constructor) {
-  EXPECT_EQ(kMaxNumPeers, peer0_.LeaderTest());
-  EXPECT_FALSE(peer0_.IsLeaderTest());
-  EXPECT_FALSE(peer0_.IsSomeoneElseLeader());
+  EXPECT_EQ(kMaxNumPeers, Leader(peer0_));
+  EXPECT_FALSE(IsLeader(peer0_));
+  EXPECT_FALSE(IsSomeoneElseLeader(peer0_));
 }
 
 TEST_F(MultiPaxosTest, NextBallot) {
@@ -71,9 +85,9 @@ TEST_F(MultiPaxosTest, NextBallot) {
   ballot += kRoundIncrement;
   EXPECT_EQ(ballot, peer2_.NextBallot());
 
-  EXPECT_TRUE(peer2_.IsLeaderTest());
-  EXPECT_FALSE(peer2_.IsSomeoneElseLeader());
-  EXPECT_EQ(peer2, peer2_.LeaderTest());
+  EXPECT_TRUE(IsLeader(peer2_));
+  EXPECT_FALSE(IsSomeoneElseLeader(peer2_));
+  EXPECT_EQ(peer2, Leader(peer2_));
 }
 
 TEST_F(MultiPaxosTest, HeartbeatIgnoreStaleRPC) {
@@ -93,7 +107,7 @@ TEST_F(MultiPaxosTest, HeartbeatIgnoreStaleRPC) {
 
   stub0->Heartbeat(&context0, request0, &response0);
 
-  EXPECT_TRUE(peer0_.IsLeaderTest());
+  EXPECT_TRUE(IsLeader(peer0_));
 
   peer0_.Stop();
   t0.join();
@@ -113,8 +127,8 @@ TEST_F(MultiPaxosTest, HeartbeatChangesLeaderToFollower) {
   request0.set_ballot(peer1_.NextBallot());
   stub0->Heartbeat(&context0, request0, &response0);
 
-  EXPECT_FALSE(peer0_.IsLeaderTest());
-  EXPECT_EQ(1, peer0_.LeaderTest());
+  EXPECT_FALSE(IsLeader(peer0_));
+  EXPECT_EQ(1, Leader(peer0_));
 
   peer0_.Stop();
   t0.join();
