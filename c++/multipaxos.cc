@@ -97,7 +97,9 @@ Result MultiPaxos::Replicate(Command command, client_id_t client_id) {
       return SendAccepts(ballot, log_->AdvanceLastIndex(), command, client_id);
     return Result{ResultType::kRetry, std::nullopt};
   }
-  return Result{ResultType::kSomeoneElseLeader, Leader(ballot)};
+  if (IsSomeoneElseLeader(ballot, id_))
+    return Result{ResultType::kSomeoneElseLeader, Leader(ballot)};
+  return Result{ResultType::kRetry, std::nullopt};
 }
 
 int64_t MultiPaxos::SendHeartbeats(int64_t ballot,

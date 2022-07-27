@@ -60,6 +60,10 @@ inline bool IsLeader(int64_t ballot, int64_t id) {
   return Leader(ballot) == id;
 }
 
+inline bool IsSomeoneElseLeader(int64_t ballot, int64_t id) {
+  return !IsLeader(ballot, id) && Leader(ballot) < kMaxNumPeers;
+}
+
 class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
  public:
   MultiPaxos(Log* log, nlohmann::json const& config);
