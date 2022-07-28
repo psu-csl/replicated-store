@@ -38,13 +38,15 @@ Replicant::Replicant(json const& config)
 
 Replicant::~Replicant() {
   tp_.join();
+  for (auto& t : clients_)
+    t.join();
 }
 
 void Replicant::Run() {
   for (;;) {
     tcp::socket cli(io_);
     acceptor_.accept(cli);
-    std::thread(&Replicant::HandleClient, this, std::move(cli)).detach();
+    clients_.emplace_back(&Replicant::HandleClient, this, std::move(cli));
   }
 }
 
