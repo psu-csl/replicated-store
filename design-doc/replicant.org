@@ -26,7 +26,7 @@
       client_id_ += num_peers_
       return id
 
-    - run(void)
+    - start(void)
       thread(executor).start()
       for (;;) {
         socket = accept(l)

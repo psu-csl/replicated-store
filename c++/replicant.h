@@ -14,7 +14,7 @@ class Replicant {
  public:
   Replicant(const nlohmann::json& config);
   ~Replicant();
-  void Run();
+  void Start();
 
  private:
   void HandleClient(int64_t client_id);

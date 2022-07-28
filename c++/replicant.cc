@@ -47,7 +47,7 @@ Replicant::~Replicant() {
     t.join();
 }
 
-void Replicant::Run() {
+void Replicant::Start() {
   executor_thread_ = std::thread(&Replicant::ExecutorThread, this);
   for (;;) {
     auto client_id = NextClientId();
