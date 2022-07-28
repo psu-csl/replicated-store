@@ -52,10 +52,10 @@ void Replicant::Run() {
 
 void Replicant::HandleClient(tcp::socket cli) {
   for (;;) {
-    auto cmd = ReadCommand(&cli);
-    if (cmd)
-      asio::post(tp_, [this, &cli, cmd = std::move(*cmd)] {
-        HandleCommand(&cli, std::move(cmd));
+    auto command = ReadCommand(&cli);
+    if (command)
+      asio::post(tp_, [this, &cli, command = std::move(*command)] {
+        HandleCommand(&cli, std::move(command));
       });
     else
       break;
