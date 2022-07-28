@@ -20,7 +20,10 @@ using multipaxos::CommandType::GET;
 using multipaxos::CommandType::PUT;
 
 Replicant::Replicant(json const& config)
-    : mp_(&log_, config), acceptor_(io_), tp_(config["threadpool_size"]) {
+    : mp_(&log_, config),
+      kv_store_(std::make_unique<MemKVStore>()),
+      acceptor_(io_),
+      tp_(config["threadpool_size"]) {
   int id = config["id"];
   std::string me = config["peers"][id];
   auto pos = me.find(":") + 1;

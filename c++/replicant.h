@@ -24,6 +24,7 @@ class Replicant {
 
   Log log_;
   MultiPaxos mp_;
+  std::unique_ptr<KVStore> kv_store_;
   asio::io_context io_;
   asio::ip::tcp::acceptor acceptor_;
   asio::thread_pool tp_;
