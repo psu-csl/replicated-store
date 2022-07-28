@@ -249,10 +249,13 @@ Result MultiPaxos::SendAccepts(int64_t ballot,
 void MultiPaxos::Replay(int64_t ballot, std::optional<log_map_t> const& log) {
   if (!log)
     return;
-  for (auto const& [_, instance] : *log) {
-    auto [r, __] = SendAccepts(ballot, instance.index(), instance.command(),
-                               instance.client_id());
-    if (r != ResultType::kOk)
+  for (auto const& [index, instance] : *log) {
+    Result r = SendAccepts(ballot, instance.index(), instance.command(),
+                           instance.client_id());
+    while (r.type_ == ResultType::kRetry)
+      r = SendAccepts(ballot, instance.index(), instance.command(),
+                      instance.client_id());
+    if (r.type_ == ResultType::kSomeoneElseLeader)
       return;
   }
   is_ready_ = true;
