@@ -22,10 +22,12 @@ using multipaxos::CommandType::PUT;
 Replicant::Replicant(json const& config)
     : mp_(&log_, config),
       kv_store_(std::make_unique<MemKVStore>()),
+      id_(config["id"]),
+      next_client_id_(id_),
+      num_peers_(config["peers"].size()),
       acceptor_(io_),
       tp_(config["threadpool_size"]) {
-  int id = config["id"];
-  std::string me = config["peers"][id];
+  std::string me = config["peers"][id_];
   auto pos = me.find(":") + 1;
   CHECK_NE(pos, std::string::npos);
   std::string ip = me.substr(0, pos);
@@ -36,7 +38,7 @@ Replicant::Replicant(json const& config)
   acceptor_.set_option(tcp::acceptor::reuse_address(true));
   acceptor_.bind(endpoint);
   acceptor_.listen(5);
-  DLOG(INFO) << "replicant " << id << " accepting at " << ip << ":" << port;
+  DLOG(INFO) << "replicant " << id_ << " accepting at " << ip << ":" << port;
 }
 
 Replicant::~Replicant() {
