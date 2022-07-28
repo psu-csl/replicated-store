@@ -17,8 +17,8 @@ class Replicant {
   void Run();
 
  private:
-  void HandleClient(asio::ip::tcp::socket* cli);
-  void HandleCommand(asio::ip::tcp::socket* cli, multipaxos::Command cmd);
+  void HandleClient(int64_t client_id);
+  void Replicate(multipaxos::Command command, int64_t client_id);
   std::optional<multipaxos::Command> ReadCommand(asio::ip::tcp::socket* cli);
   std::string ReadLine(asio::ip::tcp::socket* cli);
 
