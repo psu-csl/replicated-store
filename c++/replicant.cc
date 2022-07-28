@@ -49,18 +49,19 @@ Replicant::~Replicant() {
 
 void Replicant::Run() {
   for (;;) {
-    tcp::socket cli(io_);
-    acceptor_.accept(cli);
-    clients_.emplace_back(&Replicant::HandleClient, this, std::move(cli));
+    auto [it, ok] = client_sockets_.insert({NextClientId(), tcp::socket(io_)});
+    CHECK(ok);
+    acceptor_.accept(it->second);
+    clients_.emplace_back(&Replicant::HandleClient, this, &it->second);
   }
 }
 
-void Replicant::HandleClient(tcp::socket cli) {
+void Replicant::HandleClient(tcp::socket* cli) {
   for (;;) {
-    auto command = ReadCommand(&cli);
+    auto command = ReadCommand(cli);
     if (command)
       asio::post(tp_, [this, &cli, command = std::move(*command)] {
-        HandleCommand(&cli, std::move(command));
+        HandleCommand(cli, std::move(command));
       });
     else
       break;
