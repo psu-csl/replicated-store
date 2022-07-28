@@ -15,6 +15,9 @@ using asio::ip::tcp;
 using nlohmann::json;
 
 using multipaxos::Command;
+using multipaxos::CommandType::DEL;
+using multipaxos::CommandType::GET;
+using multipaxos::CommandType::PUT;
 
 Replicant::Replicant(json const& config)
     : mp_(&log_, config), acceptor_(io_), tp_(config["threadpool_size"]) {
