@@ -84,18 +84,4 @@ std::string Replicant::ReadLine(tcp::socket* cli) {
   return line;
 }
 
-void Replicant::HandleCommand(tcp::socket* /* cli */, Command /* cmd */) {
-  // bool is_get = cmd.type_ == CommandType::kGet;
-  // auto r = consensus_->AgreeAndExecute(std::move(cmd));
-
-  // static const std::string success = "success\n";
-  // static const std::string failure = "failure\n";
-
-  // if (r.ok_) {
-  //   asio::write(*cli, asio::buffer(success));
-  //   if (is_get)
-  //     asio::write(*cli, asio::buffer(*r.value_));
-  // } else {
-  //   asio::write(*cli, asio::buffer(failure));
-  // }
-}
+void Replicant::HandleCommand(tcp::socket* /* cli */, Command /* command */) {}
