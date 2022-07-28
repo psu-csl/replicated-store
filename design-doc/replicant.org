@@ -1,0 +1,72 @@
+- Replicant
+
+  - members
+    - kv_: KVStore
+    - c_: Consensus
+    - log_: Log
+    - tp_: Threadpool
+    - l_: socket
+    - map_: map from client_id(int) to socket object
+    - client_id_: id of the next client that will connect
+    - id_: id of the peers
+    - num_peers_: number of peers
+
+  - methods
+
+    - constructor(cfg: config)
+      kv_ = new(KVStore)
+      c_ = new(Consensus(cfg))
+      log_ = new(Log())
+      id_ = config["id"]
+      client_id_ = id_
+      num_peers_ = confg["num_peers"]
+
+    - next_client_id(void) -> int
+      id = client_id_
+      client_id_ += num_peers_
+      return id
+
+    - run(void)
+      thread(executor).start()
+      for (;;) {
+        socket = accept(l)
+        client-id = next_client_id()
+        map_[client-id] = socket
+        thread(handle_client, client-id).start()
+      }
+
+    - handle_client(client-id: int)
+      it = map_[client-id]
+      for (;;) {
+        cmd = read_command(it->socket)
+        if (cmd)
+          tp_.post(replicate, cmd, client-id)
+        else
+          break
+      }
+      close(it->socket)
+      del it
+
+    - replicate(cmd: command, client-id: int)
+      r = c.replicate(cmd, client-id)
+      if r.type_ != ok
+        it = map_[client-id]
+        send(it->socket, r)
+        close(it->socket)
+        del it
+
+    - executor(void)
+      for (;;) {
+        client-id, result = log_.execute(kv)
+        respond(client-id, result)
+      }
+
+    - respond(client-id, result)
+      # responds to the client with the result of the command execution. this
+      # function will respond to the client only if the client originally sent
+      # the request to this peer when it was a leader. this constraint is
+      # implicitly enforced by having each peer assign a unique id to each
+      # client.
+      it = map_[client-id]
+      if it != null
+        send(it->socket, result)
