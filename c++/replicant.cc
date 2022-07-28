@@ -18,8 +18,6 @@ using multipaxos::Command;
 
 Replicant::Replicant(json const& config)
     : mp_(&log_, config), acceptor_(io_), tp_(config["threadpool_size"]) {
-  // determine port number for clients, which is 1 more than the port for paxos
-  // peers; allows us to run multiple paxos peers on the same host for testing
   int id = config["id"];
   std::string me = config["peers"][id];
   auto pos = me.find(":") + 1;
@@ -27,13 +25,12 @@ Replicant::Replicant(json const& config)
   std::string ip = me.substr(0, pos);
   int port = std::stoi(me.substr(pos)) + 1;
 
-  // start the server for accepting client commands
   tcp::endpoint endpoint(tcp::v4(), port);
   acceptor_.open(endpoint.protocol());
   acceptor_.set_option(tcp::acceptor::reuse_address(true));
   acceptor_.bind(endpoint);
   acceptor_.listen(5);
-  DLOG(INFO) << "accepting clients at " << ip << ":" << port;
+  DLOG(INFO) << "replicant " << id << " accepting at " << ip << ":" << port;
 }
 
 Replicant::~Replicant() {
