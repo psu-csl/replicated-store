@@ -48,6 +48,7 @@ Replicant::~Replicant() {
 }
 
 void Replicant::Run() {
+  executor_thread_ = std::thread(&Replicant::ExecutorThread, this);
   for (;;) {
     auto client_id = NextClientId();
     auto [it, ok] = client_sockets_.insert({client_id, tcp::socket(io_)});
@@ -68,6 +69,17 @@ void Replicant::HandleClient(int64_t client_id) {
       });
     else
       break;
+  }
+}
+
+void Replicant::ExecutorThread() {
+  DLOG(INFO) << "replicant " << id_ << " starting executor thread";
+  for (;;) {
+    auto [client_id, result] = log_.Execute(kv_store_.get());
+    auto it = client_sockets_.find(client_id);
+    if (it == client_sockets_.end())
+      return;
+    // write result to the client socket (it->second)
   }
 }
 
