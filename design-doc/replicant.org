@@ -58,15 +58,12 @@
     - executor(void)
       for (;;) {
         client-id, result = log_.execute(kv)
-        respond(client-id, result)
+        # respond to the client with the result of the command execution. this
+        # will respond to the client only if the client originally sent the
+        # request to this peer when it was a leader. this constraint is
+        # implicitly enforced by having each peer assign a unique id to each
+        # client.
+        it = map_[client-id]
+        if it != null
+          send(it->socket, result)
       }
-
-    - respond(client-id, result)
-      # responds to the client with the result of the command execution. this
-      # function will respond to the client only if the client originally sent
-      # the request to this peer when it was a leader. this constraint is
-      # implicitly enforced by having each peer assign a unique id to each
-      # client.
-      it = map_[client-id]
-      if it != null
-        send(it->socket, result)
