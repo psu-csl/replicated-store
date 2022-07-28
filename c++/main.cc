@@ -30,5 +30,5 @@ int main(int argc, char* argv[]) {
   config["leader"] = FLAGS_leader;
 
   Replicant replicant(config);
-  replicant.Run();
+  replicant.Start();
 }
