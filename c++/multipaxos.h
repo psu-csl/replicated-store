@@ -85,9 +85,10 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
   }
 
   void SetBallot(int64_t ballot) {
-    auto old_id = ballot_ & kIdBits;
-    auto new_id = ballot & kIdBits;
-    if ((old_id == id_ || old_id == kMaxNumPeers) && old_id != new_id) {
+    auto old_leader = Leader(ballot_);
+    auto new_leader = Leader(ballot);
+    if (old_leader != new_leader &&
+        (old_leader == id_ || old_leader == kMaxNumPeers)) {
       DLOG(INFO) << id_ << " became a follower: ballot: " << ballot_ << " -> "
                  << ballot;
       cv_follower_.notify_one();
