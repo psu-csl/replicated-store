@@ -102,6 +102,38 @@ Result MultiPaxos::Replicate(Command command, client_id_t client_id) {
   return Result{ResultType::kRetry, std::nullopt};
 }
 
+void MultiPaxos::HeartbeatThread() {
+  DLOG(INFO) << id_ << " starting heartbeat thread";
+  while (running_) {
+    WaitUntilLeader();
+    auto gle = log_->GlobalLastExecuted();
+    while (running_) {
+      auto [ballot, is_ready] = Ballot();
+      if (!IsLeader(ballot, id_))
+        break;
+      gle = SendHeartbeats(ballot, gle);
+      SleepForHeartbeatInterval();
+    }
+  }
+  DLOG(INFO) << id_ << " stopping heartbeat thread";
+}
+
+void MultiPaxos::PrepareThread() {
+  DLOG(INFO) << id_ << " starting prepare thread";
+  while (running_) {
+    WaitUntilFollower();
+    while (running_) {
+      SleepForRandomInterval();
+      if (ReceivedHeartbeat())
+        continue;
+      auto ballot = NextBallot();
+      Replay(ballot, SendPrepares(ballot));
+      break;
+    }
+  }
+  DLOG(INFO) << id_ << " stopping prepare thread";
+}
+
 int64_t MultiPaxos::SendHeartbeats(int64_t ballot,
                                    int64_t global_last_executed) {
   auto state = std::make_shared<heartbeat_state_t>(id_, log_->LastExecuted());
@@ -260,38 +292,6 @@ void MultiPaxos::Replay(int64_t ballot, std::optional<log_map_t> const& log) {
   }
   is_ready_ = true;
   DLOG(INFO) << id_ << " leader is ready to serve";
-}
-
-void MultiPaxos::HeartbeatThread() {
-  DLOG(INFO) << id_ << " starting heartbeat thread";
-  while (running_) {
-    WaitUntilLeader();
-    auto gle = log_->GlobalLastExecuted();
-    while (running_) {
-      auto [ballot, is_ready] = Ballot();
-      if (!IsLeader(ballot, id_))
-        break;
-      gle = SendHeartbeats(ballot, gle);
-      SleepForHeartbeatInterval();
-    }
-  }
-  DLOG(INFO) << id_ << " stopping heartbeat thread";
-}
-
-void MultiPaxos::PrepareThread() {
-  DLOG(INFO) << id_ << " starting prepare thread";
-  while (running_) {
-    WaitUntilFollower();
-    while (running_) {
-      SleepForRandomInterval();
-      if (ReceivedHeartbeat())
-        continue;
-      auto ballot = NextBallot();
-      Replay(ballot, SendPrepares(ballot));
-      break;
-    }
-  }
-  DLOG(INFO) << id_ << " stopping prepare thread";
 }
 
 Status MultiPaxos::Heartbeat(ServerContext*,
