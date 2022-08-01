@@ -241,7 +241,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     return instance;
   }
 
-  public long leaderLockless(){
+  public long leader(){
     return ballot & kIdBits;
   }
 
@@ -252,7 +252,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
       ballot += kRoundIncrement;
       ballot = (ballot & ~kIdBits) | id;
       isReady.set(false);
-      logger.info(id + " became a leader: ballot: " + oldBallot + " -> " + ballot);
+      logger.info(id + " became a leaderTest: ballot: " + oldBallot + " -> " + ballot);
       cvLeader.signal();
       return ballot;
     } finally {
@@ -270,26 +270,26 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     this.ballot = ballot;
   }
 
-  public long leader() {
+  public long leaderTest() {
     mu.lock();
     try {
-      return leaderLockless();
+      return leader();
+    } finally {
+      mu.unlock();
+    }
+  }
+
+  public boolean isLeaderTest() {
+    mu.lock();
+    try {
+      return isLeader();
     } finally {
       mu.unlock();
     }
   }
 
   public boolean isLeader() {
-    mu.lock();
-    try {
-      return isLeaderLockless();
-    } finally {
-      mu.unlock();
-    }
-  }
-
-  public boolean isLeaderLockless() {
-    return leaderLockless() == id;
+    return leader() == id;
   }
 
   public boolean isSomeoneElseLeader() {
@@ -309,7 +309,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
   public void waitUntilLeader() {
     mu.lock();
     try {
-      while (running.get() && !isLeaderLockless()) {
+      while (running.get() && !isLeader()) {
         cvLeader.await();
       }
     } catch (InterruptedException e) {
@@ -322,7 +322,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
   public void waitUntilFollower() {
     mu.lock();
     try {
-      while (running.get() && isLeaderLockless()) {
+      while (running.get() && isLeader()) {
         cvFollower.await();
       }
     } catch (InterruptedException e) {
@@ -465,7 +465,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
           mu.lock();
           if(response.getBallot() >= this.ballot){
             setBallot(response.getBallot());
-            state.leader = leaderLockless();
+            state.leader = leader();
           }
           mu.unlock();
         }
@@ -534,7 +534,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
           mu.lock();
           if (response.getBallot() >= ballot) {
             setBallot(response.getBallot());
-            state.leader = leaderLockless();
+            state.leader = leader();
           }
           mu.unlock();
         }
@@ -653,7 +653,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
           mu.lock();
           if (response.getBallot() >= this.ballot) {
             setBallot(response.getBallot());
-            state.leader = leaderLockless();
+            state.leader = leader();
           }
           mu.unlock();
         }
@@ -718,7 +718,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     }
 
     this.isReady.set(true);
-    logger.info(this.id + " leader is ready to server");
+    logger.info(this.id + " leaderTest is ready to server");
   }
 
   public Result replicate(command.Command command, long clientId){
@@ -738,9 +738,9 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
   public GetBallotOrLeaderResult getBallotOrLeader(){
     mu.lock();
     try{
-      if(isLeaderLockless())
+      if(isLeader())
         return new GetBallotOrLeaderResult(true, this.isReady.get(), this.ballot);
-      return new GetBallotOrLeaderResult(false, false, leaderLockless());
+      return new GetBallotOrLeaderResult(false, false, leader());
     }finally {
       mu.unlock();
     }

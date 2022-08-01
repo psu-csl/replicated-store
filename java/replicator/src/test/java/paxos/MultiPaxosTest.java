@@ -65,8 +65,8 @@ class MultiPaxosTest {
 
   @Test
   void constructor() {
-    assertEquals(MultiPaxos.kMaxNumPeers, peer0.leader());
-    assertFalse(peer0.isLeader());
+    assertEquals(MultiPaxos.kMaxNumPeers, peer0.leaderTest());
+    assertFalse(peer0.isLeaderTest());
     assertFalse(peer0.isSomeoneElseLeader());
   }
 
@@ -80,9 +80,9 @@ class MultiPaxosTest {
     ballot += MultiPaxos.kRoundIncrement;
     assertEquals(ballot, peer2.nextBallot());
 
-    assertTrue(peer2.isLeader());
+    assertTrue(peer2.isLeaderTest());
     assertFalse(peer2.isSomeoneElseLeader());
-    assertEquals(2, peer2.leader());
+    assertEquals(2, peer2.leaderTest());
   }
 
   @Test
@@ -160,7 +160,7 @@ class MultiPaxosTest {
     HeartbeatRequest request = HeartbeatRequest.newBuilder().setBallot(peer1.nextBallot()).build();
     blockingStub.heartbeat(request);
 
-    assertTrue(peer0.isLeader());
+    assertTrue(peer0.isLeaderTest());
     peer0.stop();
     channel.shutdown();
   }
@@ -178,8 +178,8 @@ class MultiPaxosTest {
     HeartbeatRequest request0 = HeartbeatRequest.newBuilder().setBallot(peer1.nextBallot()).build();
     blockingStub.heartbeat(request0);
 
-    assertFalse(peer0.isLeader());
-    assertEquals(1, peer0.leader());
+    assertFalse(peer0.isLeaderTest());
+    assertEquals(1, peer0.leaderTest());
     peer0.stop();
     channel.shutdown();
   }
