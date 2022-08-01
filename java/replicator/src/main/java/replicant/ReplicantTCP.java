@@ -9,13 +9,14 @@ import java.net.Socket;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.ThreadPoolExecutor;
+import kvstore.KVStore;
 import kvstore.MemKVStore;
 import org.codehaus.jackson.map.ObjectMapper;
 import paxos.DummyPaxos;
 
 public class ReplicantTCP extends TCPServer {
 
-  public ReplicantTCP(int port, DummyPaxos paxos, MemKVStore memKVStore,
+  public ReplicantTCP(int port, DummyPaxos paxos, KVStore memKVStore,
       ThreadPoolExecutor threadPool) {
 
     try {

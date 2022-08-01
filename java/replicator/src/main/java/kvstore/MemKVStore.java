@@ -35,17 +35,17 @@ public class MemKVStore implements KVStore {
   @Override
   public KVResult execute(Command cmd) {
     CommandType cmdType = cmd.getCommandType();
-    if (cmdType == CommandType.kGet) {
+    if (cmdType == CommandType.Get) {
       String r = get(cmd.getKey());
       if (r == null) {
         return new KVResult(false, kKeyNotFound);
       } else {
         return new KVResult(true, r);
       }
-    } else if (cmdType == CommandType.kPut) {
+    } else if (cmdType == CommandType.Put) {
       put(cmd.getKey(), cmd.getValue());
       return new KVResult(true, kEmpty);
-    } else if (cmdType == CommandType.kDel && del(cmd.getKey())) {
+    } else if (cmdType == CommandType.Del && del(cmd.getKey())) {
       return new KVResult(true, kEmpty);
     } else {
       // default action if command type is not matched

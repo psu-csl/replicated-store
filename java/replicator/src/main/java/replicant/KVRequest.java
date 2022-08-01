@@ -1,29 +1,28 @@
 package replicant;
 
-import command.Command;
 import command.Command.CommandType;
 
 public class KVRequest {
 
-  public String value;
-  public String key;
-  public CommandType commandType;
+  public String Value;
+  public String Key;
+  public CommandType CommandType;
 
   @Override
   public String toString() {
-    return "{\"Key\" : " + key + "\n\"Value\" : " + value + "\n\"CommandType :\"" + commandType
+    return "{\"Key\" : " + Key + "\n\"Value\" : " + Value + "\n\"CommandType :\"" + CommandType
         + "\n}";
   }
 
   public String getKey() {
-    return key;
+    return Key;
   }
 
   public String getValue() {
-    return value;
+    return Value;
   }
 
   public CommandType getCommandType() {
-    return this.commandType;
+    return this.CommandType;
   }
 }

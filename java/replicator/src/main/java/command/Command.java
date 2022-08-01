@@ -53,7 +53,8 @@ public class Command {
   }
 
   public enum CommandType {
-    kGet, kPut, kDel
+    Get, Put, Del;
+
   }
 
 

@@ -51,57 +51,57 @@ class MemKVStoreTest {
     MemKVStore store = new MemKVStore();
 
     {
-      Command get = new Command(CommandType.kGet, key1, "");
+      Command get = new Command(CommandType.Get, key1, "");
       KVResult r = store.execute(get);
       assertTrue(!r.isOk() && r.getValue().equals(kKeyNotFound));
     }
     {
-      Command del = new Command(CommandType.kDel, key1, "");
+      Command del = new Command(CommandType.Del, key1, "");
       KVResult r = store.execute(del);
       assertTrue(!r.isOk() && r.getValue().equals(kKeyNotFound));
     }
     {
 
-      Command put = new Command(CommandType.kPut, key1, val1);
+      Command put = new Command(CommandType.Put, key1, val1);
       KVResult r1 = store.execute((put));
       assertTrue(r1.isOk() && r1.getValue().equals(kEmpty));
 
-      Command get = new Command(CommandType.kGet, key1, "");
+      Command get = new Command(CommandType.Get, key1, "");
       KVResult r2 = store.execute((get));
       assertTrue(r2.isOk() && r2.getValue().equals(val1));
     }
     {
-      Command put = new Command(CommandType.kPut, key2, val2);
+      Command put = new Command(CommandType.Put, key2, val2);
       KVResult r1 = store.execute(put);
       assertTrue(r1.isOk() && r1.getValue().equals(kEmpty));
 
-      Command get = new Command(CommandType.kGet, key2, "");
+      Command get = new Command(CommandType.Get, key2, "");
       KVResult r2 = store.execute(get);
       assertTrue(r2.isOk() && r2.getValue().equals(val2));
     }
     {
-      Command put = new Command(CommandType.kPut, key1, val2);
+      Command put = new Command(CommandType.Put, key1, val2);
       KVResult r1 = store.execute(put);
       assertTrue(r1.isOk() && r1.getValue().equals(kEmpty));
 
-      Command get1 = new Command(CommandType.kGet, key1, "");
+      Command get1 = new Command(CommandType.Get, key1, "");
       KVResult r2 = store.execute(get1);
       assertTrue(r2.isOk() && r2.getValue().equals(val2));
 
-      Command get2 = new Command(CommandType.kGet, key2, "");
+      Command get2 = new Command(CommandType.Get, key2, "");
       KVResult r3 = store.execute(get2);
       assertTrue(r3.isOk() && r3.getValue().equals(val2));
     }
     {
-      Command del = new Command(CommandType.kDel, key1, "");
+      Command del = new Command(CommandType.Del, key1, "");
       KVResult r1 = store.execute(del);
       assertTrue(r1.isOk() && r1.getValue().equals(kEmpty));
 
-      Command get1 = new Command(CommandType.kGet, key1, "");
+      Command get1 = new Command(CommandType.Get, key1, "");
       KVResult r2 = store.execute(get1);
       assertFalse(r2.isOk() && r2.getValue().equals(kKeyNotFound));
 
-      Command get2 = new Command(CommandType.kGet, key2, "");
+      Command get2 = new Command(CommandType.Get, key2, "");
       KVResult r3 = store.execute(get2);
       assertTrue(r3.isOk() && r3.getValue().equals(val2));
     }

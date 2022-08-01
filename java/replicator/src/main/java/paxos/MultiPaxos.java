@@ -1,8 +1,8 @@
 package paxos;
 
-import static command.Command.CommandType.kDel;
-import static command.Command.CommandType.kGet;
-import static command.Command.CommandType.kPut;
+import static command.Command.CommandType.Del;
+import static command.Command.CommandType.Get;
+import static command.Command.CommandType.Put;
 import static log.Log.insert;
 import static multipaxos.CommandType.DEL;
 import static multipaxos.CommandType.GET;
@@ -206,9 +206,9 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
   public static Command makeProtoCommand(command.Command command) {
     CommandType commandType = null;
     switch (command.getCommandType()) {
-      case kDel -> commandType = DEL;
-      case kGet -> commandType = GET;
-      case kPut -> commandType = PUT;
+      case Del -> commandType = DEL;
+      case Get -> commandType = GET;
+      case Put -> commandType = PUT;
     }
     return Command.newBuilder().setType(commandType).setKey(command.getKey())
         .setValue(command.getValue()).build();
@@ -231,9 +231,9 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     command.Command command = new command.Command();
     command.Command.CommandType commandType = null;
     switch (cmd.getType()) {
-      case DEL -> commandType = kDel;
-      case GET -> commandType = kGet;
-      case PUT -> commandType = kPut;
+      case DEL -> commandType = Del;
+      case GET -> commandType = Get;
+      case PUT -> commandType = Put;
       case UNRECOGNIZED -> {
       }
     }

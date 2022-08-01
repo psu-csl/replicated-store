@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.concurrent.ThreadPoolExecutor;
+import kvstore.KVStore;
 import kvstore.MemKVStore;
 import paxos.DummyPaxos;
 
@@ -17,7 +18,7 @@ public class TCPServer implements Cloneable, Runnable {
   private boolean done = false;
 
   // later reply concurrent map by MemStore context
-  public synchronized void startServer(int port, DummyPaxos paxos, MemKVStore memStore,
+  public synchronized void startServer(int port, DummyPaxos paxos, KVStore memStore,
       ThreadPoolExecutor threadPool/*int port, ConcurrentHashMap<String, String> memStore*/)
       throws IOException {
     if (runner == null) {
@@ -53,6 +54,7 @@ public class TCPServer implements Cloneable, Runnable {
           newConn.data = dataSocket;
           newConn.runner = new Thread(newConn);
           newConn.runner.start();
+          System.out.println("new connection created: " + newConn.data);
         } catch (Exception e) {
           e.printStackTrace();
         }

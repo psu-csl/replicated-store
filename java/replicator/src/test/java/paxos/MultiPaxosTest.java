@@ -104,8 +104,8 @@ class MultiPaxosTest {
   void heartbeatHandlerSameBallot() {
     ExecutorService executor = Executors.newSingleThreadExecutor();
     executor.submit(() -> peer0.start());
-    log0.append(makeInstance(17, 1, InstanceState.kExecuted, CommandType.kPut));
-    log0.append(makeInstance(17, 2, InstanceState.kInProgress, CommandType.kGet));
+    log0.append(makeInstance(17, 1, InstanceState.kExecuted, CommandType.Put));
+    log0.append(makeInstance(17, 2, InstanceState.kInProgress, CommandType.Get));
     log0.setLastExecuted(1);
 
     ManagedChannel channel = ManagedChannelBuilder.forAddress("localhost", config0.getPort())
@@ -131,9 +131,9 @@ class MultiPaxosTest {
       // peer0.blockUntilShutDown();
     });
 
-    var inst1 = makeInstance(17, 1, InstanceState.kExecuted, CommandType.kPut);
-    var inst2 = makeInstance(17, 2, InstanceState.kInProgress, CommandType.kGet);
-    var inst3 = makeInstance(17, 3, InstanceState.kInProgress, CommandType.kDel);
+    var inst1 = makeInstance(17, 1, InstanceState.kExecuted, CommandType.Put);
+    var inst2 = makeInstance(17, 2, InstanceState.kInProgress, CommandType.Get);
+    var inst3 = makeInstance(17, 3, InstanceState.kInProgress, CommandType.Del);
     log0.append(inst1);
     log0.append(inst2);
     log0.append(inst3);

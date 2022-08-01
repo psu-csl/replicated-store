@@ -98,9 +98,9 @@ public class HTTPRequest {
 
   public CommandType getComandType() {
     return switch (this.method) {
-      case "Get" -> CommandType.kGet;
-      case "Put" -> CommandType.kPut;
-      case "Delete" -> CommandType.kDel;
+      case "Get" -> CommandType.Get;
+      case "Put" -> CommandType.Put;
+      case "Delete" -> CommandType.Del;
       default -> null;
     };
   }
