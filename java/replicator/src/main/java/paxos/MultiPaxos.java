@@ -427,7 +427,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
       waitUntilLeader();
       var gle = log_.getGlobalLastExecuted();
       while (running.get()) {
-        var res = getBallotOrLeader();
+        var res = ballot();
         var isLeader = res.isLeader;
         var ballot = res.ballot;
         if(!isLeader)
@@ -722,7 +722,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
   }
 
   public Result replicate(command.Command command, long clientId){
-    var res = getBallotOrLeader();
+    var res = ballot();
     var isLeader = res.isLeader;
     var isReady  = res.isReady;
     var ballot = res.ballot;
@@ -731,11 +731,11 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
         return sendAccepts(ballot,log_.advanceLastIndex(),command,clientId);
       return new Result(MultiPaxosResultType.kRetry, null);
     }
-      return new Result(MultiPaxosResultType.kSomeoneElseLeader, null);
+      return new Result(MultiPaxosResultType.kSomeoneElseLeader, leader());
 
   }
 
-  public GetBallotOrLeaderResult getBallotOrLeader(){
+  public GetBallotOrLeaderResult ballot(){
     mu.lock();
     try{
       if(isLeader())
