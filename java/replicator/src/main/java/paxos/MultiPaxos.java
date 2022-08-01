@@ -190,6 +190,9 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     rpcServer = ServerBuilder.forPort(config.getPort()).addService(this).build();
   }
 
+  public static boolean isSomeoneElseLeader(long ballot, long id){
+    return !isLeader(ballot, id) && leader(ballot) < kMaxNumPeers;
+  }
   public static long leader(long ballot){
     return ballot & kIdBits;
   }
@@ -198,9 +201,6 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     return leader(ballot) == id;
   }
 
-  public static boolean isSomeoneElseLeader(long ballot, long id){
-    return !isLeader(ballot, id) && leader(ballot) < kMaxNumPeers;
-  }
 
   public static Command makeProtoCommand(command.Command command) {
     CommandType commandType = null;
@@ -685,10 +685,9 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
         return;
     for (Map.Entry<Long, log.Instance> entry : log.entrySet()) {
       var res = sendAccepts(ballot, entry.getValue().getIndex(), entry.getValue().getCommand(), entry.getValue().getClientId());
-      if(res.type!=MultiPaxosResultType.kOk)
+      if(res.type==MultiPaxosResultType.kSomeoneElseLeader)
         return;
     }
-
     this.isReady.set(true);
     logger.info(this.id + " leaderTest is ready to server");
   }
@@ -702,7 +701,9 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
         return sendAccepts(ballot,log_.advanceLastIndex(),command,clientId);
       return new Result(MultiPaxosResultType.kRetry, null);
     }
+    if(isSomeoneElseLeader(ballot, this.id))
       return new Result(MultiPaxosResultType.kSomeoneElseLeader, leader(ballot));
+    return new Result(MultiPaxosResultType.kRetry, null);
 
   }
 
