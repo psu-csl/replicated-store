@@ -515,7 +515,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
       });
     }
     state.mu.lock();
-    while (state.leader!=this.id && state.numOks <= rpcPeers.size() / 2
+    while (state.leader==this.id && state.numOks <= rpcPeers.size() / 2
         && state.numRpcs != rpcPeers.size()) {
       try {
         state.cv.await();
@@ -634,7 +634,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
       });
     }
     state.mu.lock();
-    while (state.leader!=this.id && state.numOks <= rpcPeers.size() / 2
+    while (state.leader==this.id && state.numOks <= rpcPeers.size() / 2
         && state.numRpcs != rpcPeers.size()) {
       try {
         state.cv.await();
