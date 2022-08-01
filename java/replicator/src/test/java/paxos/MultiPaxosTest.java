@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static paxos.MultiPaxos.kMaxNumPeers;
+
 
 import command.Command;
 import command.Command.CommandType;
@@ -30,6 +32,19 @@ class MultiPaxosTest {
   protected MultiPaxos peer0, peer1, peer2;
   protected Configuration config0, config1, config2;
 
+  public static long leader(MultiPaxos peer){
+    var r = peer.ballot();
+    return MultiPaxos.leader(r.ballot);
+  }
+
+  public static boolean isLeader(MultiPaxos peer){
+    var r = peer.ballot();
+    return MultiPaxos.isLeader(r.ballot, peer.getId());
+  }
+
+  public static boolean isSomeoneElseLeader(MultiPaxos peer){
+    return !isLeader(peer) && leader(peer) < kMaxNumPeers;
+  }
   public Instance makeInstance(long ballot, long index, InstanceState state, CommandType type) {
     return new Instance(ballot, index, 0, state, new Command(type, "", ""));
   }
@@ -65,9 +80,9 @@ class MultiPaxosTest {
 
   @Test
   void constructor() {
-    assertEquals(MultiPaxos.kMaxNumPeers, peer0.leaderTest());
-    assertFalse(peer0.isLeaderTest());
-    assertFalse(peer0.isSomeoneElseLeader());
+    assertEquals(kMaxNumPeers, leader(peer0));
+    assertFalse(isLeader(peer0));
+    assertFalse(isSomeoneElseLeader(peer0));
   }
 
   @Test
@@ -80,9 +95,9 @@ class MultiPaxosTest {
     ballot += MultiPaxos.kRoundIncrement;
     assertEquals(ballot, peer2.nextBallot());
 
-    assertTrue(peer2.isLeaderTest());
-    assertFalse(peer2.isSomeoneElseLeader());
-    assertEquals(2, peer2.leaderTest());
+    assertTrue(isLeader(peer2));
+    assertFalse(isSomeoneElseLeader(peer2));
+    assertEquals(2,leader(peer2));
   }
 
   @Test
@@ -160,7 +175,7 @@ class MultiPaxosTest {
     HeartbeatRequest request = HeartbeatRequest.newBuilder().setBallot(peer1.nextBallot()).build();
     blockingStub.heartbeat(request);
 
-    assertTrue(peer0.isLeaderTest());
+    assertTrue(isLeader(peer0));
     peer0.stop();
     channel.shutdown();
   }
@@ -178,8 +193,8 @@ class MultiPaxosTest {
     HeartbeatRequest request0 = HeartbeatRequest.newBuilder().setBallot(peer1.nextBallot()).build();
     blockingStub.heartbeat(request0);
 
-    assertFalse(peer0.isLeaderTest());
-    assertEquals(1, peer0.leaderTest());
+    assertFalse(isLeader(peer0));
+    assertEquals(1, leader(peer0));
     peer0.stop();
     channel.shutdown();
   }
