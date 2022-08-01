@@ -74,14 +74,14 @@ class AcceptState {
 
   public long numRpcs;
   public long numOks;
-  public boolean isLeader;
+  public long leader;
   public ReentrantLock mu;
   public Condition cv;
 
-  public AcceptState() {
+  public AcceptState(long leader) {
     this.numRpcs = 0;
     this.numOks = 0;
-    this.isLeader = true;
+    this.leader = leader;
     this.mu = new ReentrantLock();
     this.cv = mu.newCondition();
   }
@@ -92,15 +92,15 @@ class PrepareState {
 
   public long numRpcs;
   public long numOks;
-  public boolean isLeader;
+  public long leader;
   public HashMap<Long, log.Instance> log;
   public ReentrantLock mu;
   public Condition cv;
 
-  public PrepareState() {
+  public PrepareState(long leader) {
     this.numRpcs = 0;
     this.numOks = 0;
-    this.isLeader = true;
+    this.leader = leader;
     this.log = new HashMap<>();
     this.mu = new ReentrantLock();
     this.cv = mu.newCondition();
@@ -112,15 +112,15 @@ class HeartbeatState {
   public long numRpcs;
   public long numOks;
   public long minLastExecuted;
-  public boolean isLeader;
+  public long leader;
   public ReentrantLock mu;
   public Condition cv;
 
-  public HeartbeatState() {
+  public HeartbeatState(long leader, long minLastExecuted) {
     this.numRpcs = 0;
     this.numOks = 0;
-    this.isLeader = true;
-    this.minLastExecuted = 0;
+    this.leader = leader;
+    this.minLastExecuted = minLastExecuted;
     this.mu = new ReentrantLock();
     this.cv = mu.newCondition();
   }
@@ -440,7 +440,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
   }
 
   public Long sendHeartbeats(long globalLastExecuted) {
-    var state = new HeartbeatState();
+    var state = new HeartbeatState(this.id, log_.getLastExecuted());
     HeartbeatRequest.Builder request = HeartbeatRequest.newBuilder();
     mu.lock();
     request.setBallot(ballot);
@@ -465,7 +465,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
           mu.lock();
           if(response.getBallot() >= this.ballot){
             setBallot(response.getBallot());
-            state.isLeader = false;
+            state.leader = leaderLockless();
           }
           mu.unlock();
         }
@@ -474,7 +474,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
       });
     }
     state.mu.lock();
-    while (state.isLeader && state.numRpcs != rpcPeers.size()) {
+    while (state.leader==this.id && state.numRpcs != rpcPeers.size()) {
       try {
         state.cv.await();
       } catch (InterruptedException e) {
@@ -513,7 +513,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
   }
 
   public HashMap<Long, log.Instance> sendPrepares(long ballot) {
-    var state = new PrepareState();
+    var state = new PrepareState(this.id);
     PrepareRequest.Builder request = PrepareRequest.newBuilder();
     request.setSender(this.id);
     request.setBallot(ballot);
@@ -534,7 +534,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
           mu.lock();
           if (response.getBallot() >= ballot) {
             setBallot(response.getBallot());
-            state.isLeader = false;
+            state.leader = leaderLockless();
           }
           mu.unlock();
         }
@@ -543,7 +543,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
       });
     }
     state.mu.lock();
-    while (state.isLeader && state.numOks <= rpcPeers.size() / 2
+    while (state.leader!=this.id && state.numOks <= rpcPeers.size() / 2
         && state.numRpcs != rpcPeers.size()) {
       try {
         state.cv.await();
@@ -627,7 +627,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
   }
 
   public Result sendAccepts(long ballot,  long index,  command.Command command, long clientId) {
-    var state = new AcceptState();
+    var state = new AcceptState(this.id);
     log.Instance instance = new log.Instance();
 
     instance.setBallot(ballot);
@@ -653,7 +653,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
           mu.lock();
           if (response.getBallot() >= this.ballot) {
             setBallot(response.getBallot());
-            state.isLeader = false;
+            state.leader = leaderLockless();
           }
           mu.unlock();
         }
@@ -662,7 +662,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
       });
     }
     state.mu.lock();
-    while (state.isLeader && state.numOks <= rpcPeers.size() / 2
+    while (state.leader!=this.id && state.numOks <= rpcPeers.size() / 2
         && state.numRpcs != rpcPeers.size()) {
       try {
         state.cv.await();
@@ -675,13 +675,10 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
       return new Result(MultiPaxosResultType.kOk, null);
     }
     state.mu.unlock(); // TODO: verify whether it's safe to unlock before if
-    mu.lock();
-    if(!isLeaderLockless()) {
-      mu.unlock();
-      return new Result(MultiPaxosResultType.kSomeoneElseLeader, leaderLockless());
+    if(state.leader!=this.id){
+      return new Result(MultiPaxosResultType.kSomeoneElseLeader, state.leader);
     }
-    mu.unlock();
-    return  new Result(MultiPaxosResultType.kRetry, null);
+    return new Result(MultiPaxosResultType.kRetry, null);
   }
 
   public void sleepForHeartbeatInterval() {
