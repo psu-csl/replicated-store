@@ -289,7 +289,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
   }
 
   public boolean isLeaderLockless() {
-    return (ballot & kIdBits) == id;
+    return leaderLockless() == id;
   }
 
   public boolean isSomeoneElseLeader() {
