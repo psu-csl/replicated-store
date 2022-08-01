@@ -556,10 +556,6 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
       state.mu.unlock();
       return state.log;
     }
-    if(!state.isLeader){
-      state.mu.unlock();
-      return null;
-    }
     state.mu.unlock(); // TODO: verify moving this above if and deleting unlock inside if
 
     return null;
@@ -602,13 +598,8 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
           continue;
         }
         var ballot = nextBallot();
-        var log = sendPrepares(ballot);
-        if(log==null){
-          continue;
-        }
-        if(!replay(ballot,log)){
-          break;
-        }
+        replay(ballot, sendPrepares(ballot));
+        break;
       }
     }
     logger.info(id + " stopping prepare thread");
@@ -720,16 +711,17 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     return now - lastHeartbeat < heartbeatInterval;
   }
 
-  public boolean replay(long ballot, HashMap<Long, log.Instance> log) {
+  public void replay(long ballot, HashMap<Long, log.Instance> log) {
+    if(log==null)
+        return;
     for (Map.Entry<Long, log.Instance> entry : log.entrySet()) {
       var res = sendAccepts(ballot, entry.getValue().getIndex(), entry.getValue().getCommand(), entry.getValue().getClientId());
       if(res.type!=MultiPaxosResultType.kOk)
-        return false;
+        return;
     }
 
     this.isReady.set(true);
     logger.info(this.id + " leader is ready to server");
-    return true;
   }
 
   public Result replicate(command.Command command, long clientId){
