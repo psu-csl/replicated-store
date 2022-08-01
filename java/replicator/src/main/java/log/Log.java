@@ -44,9 +44,8 @@ public class Log {
       log.put(i, instance);
       return false;
     }
-    assert
-        instance.getBallot() != it.getBallot() || (it.getCommand()
-            .equals(instance.getCommand())) : "Insert case3";
+    assert instance.getBallot() != it.getBallot() || (it.getCommand()
+        .equals(instance.getCommand())) : "Insert case3";
     return false;
   }
 

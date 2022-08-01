@@ -6,7 +6,6 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static paxos.MultiPaxos.kMaxNumPeers;
 
-
 import command.Command;
 import command.Command.CommandType;
 import io.grpc.ManagedChannel;
@@ -32,19 +31,20 @@ class MultiPaxosTest {
   protected MultiPaxos peer0, peer1, peer2;
   protected Configuration config0, config1, config2;
 
-  public static long leader(MultiPaxos peer){
+  public static long leader(MultiPaxos peer) {
     var r = peer.ballot();
     return MultiPaxos.leader(r.ballot);
   }
 
-  public static boolean isLeader(MultiPaxos peer){
+  public static boolean isLeader(MultiPaxos peer) {
     var r = peer.ballot();
     return MultiPaxos.isLeader(r.ballot, peer.getId());
   }
 
-  public static boolean isSomeoneElseLeader(MultiPaxos peer){
+  public static boolean isSomeoneElseLeader(MultiPaxos peer) {
     return !isLeader(peer) && leader(peer) < kMaxNumPeers;
   }
+
   public Instance makeInstance(long ballot, long index, InstanceState state, CommandType type) {
     return new Instance(ballot, index, 0, state, new Command(type, "", ""));
   }
@@ -97,7 +97,7 @@ class MultiPaxosTest {
 
     assertTrue(isLeader(peer2));
     assertFalse(isSomeoneElseLeader(peer2));
-    assertEquals(2,leader(peer2));
+    assertEquals(2, leader(peer2));
   }
 
   @Test
@@ -109,13 +109,11 @@ class MultiPaxosTest {
     log0.setLastExecuted(1);
 
     ManagedChannel channel = ManagedChannelBuilder.forAddress("localhost", config0.getPort())
-        .usePlaintext()
-        .build();
+        .usePlaintext().build();
     var blockingStub = MultiPaxosRPCGrpc.newBlockingStub(channel);
 
     HeartbeatRequest request = HeartbeatRequest.newBuilder().setBallot(17).setLastExecuted(2)
-        .setGlobalLastExecuted(1)
-        .build();
+        .setGlobalLastExecuted(1).build();
     HeartbeatResponse response = blockingStub.heartbeat(request);
 
     assertEquals(1, response.getLastExecuted());
@@ -142,13 +140,11 @@ class MultiPaxosTest {
     log0.setLastExecuted(1);
 
     ManagedChannel channel = ManagedChannelBuilder.forAddress("localhost", config0.getPort())
-        .usePlaintext()
-        .build();
+        .usePlaintext().build();
     var blockingStub = MultiPaxosRPCGrpc.newBlockingStub(channel);
 
     HeartbeatRequest request = HeartbeatRequest.newBuilder().setBallot(18).setLastExecuted(3)
-        .setGlobalLastExecuted(1)
-        .build();
+        .setGlobalLastExecuted(1).build();
     HeartbeatResponse response = blockingStub.heartbeat(request);
 
     assertEquals(1, response.getLastExecuted());
@@ -165,8 +161,7 @@ class MultiPaxosTest {
     ExecutorService executor = Executors.newSingleThreadExecutor();
     executor.submit(() -> peer0.start());
     ManagedChannel channel = ManagedChannelBuilder.forAddress("localhost", config0.getPort())
-        .usePlaintext()
-        .build();
+        .usePlaintext().build();
     var blockingStub = MultiPaxosRPCGrpc.newBlockingStub(channel);
 
     peer0.nextBallot();
@@ -185,8 +180,7 @@ class MultiPaxosTest {
     ExecutorService executor = Executors.newSingleThreadExecutor();
     executor.submit(() -> peer0.start());
     ManagedChannel channel = ManagedChannelBuilder.forAddress("localhost", config0.getPort())
-        .usePlaintext()
-        .build();
+        .usePlaintext().build();
     var blockingStub = MultiPaxosRPCGrpc.newBlockingStub(channel);
 
     peer0.nextBallot();

@@ -42,32 +42,32 @@ import multipaxos.PrepareResponse;
 import multipaxos.ResponseType;
 import org.slf4j.LoggerFactory;
 
-enum MultiPaxosResultType{
-  kOk,
-  kRetry,
-  kSomeoneElseLeader
+enum MultiPaxosResultType {
+  kOk, kRetry, kSomeoneElseLeader
 }
 
 class Result {
+
   public MultiPaxosResultType type;
   public long leader;
 
-  public Result(MultiPaxosResultType type, Long leader){
+  public Result(MultiPaxosResultType type, Long leader) {
     this.type = type;
     this.leader = leader;
   }
 }
 
 class BallotResult {
+
   public boolean isReady;
   public long ballot;
 
-  public BallotResult(long ballot,boolean isReady)
-  {
+  public BallotResult(long ballot, boolean isReady) {
     this.isReady = isReady;
     this.ballot = ballot;
   }
 }
+
 class AcceptState {
 
   public long numRpcs;
@@ -190,14 +190,15 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     rpcServer = ServerBuilder.forPort(config.getPort()).addService(this).build();
   }
 
-  public static boolean isSomeoneElseLeader(long ballot, long id){
+  public static boolean isSomeoneElseLeader(long ballot, long id) {
     return !isLeader(ballot, id) && leader(ballot) < kMaxNumPeers;
   }
-  public static long leader(long ballot){
+
+  public static long leader(long ballot) {
     return ballot & kIdBits;
   }
 
-  public static  boolean isLeader(long ballot, long id){
+  public static boolean isLeader(long ballot, long id) {
     return leader(ballot) == id;
   }
 
@@ -268,15 +269,14 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
   }
 
   public void setBallot(long ballot) {
-    var oldId = this.ballot & kIdBits;
-    var newId = this.ballot & kIdBits;
-    if ((oldId == id || oldId == kMaxNumPeers) && oldId != newId) {
+    var oldLeader = leader(this.ballot);
+    var newLeader = leader(ballot);
+    if (oldLeader != newLeader && (oldLeader == this.id || oldLeader == kMaxNumPeers)) {
       logger.info(id + " became a follower: ballot: " + this.ballot + " -> " + ballot);
       cvFollower.signal();
     }
     this.ballot = ballot;
   }
-
 
 
   public void waitUntilLeader() {
@@ -402,8 +402,9 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
       while (running.get()) {
         var res = ballot();
         var ballot = res.ballot;
-        if(!isLeader(ballot,this.id))
+        if (!isLeader(ballot, this.id)) {
           break;
+        }
         gle = sendHeartbeats(gle);
         sleepForHeartbeatInterval();
       }
@@ -423,19 +424,18 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     for (var peer : rpcPeers) {
       threadPool.submit(() -> {
 
-        var response = MultiPaxosRPCGrpc.newBlockingStub(peer.stub)
-            .heartbeat(request.build());
+        var response = MultiPaxosRPCGrpc.newBlockingStub(peer.stub).heartbeat(request.build());
         logger.info(id + " sent heartbeat to " + peer.id);
         state.mu.lock();
         ++state.numRpcs;
-        if(response.getType() == ResponseType.OK) {
+        if (response.getType() == ResponseType.OK) {
           ++state.numOks;
         }
         if (response.getLastExecuted() < state.minLastExecuted) {
           state.minLastExecuted = response.getLastExecuted();
-        }else{
+        } else {
           mu.lock();
-          if(response.getBallot() >= this.ballot){
+          if (response.getBallot() >= this.ballot) {
             setBallot(response.getBallot());
             state.leader = leader(this.ballot);
           }
@@ -446,7 +446,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
       });
     }
     state.mu.lock();
-    while (state.leader==this.id && state.numRpcs != rpcPeers.size()) {
+    while (state.leader == this.id && state.numRpcs != rpcPeers.size()) {
       try {
         state.cv.await();
       } catch (InterruptedException e) {
@@ -491,8 +491,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     request.setBallot(ballot);
     for (var peer : rpcPeers) {
       threadPool.submit(() -> {
-        var response = MultiPaxosRPCGrpc.newBlockingStub(peer.stub)
-            .prepare(request.build());
+        var response = MultiPaxosRPCGrpc.newBlockingStub(peer.stub).prepare(request.build());
         logger.info(id + " sent prepare request to " + peer.id);
         state.mu.lock();
         ++state.numRpcs;
@@ -515,7 +514,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
       });
     }
     state.mu.lock();
-    while (state.leader==this.id && state.numOks <= rpcPeers.size() / 2
+    while (state.leader == this.id && state.numOks <= rpcPeers.size() / 2
         && state.numRpcs != rpcPeers.size()) {
       try {
         state.cv.await();
@@ -598,7 +597,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     }
   }
 
-  public Result sendAccepts(long ballot,  long index,  command.Command command, long clientId) {
+  public Result sendAccepts(long ballot, long index, command.Command command, long clientId) {
     var state = new AcceptState(this.id);
     log.Instance instance = new log.Instance();
 
@@ -614,8 +613,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
 
     for (var peer : rpcPeers) {
       threadPool.submit(() -> {
-        var response = MultiPaxosRPCGrpc.newBlockingStub(peer.stub)
-            .accept(request.build());
+        var response = MultiPaxosRPCGrpc.newBlockingStub(peer.stub).accept(request.build());
         logger.info(id + " sent accept request to " + peer.id);
         state.mu.lock();
         ++state.numRpcs;
@@ -634,7 +632,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
       });
     }
     state.mu.lock();
-    while (state.leader==this.id && state.numOks <= rpcPeers.size() / 2
+    while (state.leader == this.id && state.numOks <= rpcPeers.size() / 2
         && state.numRpcs != rpcPeers.size()) {
       try {
         state.cv.await();
@@ -647,7 +645,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
       return new Result(MultiPaxosResultType.kOk, null);
     }
     state.mu.unlock(); // TODO: verify whether it's safe to unlock before if
-    if(state.leader!=this.id){
+    if (state.leader != this.id) {
       return new Result(MultiPaxosResultType.kSomeoneElseLeader, state.leader);
     }
     return new Result(MultiPaxosResultType.kRetry, null);
@@ -681,41 +679,45 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
   }
 
   public void replay(long ballot, HashMap<Long, log.Instance> log) {
-    if(log==null)
-        return;
+    if (log == null) {
+      return;
+    }
     for (Map.Entry<Long, log.Instance> entry : log.entrySet()) {
-      var res = sendAccepts(ballot, entry.getValue().getIndex(), entry.getValue().getCommand(), entry.getValue().getClientId());
-      if(res.type==MultiPaxosResultType.kSomeoneElseLeader)
+      var res = sendAccepts(ballot, entry.getValue().getIndex(), entry.getValue().getCommand(),
+          entry.getValue().getClientId());
+      if (res.type == MultiPaxosResultType.kSomeoneElseLeader) {
         return;
+      }
     }
     this.isReady.set(true);
     logger.info(this.id + " leaderTest is ready to server");
   }
 
-  public Result replicate(command.Command command, long clientId){
+  public Result replicate(command.Command command, long clientId) {
     var res = ballot();
-    var isReady  = res.isReady;
+    var isReady = res.isReady;
     var ballot = res.ballot;
-    if(isLeader(ballot, this.id)){
-      if(isReady)
-        return sendAccepts(ballot,log_.advanceLastIndex(),command,clientId);
+    if (isLeader(ballot, this.id)) {
+      if (isReady) {
+        return sendAccepts(ballot, log_.advanceLastIndex(), command, clientId);
+      }
       return new Result(MultiPaxosResultType.kRetry, null);
     }
-    if(isSomeoneElseLeader(ballot, this.id))
+    if (isSomeoneElseLeader(ballot, this.id)) {
       return new Result(MultiPaxosResultType.kSomeoneElseLeader, leader(ballot));
+    }
     return new Result(MultiPaxosResultType.kRetry, null);
 
   }
 
-  public BallotResult ballot(){
+  public BallotResult ballot() {
     mu.lock();
-    try{
+    try {
       return new BallotResult(this.ballot, this.isReady.get());
-    }finally {
+    } finally {
       mu.unlock();
     }
   }
-
 
 
 }
