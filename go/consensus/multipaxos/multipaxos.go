@@ -23,34 +23,22 @@ const (
 )
 
 type Multipaxos struct {
-	running            int32
-	ready              bool
-	ballot             int64
-	log                *consensusLog.Log
-	id                 int64
-	heartbeatInterval  int64
-	heartbeatDelta     int64
-	ports              string
-	lastHeartbeat      int64
-	rpcPeers           []pb.MultiPaxosRPCClient
-	server             *grpc.Server
-	rpcServerRunning   bool
+	running           int32
+	isReady           int32
+	ballot            int64
+	log               *consensusLog.Log
+	id                int64
+	heartbeatInterval int64
+	heartbeatDelta    int64
+	ports             string
+	lastHeartbeat     int64
+	rpcPeers          []pb.MultiPaxosRPCClient
+	server            *grpc.Server
+	rpcServerRunning  bool
 	rpcServerRunningCv *sync.Cond
 	mu                 sync.Mutex
-
 	cvLeader           *sync.Cond
-	heartbeatRequest   pb.HeartbeatRequest
-	heartbeatNumRpcs   int
-	heartbeatResponses []*pb.HeartbeatResponse
-	heartbeatMutex     sync.Mutex
-	heartbeatCv        *sync.Cond
-
 	cvFollower         *sync.Cond
-	prepareRequest     pb.PrepareRequest
-	prepareNumRpcs     int
-	prepareOkResponses [][]*pb.Instance
-	prepareMutex       sync.Mutex
-	prepareCV          *sync.Cond
 
 	addrs              []string
 	pb.UnimplementedMultiPaxosRPCServer
@@ -58,29 +46,23 @@ type Multipaxos struct {
 
 func NewMultipaxos(config config.Config, log *consensusLog.Log) *Multipaxos {
 	paxos := Multipaxos{
-		running:            0,
-		ready:              false,
-		ballot:             MaxNumPeers,
-		log:                log,
-		id:                 config.Id,
-		heartbeatInterval:  config.HeartbeatInterval,
-		heartbeatDelta:     config.HeartbeatDelta,
-		ports:              config.Peers[config.Id],
-		lastHeartbeat:      0,
-		rpcPeers:           make([]pb.MultiPaxosRPCClient, len(config.Peers)),
-		rpcServerRunning:   false,
-		server:             nil,
-		heartbeatNumRpcs:   0,
-		heartbeatResponses: make([]*pb.HeartbeatResponse, len(config.Peers)),
-		prepareNumRpcs:     0,
-		prepareOkResponses: make([][]*pb.Instance, len(config.Peers)),
+		running:           0,
+		isReady:           0,
+		ballot:            MaxNumPeers,
+		log:               log,
+		id:                config.Id,
+		heartbeatInterval: config.HeartbeatInterval,
+		heartbeatDelta:    config.HeartbeatDelta,
+		ports:             config.Peers[config.Id],
+		lastHeartbeat:     0,
+		rpcPeers:          make([]pb.MultiPaxosRPCClient, len(config.Peers)),
+		rpcServerRunning:  false,
+		server:            nil,
 		addrs: config.Peers,
 	}
 	paxos.rpcServerRunningCv = sync.NewCond(&paxos.mu)
 	paxos.cvFollower = sync.NewCond(&paxos.mu)
 	paxos.cvLeader = sync.NewCond(&paxos.mu)
-	paxos.heartbeatCv = sync.NewCond(&paxos.heartbeatMutex)
-	paxos.prepareCV = sync.NewCond(&paxos.prepareMutex)
 
 	return &paxos
 }
@@ -111,177 +93,103 @@ func (p *Multipaxos) Stop() {
 	p.server.GracefulStop()
 }
 
-func (p *Multipaxos) PrepareThread() {
-	for p.running == 1 {
-		p.waitUntilFollower()
-		for p.running == 1 && !p.IsLeader() {
-			sleepTime := p.heartbeatInterval + p.heartbeatDelta +
-				rand.Int63n(p.heartbeatInterval-p.heartbeatDelta)
-			time.Sleep(time.Duration(sleepTime))
-			if time.Now().UnixNano()/1e6-p.lastHeartbeat <
-				p.heartbeatInterval {
-				continue
-			}
-
-			p.prepareRequest.Ballot = p.NextBallot()
-			log.Printf("%v becomes the leader\n", p.id)
-			for i, peer := range p.rpcPeers {
-				go func(i int, peer pb.MultiPaxosRPCClient) {
-					ctx, cancel := context.WithTimeout(context.Background(),
-						RPCTimeout * time.Millisecond)
-					defer cancel()
-
-					response, err := peer.Prepare(ctx, &p.prepareRequest)
-					p.prepareMutex.Lock()
-					defer p.prepareMutex.Unlock()
-					defer p.prepareCV.Signal()
-
-					p.prepareNumRpcs += 1
-					if err != nil {
-						return
-					}
-					if response.Type == pb.ResponseType_OK {
-						p.prepareOkResponses = append(p.prepareOkResponses,
-							response.GetLogs())
-					} else {
-						p.mu.Lock()
-						if response.GetBallot() > p.ballot {
-							p.setBallot(response.GetBallot())
-						}
-						p.mu.Unlock()
-					}
-				}(i, peer)
-			}
-
-			p.prepareMutex.Lock()
-			for p.IsLeader() && len(p.prepareOkResponses) <= len(p.
-				rpcPeers) / 2 && p.prepareNumRpcs != len(p.rpcPeers) {
-				p.prepareCV.Wait()
-			}
-
-			p.prepareNumRpcs = 0
-			if len(p.prepareOkResponses) <= len(p.rpcPeers) / 2 ||
-				p.IsSomeoneElseLeader() {
-				p.prepareOkResponses = make([][]*pb.Instance, len(p.rpcPeers))
-				p.prepareMutex.Unlock()
-				continue
-			}
-
-			p.mu.Lock()
-			replayLog := p.merge(p.prepareOkResponses)
-			if p.replay(replayLog) {
-				p.ready = true
-			}
-			p.mu.Unlock()
-			p.prepareOkResponses = make([][]*pb.Instance, len(p.rpcPeers))
-			p.prepareMutex.Unlock()
-			break
-		}
-	}
-}
-
-func (p *Multipaxos) HeartbeatThread() {
-	for p.running == 1 {
-		p.waitUntilLeader()
-
-		globalLastExecuted := p.log.GlobalLastExecuted()
-		for p.running == 1 && p.IsLeader() {
-			p.mu.Lock()
-			p.heartbeatRequest.Ballot = p.ballot
-			p.mu.Unlock()
-			p.heartbeatRequest.LastExecuted = p.log.LastExecuted()
-			p.heartbeatRequest.GlobalLastExecuted = globalLastExecuted
-
-			for i, peer := range p.rpcPeers {
-				go func(i int, peer pb.MultiPaxosRPCClient) {
-					ctx, cancel := context.WithTimeout(context.Background(),
-						RPCTimeout * time.Millisecond)
-					defer cancel()
-
-					response, err := peer.Heartbeat(ctx, &p.heartbeatRequest)
-					p.heartbeatMutex.Lock()
-					defer p.heartbeatMutex.Unlock()
-					defer p.heartbeatCv.Signal()
-
-					p.heartbeatNumRpcs += 1
-					if err != nil {
-						return
-					}
-					p.heartbeatResponses = append(p.heartbeatResponses, response)
-				}(i, peer)
-			}
-
-			p.heartbeatMutex.Lock()
-			for p.IsLeader() && p.heartbeatNumRpcs != len(p.rpcPeers) {
-				p.heartbeatCv.Wait()
-			}
-			if len(p.heartbeatResponses) == len(p.rpcPeers) {
-				min := p.heartbeatResponses[0].GetLastExecuted()
-				for i := 1; i < len(p.heartbeatResponses); i++ {
-					if p.heartbeatResponses[i].GetLastExecuted() < min {
-						min = p.heartbeatResponses[i].GetLastExecuted()
-					}
-				}
-				globalLastExecuted = min
-			}
-			// Clear info from previous round
-			p.heartbeatNumRpcs = 0
-			p.heartbeatResponses = make([]*pb.HeartbeatResponse, len(p.rpcPeers))
-			p.heartbeatMutex.Unlock()
-			time.Sleep(time.Duration(p.heartbeatInterval))
-		}
-	}
-}
-
-func (p *Multipaxos) Replicate(cmd *pb.Command, clientId int64) AcceptResult {
-	p.mu.Lock()
-	if p.IsLeaderLockless() {
-		if p.ready {
+func (p *Multipaxos) Replicate(cmd *pb.Command, clientId int64) Result {
+	ballot, isReady := p.Ballot()
+	if IsLeader(ballot, p.id) {
+		if isReady == 1{
 			request := pb.AcceptRequest{
 				Ballot:   p.ballot,
 				Command:  cmd,
 				Index:    p.log.AdvanceLastIndex(),
 				ClientId: clientId,
 			}
-			p.mu.Unlock()
-			return p.Accept(&request)
+			return p.SendAccepts(&request)
 		}
-		p.mu.Unlock()
-		return AcceptResult{Type: Retry, Leader: -1}
+		return Result{Type: Retry, Leader: -1}
 	}
-	p.mu.Unlock()
-	if p.IsSomeoneElseLeader() {
-		return AcceptResult{Type: Reject, Leader: p.Leader()}
+	if IsSomeoneElseLeader(ballot, p.id) {
+		return Result{Type: SomeElseLeader, Leader: Leader(ballot)}
 	}
-	return AcceptResult{Type: Retry, Leader: -1}
+	return Result{Type: Retry, Leader: -1}
 }
 
-func (p *Multipaxos) Accept(request *pb.AcceptRequest) AcceptResult {
+func (p *Multipaxos) HeartbeatThread() {
+	for p.running == 1 {
+		p.waitUntilLeader()
+
+		gle := p.log.GlobalLastExecuted()
+		for p.running == 1 {
+			ballot, _ := p.Ballot()
+			if !IsLeader(ballot, p.id) {
+				break
+			}
+
+			gle = p.SendHeartbeats(ballot, gle)
+			time.Sleep(time.Duration(p.heartbeatInterval))
+		}
+	}
+}
+
+func (p *Multipaxos) PrepareThread() {
+	for p.running == 1 {
+		p.waitUntilFollower()
+		for p.running == 1 {
+			sleepTime := p.heartbeatInterval + p.heartbeatDelta +
+				rand.Int63n(p.heartbeatInterval-p.heartbeatDelta)
+			time.Sleep(time.Duration(sleepTime))
+			if time.Now().UnixNano()/1e6-p.lastHeartbeat < p.heartbeatInterval {
+				continue
+			}
+
+			ballot := p.NextBallot()
+			replayLog := p.SendPrepares(ballot)
+			p.Replay(replayLog)
+			break
+		}
+	}
+}
+
+func (p *Multipaxos) SendHeartbeats(ballot int64, globalLastExecuted int64) int64 {
 	var (
-		numResponses   = 0
-		numOkResponses = 0
-		mu             sync.Mutex
+		numRpcs         = 0
+		numOks          = 0
+		leader          = p.id
+		minLastExecuted = p.log.LastExecuted()
+		mu              sync.Mutex
 	)
 	cv := sync.NewCond(&mu)
-	ctx := context.Background()
+	request := pb.HeartbeatRequest{
+		Ballot:             ballot,
+		LastExecuted:       minLastExecuted,
+		GlobalLastExecuted: globalLastExecuted,
+		Sender:             p.id,
+	}
 
 	for i, peer := range p.rpcPeers {
 		go func(i int, peer pb.MultiPaxosRPCClient) {
-			response, err := peer.AcceptHandler(ctx, request)
+			ctx, cancel := context.WithTimeout(context.Background(),
+				RPCTimeout*time.Millisecond)
+			defer cancel()
+
+			response, err := peer.Heartbeat(ctx, &request)
 			mu.Lock()
 			defer mu.Unlock()
 			defer cv.Signal()
 
-			numResponses += 1
+			numRpcs += 1
 			if err != nil {
 				return
 			}
-			if response.Type == pb.ResponseType_OK {
-				numOkResponses += 1
-			} else if response.Type == pb.ResponseType_REJECT {
+			if response.GetType() == pb.ResponseType_OK {
+				numOks += 1
+				if response.GetLastExecuted() < minLastExecuted {
+					minLastExecuted = response.GetLastExecuted()
+				}
+			} else {
 				p.mu.Lock()
 				if response.GetBallot() > p.ballot {
 					p.setBallot(response.GetBallot())
+					leader = Leader(p.ballot)
 				}
 				p.mu.Unlock()
 			}
@@ -290,28 +198,171 @@ func (p *Multipaxos) Accept(request *pb.AcceptRequest) AcceptResult {
 
 	mu.Lock()
 	defer mu.Unlock()
-	for p.IsLeader() && numOkResponses <= len(p.rpcPeers) / 2 &&
-		numResponses != len(p.rpcPeers) {
+	for leader == p.id && numRpcs != len(p.rpcPeers) {
+		cv.Wait()
+	}
+	if numOks == len(p.rpcPeers) {
+		return minLastExecuted
+	}
+	return globalLastExecuted
+}
+
+func (p *Multipaxos) SendPrepares(ballot int64) map[int64]*pb.Instance {
+	var (
+		numRpcs = 0
+		numOks  = 0
+		leader = p.id
+		mu      sync.Mutex
+	)
+	cv := sync.NewCond(&mu)
+	logMap := make(map[int64]*pb.Instance)
+	request := pb.PrepareRequest{
+		Ballot: ballot,
+		Sender: p.id,
+	}
+
+	for i, peer := range p.rpcPeers {
+		go func(i int, peer pb.MultiPaxosRPCClient) {
+			ctx, cancel := context.WithTimeout(context.Background(),
+				RPCTimeout*time.Millisecond)
+			defer cancel()
+
+			response, err := peer.Prepare(ctx, &request)
+			mu.Lock()
+			defer mu.Unlock()
+			defer cv.Signal()
+
+			numRpcs += 1
+			if err != nil {
+				return
+			}
+			if response.GetType() == pb.ResponseType_OK {
+				numOks += 1
+				receivedInstance := response.GetLogs()
+				for _, instance := range receivedInstance {
+					consensusLog.Insert(logMap, instance)
+				}
+			} else {
+				p.mu.Lock()
+				if response.GetBallot() > p.ballot {
+					p.setBallot(response.GetBallot())
+					leader = Leader(p.ballot)
+				}
+				p.mu.Unlock()
+			}
+		}(i, peer)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	for leader == p.id && numOks <= len(p.rpcPeers) / 2 &&
+		numRpcs != len(p.rpcPeers) {
 		cv.Wait()
 	}
 
-	if numOkResponses > len(p.rpcPeers) / 2 {
-		p.log.Commit(request.Index)
-		return AcceptResult{Type: Ok, Leader: -1}
+	if numOks > len(p.rpcPeers) / 2 {
+		return logMap
 	}
-	if p.IsSomeoneElseLeader() {
-		return AcceptResult{Type: Reject, Leader: p.Leader()}
-	}
-	return AcceptResult{Type: Retry, Leader: -1}
+	return nil
 }
 
-func (p *Multipaxos) Prepare(ctx context.Context,
-	msg *pb.PrepareRequest) (*pb.PrepareResponse, error) {
+func (p *Multipaxos) SendAccepts(request *pb.AcceptRequest) Result {
+	var (
+		numRpcs = 0
+		numOks  = 0
+		leader = p.id
+		mu      sync.Mutex
+	)
+	cv := sync.NewCond(&mu)
+
+	for i, peer := range p.rpcPeers {
+		go func(i int, peer pb.MultiPaxosRPCClient) {
+			ctx := context.Background()
+			response, err := peer.Accept(ctx, request)
+			mu.Lock()
+			defer mu.Unlock()
+			defer cv.Signal()
+
+			numRpcs += 1
+			if err != nil {
+				return
+			}
+			if response.GetType() == pb.ResponseType_OK {
+				numOks += 1
+			} else {
+				p.mu.Lock()
+				if response.GetBallot() > p.ballot {
+					p.setBallot(response.GetBallot())
+					leader = Leader(p.ballot)
+				}
+				p.mu.Unlock()
+			}
+		}(i, peer)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	for leader == p.id && numOks <= len(p.rpcPeers) / 2 &&
+		numRpcs != len(p.rpcPeers) {
+		cv.Wait()
+	}
+
+	if numOks > len(p.rpcPeers) / 2 {
+		p.log.Commit(request.Index)
+		return Result{Type: Ok, Leader: -1}
+	}
+	if leader != p.id {
+		return Result{Type: SomeElseLeader, Leader: leader}
+	}
+	return Result{Type: Retry, Leader: -1}
+}
+
+func (p *Multipaxos) Replay(replayLog map[int64]*pb.Instance) {
+	if replayLog == nil {
+		return
+	}
+
+	for index, instance := range replayLog {
+		p.mu.Lock()
+		request := &pb.AcceptRequest{
+			Ballot:   p.ballot,
+			Command: instance.GetCommand(),
+			Index:    index,
+			ClientId: instance.GetClientId(),
+		}
+		p.mu.Unlock()
+
+		result := p.SendAccepts(request)
+		if result.Type == SomeElseLeader {
+			return
+		} else if result.Type == Retry {
+			continue
+		}
+	}
+	atomic.StoreInt32(&p.isReady, 1)
+}
+
+func (p *Multipaxos) Heartbeat(ctx context.Context,
+	request *pb.HeartbeatRequest) (*pb.HeartbeatResponse, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if msg.GetBallot() >= p.ballot {
-		p.setBallot(msg.GetBallot())
+	if request.GetBallot() >= p.ballot {
+		atomic.StoreInt64(&p.lastHeartbeat, time.Now().UnixNano() / 1e6)
+		p.setBallot(request.GetBallot())
+		p.log.CommitUntil(request.GetLastExecuted(), request.GetBallot())
+		p.log.TrimUntil(request.GetGlobalLastExecuted())
+	}
+	return &pb.HeartbeatResponse{LastExecuted: p.log.LastExecuted()}, nil
+}
+
+func (p *Multipaxos) Prepare(ctx context.Context,
+	request *pb.PrepareRequest) (*pb.PrepareResponse, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if request.GetBallot() >= p.ballot {
+		p.setBallot(request.GetBallot())
 		logSlice := p.log.InstancesSinceGlobalLastExecuted()
 		grpcLogs := make([]*pb.Instance, len(logSlice))
 		for index, i := range logSlice {
@@ -330,33 +381,19 @@ func (p *Multipaxos) Prepare(ctx context.Context,
 	}, nil
 }
 
-func (p *Multipaxos) Heartbeat(ctx context.Context,
-	msg *pb.HeartbeatRequest) (*pb.HeartbeatResponse, error) {
+func (p *Multipaxos) Accept(ctx context.Context,
+	request *pb.AcceptRequest) (*pb.AcceptResponse, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if msg.GetBallot() >= p.ballot {
-		atomic.StoreInt64(&p.lastHeartbeat, time.Now().UnixNano() / 1e6)
-		p.setBallot(msg.GetBallot())
-		p.log.CommitUntil(msg.GetLastExecuted(), msg.GetBallot())
-		p.log.TrimUntil(msg.GetGlobalLastExecuted())
-	}
-	return &pb.HeartbeatResponse{LastExecuted: p.log.LastExecuted()}, nil
-}
-
-func (p *Multipaxos) AcceptHandler(ctx context.Context,
-	msg *pb.AcceptRequest) (*pb.AcceptResponse, error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	if msg.GetBallot() >= p.ballot {
-		p.setBallot(msg.GetBallot())
+	if request.GetBallot() >= p.ballot {
+		p.setBallot(request.GetBallot())
 		instance := &pb.Instance{
-			Ballot:   msg.GetBallot(),
-			Index:    msg.GetIndex(),
-			ClientId: msg.GetClientId(),
+			Ballot:   request.GetBallot(),
+			Index:    request.GetIndex(),
+			ClientId: request.GetClientId(),
 			State:    pb.InstanceState_INPROGRESS,
-			Command:  msg.GetCommand(),
+			Command:  request.GetCommand(),
 		}
 		p.log.Append(instance)
 		return &pb.AcceptResponse{Type: pb.ResponseType_OK,
@@ -371,9 +408,12 @@ func (p *Multipaxos) NextBallot() int64 {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
+	oldBallot := p.ballot
 	p.ballot += RoundIncrement
 	p.ballot = (p.ballot & ^IdBits) | p.id
-	p.ready = false
+	p.isReady = 1
+	log.Printf("%v became a leader: ballot: %v -> %v\n", p.id, oldBallot,
+		p.ballot)
 	p.cvLeader.Signal()
 	return p.ballot
 }
@@ -387,32 +427,21 @@ func(p *Multipaxos) setBallot(ballot int64) {
 	p.ballot = ballot
 }
 
-func (p *Multipaxos) Leader() int64 {
-	return p.ballot & IdBits
+func (p *Multipaxos) Id() int64 {
+	return p.id
 }
 
-func (p *Multipaxos) IsLeaderLockless() bool {
-	// Different from current c++ version
-	return p.Leader() == p.id
-}
-
-func (p *Multipaxos) IsLeader() bool {
+func (p *Multipaxos) Ballot() (int64, int32){
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return p.IsLeaderLockless()
-}
 
-func (p *Multipaxos) IsSomeoneElseLeader() bool {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	leaderId := p.Leader()
-	return leaderId != p.id && leaderId < MaxNumPeers
+	return p.ballot, p.isReady
 }
 
 func (p *Multipaxos) waitUntilLeader() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	for p.running == 1 && p.IsLeaderLockless() {
+	for p.running == 1 && !IsLeader(p.ballot, p.id) {
 		p.cvLeader.Wait()
 	}
 }
@@ -420,40 +449,9 @@ func (p *Multipaxos) waitUntilLeader() {
 func (p *Multipaxos) waitUntilFollower() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	for p.running == 1 && p.IsLeaderLockless() {
+	for p.running == 1 && IsLeader(p.ballot, p.id) {
 		p.cvFollower.Wait()
 	}
-}
-
-func (p *Multipaxos) merge(logs [][]*pb.Instance) map[int64]*pb.Instance {
-	replayLog := make(map[int64]*pb.Instance)
-	for _, slice := range logs {
-		for _, instance := range slice {
-			consensusLog.Insert(replayLog, instance)
-		}
-	}
-	return replayLog
-}
-
-func (p *Multipaxos) replay(replayLog map[int64]*pb.Instance) bool {
-	for index, instance := range replayLog {
-		p.mu.Lock()
-		request := &pb.AcceptRequest{
-			Ballot:   p.ballot,
-			Command: instance.GetCommand(),
-			Index:    index,
-			ClientId: instance.GetClientId(),
-		}
-		p.mu.Unlock()
-
-		result := p.Accept(request)
-		if result.Type == Reject {
-			break
-		} else if result.Type == Retry {
-			continue
-		}
-	}
-	return true
 }
 
 func (p *Multipaxos) StartServer() {
@@ -497,13 +495,14 @@ func (p *Multipaxos) Connect() {
 	}
 }
 
-// Functions for testing
-func (p *Multipaxos) Id() int64 {
-	return p.id
+func Leader(ballot int64) int64 {
+	return ballot & IdBits
 }
 
-func (p *Multipaxos) Ballot() int64 {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.ballot
+func IsLeader(ballot int64, id int64) bool {
+	return Leader(ballot) == id
+}
+
+func IsSomeoneElseLeader(ballot int64, id int64) bool {
+	return !IsLeader(ballot, id) && Leader(ballot) < MaxNumPeers
 }

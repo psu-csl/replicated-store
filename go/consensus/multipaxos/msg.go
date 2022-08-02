@@ -4,13 +4,12 @@ type ResultType int
 
 const (
 	Ok ResultType = iota
-	Reject
 	Retry
+	SomeElseLeader
 	Timeout
-	IgnoreLeader int64 = -1
 )
 
-type AcceptResult struct {
+type Result struct {
 	Type   ResultType
 	Leader int64
 }

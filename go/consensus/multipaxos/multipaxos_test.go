@@ -55,9 +55,9 @@ func TestNewMultipaxos(t *testing.T) {
 	log0 = log.NewLog()
 	peer0 = NewMultipaxos(config.DefaultConfig(0, N), log0)
 
-	assert.Equal(t, MaxNumPeers, peer0.Leader())
-	assert.False(t, peer0.IsLeader())
-	assert.False(t, peer0.IsSomeoneElseLeader())
+	assert.Equal(t, MaxNumPeers, LeaderByPeer(peer0))
+	assert.False(t, IsLeaderByPeer(peer0))
+	assert.False(t, IsSomeoneElseLeaderByPeer(peer0))
 }
 
 func TestNextBallot(t *testing.T) {
@@ -71,9 +71,9 @@ func TestNextBallot(t *testing.T) {
 	ballot += RoundIncrement
 	assert.Equal(t, ballot, peer2.NextBallot())
 
-	assert.True(t, peer2.IsLeader())
-	assert.False(t, peer2.IsSomeoneElseLeader())
-	assert.Equal(t, id, peer2.Leader())
+	assert.True(t, IsLeaderByPeer(peer2))
+	assert.False(t, IsSomeoneElseLeaderByPeer(peer2))
+	assert.Equal(t, id, LeaderByPeer(peer2))
 }
 
 func TestHeartbeatIgnoreStaleRPC(t *testing.T) {
@@ -91,7 +91,7 @@ func TestHeartbeatIgnoreStaleRPC(t *testing.T) {
 	_, err := stub.Heartbeat(ctx, &request)
 
 	assert.Nil(t, err)
-	assert.True(t, peer0.IsLeader())
+	assert.True(t, IsLeaderByPeer(peer0))
 
 	peer0.Stop()
 }
@@ -110,8 +110,8 @@ func TestHeartbeatChangesLeaderToFollower(t *testing.T) {
 	_, err := stub.Heartbeat(ctx, &request)
 
 	assert.Nil(t, err)
-	assert.False(t, peer0.IsLeader())
-	assert.EqualValues(t, 1, peer0.Leader())
+	assert.False(t, IsLeaderByPeer(peer0))
+	assert.EqualValues(t, 1, LeaderByPeer(peer0))
 
 	peer0.Stop()
 }
@@ -127,7 +127,7 @@ func TestNextBallotAfterHeartbeat(t *testing.T) {
 		Ballot: peer1.NextBallot(),
 	}
 	stub.Heartbeat(ctx, &request)
-	assert.EqualValues(t, 1, peer0.Leader())
+	assert.EqualValues(t, 1, LeaderByPeer(peer0))
 
 	ballot += RoundIncrement
 	ballot += RoundIncrement
@@ -155,17 +155,31 @@ func createStub() pb.MultiPaxosRPCClient {
 }
 
 func oneLeader() bool {
-	if peer0.IsLeader() {
-		return !peer1.IsLeader() && !peer2.IsLeader() && peer1.Leader() == 0 &&
-			peer2.Leader() == 0
+	if IsLeaderByPeer(peer0) {
+		return !IsLeaderByPeer(peer1) && !IsLeaderByPeer(peer2) &&
+			LeaderByPeer(peer1) == 0 && LeaderByPeer(peer2) == 0
 	}
-	if peer1.IsLeader() {
-		return !peer0.IsLeader() && !peer2.IsLeader() && peer0.Leader() == 1 &&
-			peer2.Leader() == 1
+	if IsLeaderByPeer(peer1) {
+		return !IsLeaderByPeer(peer0) && !IsLeaderByPeer(peer2) &&
+			LeaderByPeer(peer0) == 1 && LeaderByPeer(peer2) == 1
 	}
-	if peer2.IsLeader() {
-		return !peer0.IsLeader() && !peer1.IsLeader() && peer0.Leader() == 2 &&
-			peer1.Leader() == 2
+	if IsLeaderByPeer(peer2) {
+		return !IsLeaderByPeer(peer0) && !IsLeaderByPeer(peer1) &&
+			LeaderByPeer(peer0) == 2 && LeaderByPeer(peer1) == 2
 	}
 	return false
+}
+
+func LeaderByPeer(peer *Multipaxos) int64 {
+	ballot, _ := peer.Ballot()
+	return Leader(ballot)
+}
+
+func IsLeaderByPeer(peer *Multipaxos) bool {
+	ballot, _ := peer.Ballot()
+	return IsLeader(ballot, peer.Id())
+}
+
+func IsSomeoneElseLeaderByPeer(peer *Multipaxos) bool {
+	return !IsLeaderByPeer(peer) && LeaderByPeer(peer) < MaxNumPeers
 }

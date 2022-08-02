@@ -5,7 +5,7 @@ option go_package = "github.com/psu-csl/replicated-store/go/consensus/multipaxos
 package multipaxosrpc;
 
 service MultiPaxosRPC {
-  rpc AcceptHandler (AcceptRequest) returns (AcceptResponse) {}
+  rpc Accept (AcceptRequest) returns (AcceptResponse) {}
   rpc Prepare (PrepareRequest) returns (PrepareResponse) {}
   rpc Heartbeat (HeartbeatRequest) returns (HeartbeatResponse) {}
 }
@@ -41,7 +41,9 @@ message HeartbeatRequest {
 }
 
 message HeartbeatResponse {
-  int64 last_executed = 1;
+  ResponseType type = 1;
+  int64 ballot = 2;
+  int64 last_executed = 3;
 }
 
 enum ResponseType {
@@ -62,9 +64,9 @@ enum InstanceState {
 }
 
 message Command {
-  string key = 1;
-  string value = 2;
-  CommandType type = 3;
+  CommandType type = 1;
+  string key = 2;
+  string value = 3;
 }
 
 message Instance {
