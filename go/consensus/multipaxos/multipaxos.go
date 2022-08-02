@@ -93,17 +93,12 @@ func (p *Multipaxos) Stop() {
 	p.server.GracefulStop()
 }
 
-func (p *Multipaxos) Replicate(cmd *pb.Command, clientId int64) Result {
+func (p *Multipaxos) Replicate(command *pb.Command, clientId int64) Result {
 	ballot, isReady := p.Ballot()
 	if IsLeader(ballot, p.id) {
 		if isReady == 1{
-			request := pb.AcceptRequest{
-				Ballot:   p.ballot,
-				Command:  cmd,
-				Index:    p.log.AdvanceLastIndex(),
-				ClientId: clientId,
-			}
-			return p.SendAccepts(&request)
+			return p.SendAccepts(ballot, p.log.AdvanceLastIndex(), command,
+				clientId)
 		}
 		return Result{Type: Retry, Leader: -1}
 	}
@@ -143,7 +138,7 @@ func (p *Multipaxos) PrepareThread() {
 
 			ballot := p.NextBallot()
 			replayLog := p.SendPrepares(ballot)
-			p.Replay(replayLog)
+			p.Replay(ballot, replayLog)
 			break
 		}
 	}
@@ -266,7 +261,8 @@ func (p *Multipaxos) SendPrepares(ballot int64) map[int64]*pb.Instance {
 	return nil
 }
 
-func (p *Multipaxos) SendAccepts(request *pb.AcceptRequest) Result {
+func (p *Multipaxos) SendAccepts(ballot int64, index int64,
+	command *pb.Command, clientId int64) Result {
 	var (
 		numRpcs = 0
 		numOks  = 0
@@ -275,10 +271,23 @@ func (p *Multipaxos) SendAccepts(request *pb.AcceptRequest) Result {
 	)
 	cv := sync.NewCond(&mu)
 
+	instance := pb.Instance{
+		Ballot:   ballot,
+		Index:    index,
+		ClientId: clientId,
+		State:    pb.InstanceState_INPROGRESS,
+		Command:  command,
+	}
+
+	request := pb.AcceptRequest{
+		Instance: &instance,
+		Sender:   p.id,
+	}
+
 	for i, peer := range p.rpcPeers {
 		go func(i int, peer pb.MultiPaxosRPCClient) {
 			ctx := context.Background()
-			response, err := peer.Accept(ctx, request)
+			response, err := peer.Accept(ctx, &request)
 			mu.Lock()
 			defer mu.Unlock()
 			defer cv.Signal()
@@ -308,7 +317,7 @@ func (p *Multipaxos) SendAccepts(request *pb.AcceptRequest) Result {
 	}
 
 	if numOks > len(p.rpcPeers) / 2 {
-		p.log.Commit(request.Index)
+		p.log.Commit(index)
 		return Result{Type: Ok, Leader: -1}
 	}
 	if leader != p.id {
@@ -317,22 +326,14 @@ func (p *Multipaxos) SendAccepts(request *pb.AcceptRequest) Result {
 	return Result{Type: Retry, Leader: -1}
 }
 
-func (p *Multipaxos) Replay(replayLog map[int64]*pb.Instance) {
+func (p *Multipaxos) Replay(ballot int64, replayLog map[int64]*pb.Instance) {
 	if replayLog == nil {
 		return
 	}
 
 	for index, instance := range replayLog {
-		p.mu.Lock()
-		request := &pb.AcceptRequest{
-			Ballot:   p.ballot,
-			Command: instance.GetCommand(),
-			Index:    index,
-			ClientId: instance.GetClientId(),
-		}
-		p.mu.Unlock()
-
-		result := p.SendAccepts(request)
+		result := p.SendAccepts(ballot, index, instance.GetCommand(),
+			instance.GetClientId())
 		if result.Type == SomeElseLeader {
 			return
 		} else if result.Type == Retry {
@@ -386,14 +387,14 @@ func (p *Multipaxos) Accept(ctx context.Context,
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if request.GetBallot() >= p.ballot {
-		p.setBallot(request.GetBallot())
+	if request.GetInstance().GetBallot() >= p.ballot {
+		p.setBallot(request.GetInstance().GetBallot())
 		instance := &pb.Instance{
-			Ballot:   request.GetBallot(),
-			Index:    request.GetIndex(),
-			ClientId: request.GetClientId(),
+			Ballot:   request.GetInstance().GetBallot(),
+			Index:    request.GetInstance().GetIndex(),
+			ClientId: request.GetInstance().GetClientId(),
 			State:    pb.InstanceState_INPROGRESS,
-			Command:  request.GetCommand(),
+			Command:  request.GetInstance().GetCommand(),
 		}
 		p.log.Append(instance)
 		return &pb.AcceptResponse{Type: pb.ResponseType_OK,

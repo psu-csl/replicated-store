@@ -11,10 +11,8 @@ service MultiPaxosRPC {
 }
 
 message AcceptRequest {
-  int64 ballot = 1;
-  Command command = 2;
-  int64 index = 3;
-  int64 client_id = 4;
+  Instance instance = 1;
+  int64 sender = 2;
 }
 
 message AcceptResponse {
