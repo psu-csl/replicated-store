@@ -53,9 +53,12 @@ MultiPaxos::MultiPaxos(Log* log, json const& config)
 void MultiPaxos::Start() {
   CHECK(!running_);
   running_ = true;
-  heartbeat_thread_ = std::thread(&MultiPaxos::HeartbeatThread, this);
-  prepare_thread_ = std::thread(&MultiPaxos::PrepareThread, this);
+  StartHeartbeatThread();
+  StartPrepareThread();
+  StartRPCServer();
+}
 
+void MultiPaxos::StartRPCServer() {
   DLOG(INFO) << id_ << " starting rpc server at " << port_;
   ServerBuilder builder;
   builder.AddListeningPort(port_, grpc::InsecureServerCredentials());
@@ -69,18 +72,26 @@ void MultiPaxos::Start() {
   rpc_server_->Wait();
 }
 
+void MultiPaxos::StartHeartbeatThread() {
+  DLOG(INFO) << id_ << " starting heartbeat thread";
+  heartbeat_thread_ = std::thread(&MultiPaxos::HeartbeatThread, this);
+}
+
+void MultiPaxos::StartPrepareThread() {
+  DLOG(INFO) << id_ << " starting prepare thread";
+  prepare_thread_ = std::thread(&MultiPaxos::PrepareThread, this);
+}
+
 void MultiPaxos::Stop() {
   CHECK(running_);
   running_ = false;
-
-  cv_leader_.notify_one();
-  heartbeat_thread_.join();
-
-  cv_follower_.notify_one();
-  prepare_thread_.join();
-
+  StopRPCServer();
+  StopPrepareThread();
+  StopHeartbeatThread();
   thread_pool_.join();
+}
 
+void MultiPaxos::StopRPCServer() {
   {
     std::unique_lock lock(mu_);
     while (!rpc_server_running_)
@@ -88,6 +99,18 @@ void MultiPaxos::Stop() {
   }
   DLOG(INFO) << id_ << " stopping rpc server at " << port_;
   rpc_server_->Shutdown();
+}
+
+void MultiPaxos::StopHeartbeatThread() {
+  DLOG(INFO) << id_ << " stopping heartbeat thread";
+  cv_leader_.notify_one();
+  heartbeat_thread_.join();
+}
+
+void MultiPaxos::StopPrepareThread() {
+  DLOG(INFO) << id_ << " stopping prepare thread";
+  cv_follower_.notify_one();
+  prepare_thread_.join();
 }
 
 Result MultiPaxos::Replicate(Command command, client_id_t client_id) {
@@ -103,7 +126,6 @@ Result MultiPaxos::Replicate(Command command, client_id_t client_id) {
 }
 
 void MultiPaxos::HeartbeatThread() {
-  DLOG(INFO) << id_ << " starting heartbeat thread";
   while (running_) {
     WaitUntilLeader();
     auto gle = log_->GlobalLastExecuted();
@@ -115,11 +137,9 @@ void MultiPaxos::HeartbeatThread() {
       SleepForHeartbeatInterval();
     }
   }
-  DLOG(INFO) << id_ << " stopping heartbeat thread";
 }
 
 void MultiPaxos::PrepareThread() {
-  DLOG(INFO) << id_ << " starting prepare thread";
   while (running_) {
     WaitUntilFollower();
     while (running_) {
@@ -131,7 +151,6 @@ void MultiPaxos::PrepareThread() {
       break;
     }
   }
-  DLOG(INFO) << id_ << " stopping prepare thread";
 }
 
 int64_t MultiPaxos::SendHeartbeats(int64_t ballot,

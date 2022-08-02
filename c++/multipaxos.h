@@ -129,7 +129,15 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
   }
 
   void Start();
+  void StartRPCServer();
+  void StartHeartbeatThread();
+  void StartPrepareThread();
+
   void Stop();
+  void StopRPCServer();
+  void StopHeartbeatThread();
+  void StopPrepareThread();
+
   Result Replicate(multipaxos::Command command, client_id_t client_id);
 
   void HeartbeatThread();
