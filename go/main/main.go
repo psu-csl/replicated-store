@@ -7,5 +7,5 @@ func main() {
 		"localhost:8888",
 	}
 	replicant := replicant.NewReplicant(serverAddrs, 0)
-	replicant.Run()
+	replicant.Start()
 }

@@ -141,10 +141,10 @@ func (l *Log) Execute(kv *store.MemKVStore) (int64, store.Result) {
 		log.Panicf("Instance at Index %v empty\n", l.lastExecuted+ 1)
 	}
 	result := kv.Execute(inst.GetCommand())
-	l.log[l.lastExecuted+ 1].State = pb.InstanceState_EXECUTED
+	inst.State = pb.InstanceState_EXECUTED
 	l.lastExecuted += 1
 	l.mu.Unlock()
-	return 0, result
+	return inst.ClientId, result
 }
 
 func (l *Log) CommitUntil(leaderLastExecuted int64, ballot int64) {

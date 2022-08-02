@@ -6,7 +6,6 @@ const (
 	Ok ResultType = iota
 	Retry
 	SomeElseLeader
-	Timeout
 )
 
 type Result struct {
