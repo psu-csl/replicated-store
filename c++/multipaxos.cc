@@ -328,8 +328,12 @@ Status MultiPaxos::Heartbeat(ServerContext*,
     SetBallot(request->ballot());
     log_->CommitUntil(request->last_executed(), request->ballot());
     log_->TrimUntil(request->global_last_executed());
+    response->set_last_executed(log_->LastExecuted());
+    response->set_type(OK);
+  } else {
+    response->set_ballot(ballot_);
+    response->set_type(REJECT);
   }
-  response->set_last_executed(log_->LastExecuted());
   return Status::OK;
 }
 
