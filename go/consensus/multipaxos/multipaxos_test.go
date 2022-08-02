@@ -144,6 +144,32 @@ func TestOneLeaderElected(t *testing.T) {
 	assert.True(t, oneLeader())
 }
 
+func TestReplicateRetry(t *testing.T) {
+	setupPeers()
+
+	result := peer0.Replicate(&pb.Command{Type: pb.CommandType_GET}, 0)
+	assert.Equal(t, Retry, result.Type)
+	assert.Equal(t, NoLeader, result.Leader)
+}
+
+func TestReplicateWithLeader(t *testing.T) {
+	setupPeers()
+
+	peer1.StartServer()
+	peer2.StartServer()
+	peer0.Start()
+	time.Sleep(1000 * time.Millisecond)
+	result := peer0.Replicate(&pb.Command{Type: pb.CommandType_PUT}, 0)
+	assert.Equal(t, Ok, result.Type)
+	assert.Equal(t, int64(0), result.Leader)
+
+	result = peer1.Replicate(&pb.Command{Type: pb.CommandType_DEL}, 0)
+	assert.Equal(t, SomeElseLeader, result.Type)
+	assert.Equal(t, int64(0), result.Leader)
+
+	peer0.Stop()
+}
+
 func createStub() pb.MultiPaxosRPCClient {
 	conn, err := grpc.Dial(":3000", grpc.WithTransportCredentials(insecure.
 		NewCredentials()))

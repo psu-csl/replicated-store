@@ -19,6 +19,7 @@ const (
 	IdBits = 0xff
 	RoundIncrement = IdBits + 1
 	MaxNumPeers int64 = 0xf
+	NoLeader int64 = -1
 	RPCTimeout  = 100
 )
 
@@ -318,7 +319,7 @@ func (p *Multipaxos) SendAccepts(ballot int64, index int64,
 
 	if numOks > len(p.rpcPeers) / 2 {
 		p.log.Commit(index)
-		return Result{Type: Ok, Leader: -1}
+		return Result{Type: Ok, Leader: p.id}
 	}
 	if leader != p.id {
 		return Result{Type: SomeElseLeader, Leader: leader}
