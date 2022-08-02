@@ -30,7 +30,7 @@ using multipaxos::PrepareRequest;
 using multipaxos::PrepareResponse;
 
 MultiPaxos::MultiPaxos(Log* log, json const& config)
-    : is_ready_(false),
+    : ready_(false),
       ballot_(kMaxNumPeers),
       log_(log),
       id_(config["id"]),
@@ -119,9 +119,9 @@ void MultiPaxos::StopPrepareThread() {
 }
 
 Result MultiPaxos::Replicate(Command command, client_id_t client_id) {
-  auto [ballot, is_ready] = Ballot();
+  auto [ballot, ready] = Ballot();
   if (IsLeader(ballot, id_)) {
-    if (is_ready)
+    if (ready)
       return SendAccepts(ballot, log_->AdvanceLastIndex(), command, client_id);
     return Result{ResultType::kRetry, std::nullopt};
   }
@@ -135,7 +135,7 @@ void MultiPaxos::HeartbeatThread() {
     WaitUntilLeader();
     auto gle = log_->GlobalLastExecuted();
     while (heartbeat_thread_running_) {
-      auto [ballot, is_ready] = Ballot();
+      auto [ballot, ready] = Ballot();
       if (!IsLeader(ballot, id_))
         break;
       gle = SendHeartbeats(ballot, gle);
@@ -314,7 +314,7 @@ void MultiPaxos::Replay(int64_t ballot, std::optional<log_map_t> const& log) {
     if (r.type_ == ResultType::kSomeoneElseLeader)
       return;
   }
-  is_ready_ = true;
+  ready_ = true;
   DLOG(INFO) << id_ << " leader is ready to serve";
 }
 
