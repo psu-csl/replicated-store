@@ -105,13 +105,13 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
 
   void WaitUntilLeader() {
     std::unique_lock lock(mu_);
-    while (running_ && !IsLeader(ballot_, id_))
+    while (heartbeat_thread_running_ && !IsLeader(ballot_, id_))
       cv_leader_.wait(lock);
   }
 
   void WaitUntilFollower() {
     std::unique_lock lock(mu_);
-    while (running_ && IsLeader(ballot_, id_))
+    while (prepare_thread_running_ && IsLeader(ballot_, id_))
       cv_follower_.wait(lock);
   }
 
@@ -165,7 +165,6 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
                       const multipaxos::AcceptRequest*,
                       multipaxos::AcceptResponse*) override;
 
-  std::atomic<bool> running_;
   std::atomic<bool> is_ready_;
   int64_t ballot_;
   Log* log_;
@@ -185,7 +184,10 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
   std::condition_variable cv_leader_;
   std::condition_variable cv_follower_;
 
+  std::atomic<bool> heartbeat_thread_running_;
   std::thread heartbeat_thread_;
+
+  std::atomic<bool> prepare_thread_running_;
   std::thread prepare_thread_;
 };
 

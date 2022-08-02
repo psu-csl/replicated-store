@@ -30,8 +30,7 @@ using multipaxos::PrepareRequest;
 using multipaxos::PrepareResponse;
 
 MultiPaxos::MultiPaxos(Log* log, json const& config)
-    : running_(false),
-      is_ready_(false),
+    : is_ready_(false),
       ballot_(kMaxNumPeers),
       log_(log),
       id_(config["id"]),
@@ -42,7 +41,9 @@ MultiPaxos::MultiPaxos(Log* log, json const& config)
       port_(config["peers"][id_]),
       last_heartbeat_(0),
       rpc_server_running_(false),
-      thread_pool_(config["threadpool_size"]) {
+      thread_pool_(config["threadpool_size"]),
+      heartbeat_thread_running_(false),
+      prepare_thread_running_(false) {
   int64_t id = 0;
   for (std::string const peer : config["peers"])
     rpc_peers_.emplace_back(id++,
@@ -51,8 +52,6 @@ MultiPaxos::MultiPaxos(Log* log, json const& config)
 }
 
 void MultiPaxos::Start() {
-  CHECK(!running_);
-  running_ = true;
   StartHeartbeatThread();
   StartPrepareThread();
   StartRPCServer();
@@ -74,17 +73,19 @@ void MultiPaxos::StartRPCServer() {
 
 void MultiPaxos::StartHeartbeatThread() {
   DLOG(INFO) << id_ << " starting heartbeat thread";
+  CHECK(!heartbeat_thread_running_);
+  heartbeat_thread_running_ = true;
   heartbeat_thread_ = std::thread(&MultiPaxos::HeartbeatThread, this);
 }
 
 void MultiPaxos::StartPrepareThread() {
   DLOG(INFO) << id_ << " starting prepare thread";
+  CHECK(!prepare_thread_running_);
+  prepare_thread_running_ = true;
   prepare_thread_ = std::thread(&MultiPaxos::PrepareThread, this);
 }
 
 void MultiPaxos::Stop() {
-  CHECK(running_);
-  running_ = false;
   StopRPCServer();
   StopPrepareThread();
   StopHeartbeatThread();
@@ -103,12 +104,16 @@ void MultiPaxos::StopRPCServer() {
 
 void MultiPaxos::StopHeartbeatThread() {
   DLOG(INFO) << id_ << " stopping heartbeat thread";
+  CHECK(heartbeat_thread_running_);
+  heartbeat_thread_running_ = false;
   cv_leader_.notify_one();
   heartbeat_thread_.join();
 }
 
 void MultiPaxos::StopPrepareThread() {
   DLOG(INFO) << id_ << " stopping prepare thread";
+  CHECK(prepare_thread_running_);
+  prepare_thread_running_ = false;
   cv_follower_.notify_one();
   prepare_thread_.join();
 }
@@ -126,10 +131,10 @@ Result MultiPaxos::Replicate(Command command, client_id_t client_id) {
 }
 
 void MultiPaxos::HeartbeatThread() {
-  while (running_) {
+  while (heartbeat_thread_running_) {
     WaitUntilLeader();
     auto gle = log_->GlobalLastExecuted();
-    while (running_) {
+    while (heartbeat_thread_running_) {
       auto [ballot, is_ready] = Ballot();
       if (!IsLeader(ballot, id_))
         break;
@@ -140,9 +145,9 @@ void MultiPaxos::HeartbeatThread() {
 }
 
 void MultiPaxos::PrepareThread() {
-  while (running_) {
+  while (prepare_thread_running_) {
     WaitUntilFollower();
-    while (running_) {
+    while (prepare_thread_running_) {
       SleepForRandomInterval();
       if (ReceivedHeartbeat())
         continue;
