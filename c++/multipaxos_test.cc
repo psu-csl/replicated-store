@@ -93,47 +93,47 @@ TEST_F(MultiPaxosTest, NextBallot) {
 }
 
 TEST_F(MultiPaxosTest, HeartbeatIgnoreStaleRPC) {
-  std::thread t0([this] { peer0_.StartRPCServer(); });
+  std::thread t([this] { peer0_.StartRPCServer(); });
 
-  auto stub0 = MultiPaxosRPC::NewStub(grpc::CreateChannel(
+  auto stub = MultiPaxosRPC::NewStub(grpc::CreateChannel(
       config0_["peers"][0], grpc::InsecureChannelCredentials()));
 
   peer0_.NextBallot();
   peer0_.NextBallot();
 
-  ClientContext context0;
-  HeartbeatRequest request0;
-  HeartbeatResponse response0;
+  ClientContext context;
+  HeartbeatRequest request;
+  HeartbeatResponse response;
 
-  request0.set_ballot(peer1_.NextBallot());
+  request.set_ballot(peer1_.NextBallot());
 
-  stub0->Heartbeat(&context0, request0, &response0);
+  stub->Heartbeat(&context, request, &response);
 
   EXPECT_TRUE(IsLeader(peer0_));
 
   peer0_.StopRPCServer();
-  t0.join();
+  t.join();
 }
 
 TEST_F(MultiPaxosTest, HeartbeatChangesLeaderToFollower) {
-  std::thread t0([this] { peer0_.StartRPCServer(); });
+  std::thread t([this] { peer0_.StartRPCServer(); });
 
-  auto stub0 = MultiPaxosRPC::NewStub(grpc::CreateChannel(
+  auto stub = MultiPaxosRPC::NewStub(grpc::CreateChannel(
       config0_["peers"][0], grpc::InsecureChannelCredentials()));
 
-  ClientContext context0;
-  HeartbeatRequest request0;
-  HeartbeatResponse response0;
+  ClientContext context;
+  HeartbeatRequest request;
+  HeartbeatResponse response;
 
   peer0_.NextBallot();
-  request0.set_ballot(peer1_.NextBallot());
-  stub0->Heartbeat(&context0, request0, &response0);
+  request.set_ballot(peer1_.NextBallot());
+  stub->Heartbeat(&context, request, &response);
 
   EXPECT_FALSE(IsLeader(peer0_));
   EXPECT_EQ(1, Leader(peer0_));
 
   peer0_.StopRPCServer();
-  t0.join();
+  t.join();
 }
 
 TEST_F(MultiPaxosTest, OneLeaderElected) {
