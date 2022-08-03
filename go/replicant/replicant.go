@@ -21,6 +21,7 @@ type Replicant struct {
 	nextClientId  int64
 	numPeers      int64
 	clientSockets map[int64]net.Conn
+	clientPort    string
 	listener      net.Listener
 
 }
@@ -35,8 +36,9 @@ func NewReplicant(config config.Config) *Replicant {
 	replicant.nextClientId = config.Id
 	replicant.numPeers = int64(len(config.Peers))
 	replicant.clientSockets = make(map[int64]net.Conn)
+	replicant.clientPort = config.ClientPorts[replicant.id]
 
-	listener, err := net.Listen("tcp", ":8888")
+	listener, err := net.Listen("tcp", replicant.clientPort)
 	if err != nil {
 		log.Fatalf("listener error: %v", err)
 	}
@@ -46,6 +48,7 @@ func NewReplicant(config config.Config) *Replicant {
 
 func (r *Replicant) Start() {
 	go r.executorThread()
+	go r.mp.Start()
 	for {
 		clientId := r.NextClientId()
 		conn, err := r.listener.Accept()
@@ -157,4 +160,5 @@ func (r *Replicant) NextClientId() int64 {
 
 func (r *Replicant) Close() {
 	r.listener.Close()
+	r.mp.Stop()
 }
