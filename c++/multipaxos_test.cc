@@ -109,7 +109,6 @@ TEST_F(MultiPaxosTest, HeartbeatIgnoreStaleRPC) {
 
   stub0->Heartbeat(&context0, request0, &response0);
 
-  EXPECT_EQ(REJECT, response0.type());
   EXPECT_TRUE(IsLeader(peer0_));
 
   peer0_.StopRPCServer();
@@ -130,7 +129,6 @@ TEST_F(MultiPaxosTest, HeartbeatChangesLeaderToFollower) {
   request0.set_ballot(peer1_.NextBallot());
   stub0->Heartbeat(&context0, request0, &response0);
 
-  EXPECT_EQ(OK, response0.type());
   EXPECT_FALSE(IsLeader(peer0_));
   EXPECT_EQ(1, Leader(peer0_));
 
