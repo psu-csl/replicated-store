@@ -13,6 +13,12 @@ import (
 	"net/textproto"
 )
 
+type command struct {
+	Key         string
+	Value       string
+	CommandType string
+}
+
 type Replicant struct {
 	log           *consensusLog.Log
 	mp            *multipaxos.Multipaxos
@@ -83,6 +89,7 @@ func (r *Replicant) handleClient(clientId int64) {
 func (r *Replicant) executorThread() {
 	for {
 		clientId, result := r.log.Execute(r.store)
+		log.Printf("exec result %v\n", result)
 		if conn, isExist := r.clientSockets[clientId]; isExist {
 			r.respond(conn, result)
 		}
@@ -90,36 +97,42 @@ func (r *Replicant) executorThread() {
 }
 
 func (r *Replicant) readCommand(conn net.Conn) (*pb.Command, error) {
-	line, err := r.readLine(conn)
+	cmd, err := r.readLine(conn)
 	if err != nil {
 		return nil, err
 	}
 	var command pb.Command
-	if line[:3] == "get" {
+	if cmd.CommandType == "get" {
 		command.Type = pb.CommandType_GET
-		command.Key = line[4:]
-	} else if line[:3] == "del" {
+		command.Key = cmd.Key
+	} else if cmd.CommandType == "del" {
 		command.Type = pb.CommandType_DEL
-		command.Key = line[4:]
+		command.Key = cmd.Key
 	} else {
 		command.Type = pb.CommandType_PUT
-		command.Key = line[4:]
-		//TODO: set value
+		command.Key = cmd.Key
+		command.Value = cmd.Value
 	}
 	return &command, nil
 }
 
-func (r *Replicant) readLine(conn net.Conn) (string, error) {
+func (r *Replicant) readLine(conn net.Conn) (*command, error) {
 	reader := textproto.NewReader(bufio.NewReader(conn))
-	line, err := reader.ReadLine()
+	buffer, err := reader.ReadLineBytes()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	return line, nil
+	cmd := &command{}
+	err = json.Unmarshal(buffer[:], cmd)
+	if err != nil {
+		return nil, err
+	}
+	return cmd, nil
 }
 
 func (r *Replicant) Replicate(command *pb.Command, clientId int64) {
 	result := r.mp.Replicate(command, clientId)
+	log.Println(result.Type)
 	if result.Type == multipaxos.Ok {
 		return
 	}
