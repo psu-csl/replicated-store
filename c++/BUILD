@@ -21,6 +21,15 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "test_util",
+    srcs = ["test_util.cc"],
+    hdrs = ["test_util.h"],
+    deps = [
+        ":multipaxos_cc_proto",
+    ],
+)
+
 proto_library(
     name = "multipaxos_proto",
     srcs = ["multipaxos.proto"],
@@ -71,6 +80,7 @@ cc_test(
     srcs = ["log_test.cc"],
     deps = [
         ":log",
+        ":test_util",
         "@com_google_googletest//:gtest_main"
     ],
 )
