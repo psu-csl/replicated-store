@@ -3,6 +3,7 @@
 
 #include "log.h"
 #include "memkvstore.h"
+#include "test_util.h"
 
 using multipaxos::Command;
 using multipaxos::CommandType;
@@ -18,54 +19,6 @@ using multipaxos::InstanceState::INPROGRESS;
 
 class LogTest : public testing::Test {
  protected:
-  Instance MakeInstance(int64_t ballot) {
-    Instance i;
-    i.set_ballot(ballot);
-    i.set_index(log_.AdvanceLastIndex());
-    i.set_state(INPROGRESS);
-    *i.mutable_command() = Command();
-    return i;
-  }
-  Instance MakeInstance(int64_t ballot, int64_t index) {
-    Instance i;
-    i.set_ballot(ballot);
-    i.set_index(index);
-    i.set_state(INPROGRESS);
-    *i.mutable_command() = Command();
-    return i;
-  }
-  Instance MakeInstance(int64_t ballot, InstanceState state) {
-    Instance i;
-    i.set_ballot(ballot);
-    i.set_index(log_.AdvanceLastIndex());
-    i.set_state(state);
-    *i.mutable_command() = Command();
-    return i;
-  }
-  Instance MakeInstance(int64_t ballot, int64_t index, CommandType type) {
-    Instance i;
-    i.set_ballot(ballot);
-    i.set_index(index);
-    i.set_state(INPROGRESS);
-    Command c;
-    c.set_type(type);
-    *i.mutable_command() = c;
-    return i;
-  }
-  Instance MakeInstance(int64_t ballot,
-                        int64_t index,
-                        InstanceState state,
-                        CommandType type) {
-    Instance i;
-    i.set_ballot(ballot);
-    i.set_index(index);
-    i.set_state(state);
-    Command c;
-    c.set_type(type);
-    *i.mutable_command() = c;
-    return i;
-  }
-
   Log log_;
   MemKVStore store_;
 };
@@ -146,8 +99,8 @@ TEST_F(LogDeathTest, InsertCase3) {
 }
 
 TEST_F(LogTest, Append) {
-  log_.Append(MakeInstance(0));
-  log_.Append(MakeInstance(0));
+  log_.Append(MakeInstance(0, log_.AdvanceLastIndex()));
+  log_.Append(MakeInstance(0, log_.AdvanceLastIndex()));
   EXPECT_EQ(1, log_[1]->index());
   EXPECT_EQ(2, log_[2]->index());
 }
@@ -207,7 +160,7 @@ TEST_F(LogTest, CommitBeforeAppend) {
   auto index = 1;
   std::thread commit_thread([this, index] { log_.Commit(index); });
   std::this_thread::yield();
-  log_.Append(MakeInstance(0));
+  log_.Append(MakeInstance(0, log_.AdvanceLastIndex()));
   commit_thread.join();
   EXPECT_TRUE(IsCommitted(*log_[index]));
 }
@@ -403,11 +356,11 @@ TEST_F(LogTest, InstancesSinceGlobalLastExecuted) {
   auto ballot = 0;
   log_vector_t expected;
 
-  expected.emplace_back(MakeInstance(ballot));
+  expected.emplace_back(MakeInstance(ballot, log_.AdvanceLastIndex()));
   log_.Append(expected.back());
-  expected.emplace_back(MakeInstance(ballot));
+  expected.emplace_back(MakeInstance(ballot, log_.AdvanceLastIndex()));
   log_.Append(expected.back());
-  expected.emplace_back(MakeInstance(ballot));
+  expected.emplace_back(MakeInstance(ballot, log_.AdvanceLastIndex()));
   log_.Append(expected.back());
 
   EXPECT_EQ(expected, log_.InstancesSinceGlobalLastExecuted());
