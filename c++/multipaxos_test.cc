@@ -48,6 +48,40 @@ bool IsSomeoneElseLeader(MultiPaxos const& peer) {
   return !IsLeader(peer) && Leader(peer) < kMaxNumPeers;
 }
 
+HeartbeatResponse SendHeartbeat(MultiPaxosRPC::Stub* stub,
+                                int64_t ballot,
+                                int64_t last_executed,
+                                int64_t global_last_executed) {
+  ClientContext context;
+  HeartbeatRequest request;
+  HeartbeatResponse response;
+
+  request.set_ballot(ballot);
+  request.set_last_executed(last_executed);
+  request.set_global_last_executed(global_last_executed);
+
+  stub->Heartbeat(&context, request, &response);
+
+  return response;
+}
+
+PrepareResponse SendPrepare(MultiPaxosRPC::Stub* stub, int64_t ballot) {
+  ClientContext context;
+  PrepareRequest request;
+  PrepareResponse response;
+
+  request.set_ballot(ballot);
+
+  stub->Prepare(&context, request, &response);
+
+  return response;
+}
+
+std::unique_ptr<MultiPaxosRPC::Stub> MakeStub(std::string const& target) {
+  return MultiPaxosRPC::NewStub(
+      grpc::CreateChannel(target, grpc::InsecureChannelCredentials()));
+}
+
 class MultiPaxosTest : public testing::Test {
  public:
   MultiPaxosTest()
@@ -101,19 +135,12 @@ TEST_F(MultiPaxosTest, NextBallot) {
 TEST_F(MultiPaxosTest, HeartbeatIgnoreStaleRPC) {
   std::thread t([this] { peer0_.StartRPCServer(); });
 
-  auto stub = MultiPaxosRPC::NewStub(grpc::CreateChannel(
-      config0_["peers"][0], grpc::InsecureChannelCredentials()));
-
   peer0_.NextBallot();
   peer0_.NextBallot();
 
-  ClientContext context;
-  HeartbeatRequest request;
-  HeartbeatResponse response;
+  auto stub = MakeStub(config0_["peers"][0]);
 
-  request.set_ballot(peer1_.NextBallot());
-
-  stub->Heartbeat(&context, request, &response);
+  SendHeartbeat(stub.get(), peer1_.NextBallot(), 0, 0);
 
   EXPECT_TRUE(IsLeader(peer0_));
 
@@ -124,16 +151,11 @@ TEST_F(MultiPaxosTest, HeartbeatIgnoreStaleRPC) {
 TEST_F(MultiPaxosTest, HeartbeatChangesLeaderToFollower) {
   std::thread t([this] { peer0_.StartRPCServer(); });
 
-  auto stub = MultiPaxosRPC::NewStub(grpc::CreateChannel(
-      config0_["peers"][0], grpc::InsecureChannelCredentials()));
-
-  ClientContext context;
-  HeartbeatRequest request;
-  HeartbeatResponse response;
-
   peer0_.NextBallot();
-  request.set_ballot(peer1_.NextBallot());
-  stub->Heartbeat(&context, request, &response);
+
+  auto stub = MakeStub(config0_["peers"][0]);
+
+  SendHeartbeat(stub.get(), peer1_.NextBallot(), 0, 0);
 
   EXPECT_FALSE(IsLeader(peer0_));
   EXPECT_EQ(1, Leader(peer0_));
@@ -156,22 +178,10 @@ TEST_F(MultiPaxosTest, HeartbeatCommitsAndTrims) {
   auto index3 = log0_.AdvanceLastIndex();
   log0_.Append(MakeInstance(ballot, index3));
 
-  auto stub = MultiPaxosRPC::NewStub(grpc::CreateChannel(
-      config0_["peers"][0], grpc::InsecureChannelCredentials()));
+  auto stub = MakeStub(config0_["peers"][0]);
+  auto r1 = SendHeartbeat(stub.get(), ballot, index2, 0);
 
-  {
-    ClientContext context;
-    HeartbeatRequest request;
-    HeartbeatResponse response;
-    request.set_ballot(ballot);
-    request.set_last_executed(index2);
-    request.set_global_last_executed(0);
-
-    stub->Heartbeat(&context, request, &response);
-
-    EXPECT_EQ(0, response.last_executed());
-  }
-
+  EXPECT_EQ(0, r1.last_executed());
   EXPECT_TRUE(IsCommitted(*log0_[index1]));
   EXPECT_TRUE(IsCommitted(*log0_[index2]));
   EXPECT_TRUE(IsInProgress(*log0_[index3]));
@@ -179,19 +189,9 @@ TEST_F(MultiPaxosTest, HeartbeatCommitsAndTrims) {
   log0_.Execute(&store_);
   log0_.Execute(&store_);
 
-  {
-    ClientContext context;
-    HeartbeatRequest request;
-    HeartbeatResponse response;
-    request.set_ballot(ballot);
-    request.set_last_executed(index2);
-    request.set_global_last_executed(index2);
+  auto r2 = SendHeartbeat(stub.get(), ballot, index2, index2);
 
-    stub->Heartbeat(&context, request, &response);
-
-    EXPECT_EQ(index2, response.last_executed());
-  }
-
+  EXPECT_EQ(index2, r2.last_executed());
   EXPECT_EQ(nullptr, log0_[index1]);
   EXPECT_EQ(nullptr, log0_[index2]);
   EXPECT_TRUE(IsInProgress(*log0_[index3]));
@@ -217,76 +217,36 @@ TEST_F(MultiPaxosTest, PrepareRespondsWithCorrectInstances) {
   auto instance3 = MakeInstance(ballot, index3);
   log0_.Append(instance3);
 
-  auto stub = MultiPaxosRPC::NewStub(grpc::CreateChannel(
-      config0_["peers"][0], grpc::InsecureChannelCredentials()));
+  auto stub = MakeStub(config0_["peers"][0]);
 
-  {
-    ClientContext context;
-    PrepareRequest request;
-    PrepareResponse response;
-    request.set_ballot(ballot);
+  auto r1 = SendPrepare(stub.get(), ballot);
 
-    stub->Prepare(&context, request, &response);
+  EXPECT_EQ(OK, r1.type());
+  EXPECT_EQ(3, r1.instances_size());
+  EXPECT_EQ(instance1, r1.instances(0));
+  EXPECT_EQ(instance2, r1.instances(1));
+  EXPECT_EQ(instance3, r1.instances(2));
 
-    EXPECT_EQ(OK, response.type());
-    EXPECT_EQ(3, response.instances_size());
-    EXPECT_EQ(instance1, response.instances(0));
-    EXPECT_EQ(instance2, response.instances(1));
-    EXPECT_EQ(instance3, response.instances(2));
-  }
-
-  {
-    ClientContext context;
-    HeartbeatRequest request;
-    HeartbeatResponse response;
-    request.set_ballot(ballot);
-    request.set_last_executed(index2);
-    request.set_global_last_executed(0);
-
-    stub->Heartbeat(&context, request, &response);
-  }
+  SendHeartbeat(stub.get(), ballot, index2, 0);
 
   log0_.Execute(&store_);
   log0_.Execute(&store_);
 
-  {
-    ClientContext context;
-    PrepareRequest request;
-    PrepareResponse response;
-    request.set_ballot(ballot);
+  auto r2 = SendPrepare(stub.get(), ballot);
 
-    stub->Prepare(&context, request, &response);
+  EXPECT_EQ(OK, r2.type());
+  EXPECT_EQ(3, r2.instances_size());
+  EXPECT_TRUE(IsExecuted(r2.instances(0)));
+  EXPECT_TRUE(IsExecuted(r2.instances(1)));
+  EXPECT_EQ(instance3, r2.instances(2));
 
-    EXPECT_EQ(OK, response.type());
-    EXPECT_EQ(3, response.instances_size());
-    EXPECT_TRUE(IsExecuted(response.instances(0)));
-    EXPECT_TRUE(IsExecuted(response.instances(1)));
-    EXPECT_EQ(instance3, response.instances(2));
-  }
+  SendHeartbeat(stub.get(), ballot, index2, 2);
 
-  {
-    ClientContext context;
-    HeartbeatRequest request;
-    HeartbeatResponse response;
-    request.set_ballot(ballot);
-    request.set_last_executed(index2);
-    request.set_global_last_executed(2);
+  auto r3 = SendPrepare(stub.get(), ballot);
 
-    stub->Heartbeat(&context, request, &response);
-  }
-
-  {
-    ClientContext context;
-    PrepareRequest request;
-    PrepareResponse response;
-    request.set_ballot(ballot);
-
-    stub->Prepare(&context, request, &response);
-
-    EXPECT_EQ(OK, response.type());
-    EXPECT_EQ(1, response.instances_size());
-    EXPECT_EQ(instance3, response.instances(0));
-  }
+  EXPECT_EQ(OK, r3.type());
+  EXPECT_EQ(1, r3.instances_size());
+  EXPECT_EQ(instance3, r3.instances(0));
 
   peer0_.StopRPCServer();
   t.join();
