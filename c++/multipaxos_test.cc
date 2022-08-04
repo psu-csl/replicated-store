@@ -14,12 +14,18 @@ using nlohmann::json;
 
 using grpc::ClientContext;
 
+using multipaxos::Instance;
 using multipaxos::MultiPaxosRPC;
+
+using multipaxos::AcceptRequest;
+using multipaxos::AcceptResponse;
 
 using multipaxos::HeartbeatRequest;
 using multipaxos::HeartbeatResponse;
+
 using multipaxos::PrepareRequest;
 using multipaxos::PrepareResponse;
+
 using multipaxos::ResponseType::OK;
 using multipaxos::ResponseType::REJECT;
 
@@ -73,6 +79,18 @@ PrepareResponse SendPrepare(MultiPaxosRPC::Stub* stub, int64_t ballot) {
   request.set_ballot(ballot);
 
   stub->Prepare(&context, request, &response);
+
+  return response;
+}
+
+AcceptResponse SendAccept(MultiPaxosRPC::Stub* stub, Instance const& instance) {
+  ClientContext context;
+  AcceptRequest request;
+  AcceptResponse response;
+
+  *request.mutable_instance() = instance;
+
+  stub->Accept(&context, request, &response);
 
   return response;
 }
@@ -247,6 +265,35 @@ TEST_F(MultiPaxosTest, PrepareRespondsWithCorrectInstances) {
   EXPECT_EQ(OK, r3.type());
   EXPECT_EQ(1, r3.instances_size());
   EXPECT_EQ(instance3, r3.instances(0));
+
+  peer0_.StopRPCServer();
+  t.join();
+}
+
+TEST_F(MultiPaxosTest, AcceptAppendsToLog) {
+  std::thread t([this] { peer0_.StartRPCServer(); });
+
+  auto ballot = peer0_.NextBallot();
+
+  auto index1 = log0_.AdvanceLastIndex();
+  auto instance1 = MakeInstance(ballot, index1);
+
+  auto index2 = log0_.AdvanceLastIndex();
+  auto instance2 = MakeInstance(ballot, index2);
+
+  auto stub = MakeStub(config0_["peers"][0]);
+
+  auto r1 = SendAccept(stub.get(), instance1);
+
+  EXPECT_EQ(OK, r1.type());
+  EXPECT_EQ(instance1, *log0_[index1]);
+  EXPECT_EQ(nullptr, log0_[index2]);
+
+  auto r2 = SendAccept(stub.get(), instance2);
+
+  EXPECT_EQ(OK, r2.type());
+  EXPECT_EQ(instance1, *log0_[index1]);
+  EXPECT_EQ(instance2, *log0_[index2]);
 
   peer0_.StopRPCServer();
   t.join();

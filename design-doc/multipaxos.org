@@ -472,7 +472,6 @@
       5) ensure that peer0 is not a leader anymore and considers peer1 as the leader.
 
   - heartbeat_commits_and_trims
-
     - append to log0 three in-progress instances with indices 1, 2, and 3
     - instantiate peer0 with log0
     - send a heartbeat rpc to peer0 with last_executed = 2 and
@@ -486,7 +485,6 @@
       trimmed
 
   - prepare_responsds_with_correct_instances
-
     - append to log0 three in-progress instances with indices 1, 2, and 3
     - instantiate peer0 with log0
     - send a prepare rpc to peer0 and ensure that the response contains
@@ -500,6 +498,9 @@
       global_last_executed = 2
     - send a prepare rpc to peer0 and ensure that the response contains only the
       instance 3
+
+  - accept_appends_to_log
+    - send an accept rpc to peer0 and ensure that instance is appended to log.
 
   - one_leader_elected
     - start peer0, peer1, peer2, wait for 3x of heartbeat interval and then
