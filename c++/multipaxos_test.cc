@@ -165,6 +165,8 @@ TEST_F(MultiPaxosTest, HeartbeatCommitsAndTrims) {
     request.set_global_last_executed(0);
 
     stub->Heartbeat(&context, request, &response);
+
+    EXPECT_EQ(0, response.last_executed());
   }
 
   EXPECT_TRUE(IsCommitted(*log0_[index1]));
@@ -183,6 +185,8 @@ TEST_F(MultiPaxosTest, HeartbeatCommitsAndTrims) {
     request.set_global_last_executed(index2);
 
     stub->Heartbeat(&context, request, &response);
+
+    EXPECT_EQ(index2, response.last_executed());
   }
 
   EXPECT_EQ(nullptr, log0_[index1]);

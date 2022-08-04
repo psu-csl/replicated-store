@@ -477,10 +477,12 @@
     - instantiate peer0 with log0
     - send a heartbeat rpc to peer0 with last_executed = 2 and
       global_last_executed = 0
-    - ensure that instances 1 and 2 are in committed state
+    - ensure that the last_executed in response is 0 and instances 1 and 2 are
+      in committed state
     - send another heartbeat rpc to peer0 with last_executed = 2 and
       global_last_executed = 2
-    - ensure that instances 1 and 2 are trimmed
+    - ensure that the last_executed in response is 2 and instances 1 and 2 are
+      trimmed
 
   - one_leader_elected
     - start peer0, peer1, peer2, wait for 3x of heartbeat interval and then
