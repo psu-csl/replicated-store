@@ -479,10 +479,27 @@
       global_last_executed = 0
     - ensure that the last_executed in response is 0 and instances 1 and 2 are
       in committed state
+    - execute instances 1 and 2 in the log
     - send another heartbeat rpc to peer0 with last_executed = 2 and
       global_last_executed = 2
     - ensure that the last_executed in response is 2 and instances 1 and 2 are
       trimmed
+
+  - prepare_responsds_with_correct_instances
+
+    - append to log0 three in-progress instances with indices 1, 2, and 3
+    - instantiate peer0 with log0
+    - send a prepare rpc to peer0 and ensure that the response contains
+      instances 1, 2, and 3
+    - send a heartbeat rpc to peer0 with last_executed = 2 and
+      global_last_executed = 0
+    - execute instances 1 and 2 in the log
+    - send a prepare rpc to peer0 and ensure that the response contains
+      instances 1 and 2 in executed state and instance 3 in in-progress state
+    - send another heartbeat rpc to peer0 with last_executed = 2 and
+      global_last_executed = 2
+    - send a prepare rpc to peer0 and ensure that the response contains only the
+      instance 3
 
   - one_leader_elected
     - start peer0, peer1, peer2, wait for 3x of heartbeat interval and then

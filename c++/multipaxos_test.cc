@@ -14,9 +14,12 @@ using nlohmann::json;
 
 using grpc::ClientContext;
 
+using multipaxos::MultiPaxosRPC;
+
 using multipaxos::HeartbeatRequest;
 using multipaxos::HeartbeatResponse;
-using multipaxos::MultiPaxosRPC;
+using multipaxos::PrepareRequest;
+using multipaxos::PrepareResponse;
 using multipaxos::ResponseType::OK;
 using multipaxos::ResponseType::REJECT;
 
@@ -192,6 +195,98 @@ TEST_F(MultiPaxosTest, HeartbeatCommitsAndTrims) {
   EXPECT_EQ(nullptr, log0_[index1]);
   EXPECT_EQ(nullptr, log0_[index2]);
   EXPECT_TRUE(IsInProgress(*log0_[index3]));
+
+  peer0_.StopRPCServer();
+  t.join();
+}
+
+TEST_F(MultiPaxosTest, PrepareRespondsWithCorrectInstances) {
+  std::thread t([this] { peer0_.StartRPCServer(); });
+
+  auto ballot = peer0_.NextBallot();
+
+  auto index1 = log0_.AdvanceLastIndex();
+  auto instance1 = MakeInstance(ballot, index1);
+  log0_.Append(instance1);
+
+  auto index2 = log0_.AdvanceLastIndex();
+  auto instance2 = MakeInstance(ballot, index2);
+  log0_.Append(instance2);
+
+  auto index3 = log0_.AdvanceLastIndex();
+  auto instance3 = MakeInstance(ballot, index3);
+  log0_.Append(instance3);
+
+  auto stub = MultiPaxosRPC::NewStub(grpc::CreateChannel(
+      config0_["peers"][0], grpc::InsecureChannelCredentials()));
+
+  {
+    ClientContext context;
+    PrepareRequest request;
+    PrepareResponse response;
+    request.set_ballot(ballot);
+
+    stub->Prepare(&context, request, &response);
+
+    EXPECT_EQ(OK, response.type());
+    EXPECT_EQ(3, response.instances_size());
+    EXPECT_EQ(instance1, response.instances(0));
+    EXPECT_EQ(instance2, response.instances(1));
+    EXPECT_EQ(instance3, response.instances(2));
+  }
+
+  {
+    ClientContext context;
+    HeartbeatRequest request;
+    HeartbeatResponse response;
+    request.set_ballot(ballot);
+    request.set_last_executed(index2);
+    request.set_global_last_executed(0);
+
+    stub->Heartbeat(&context, request, &response);
+  }
+
+  log0_.Execute(&store_);
+  log0_.Execute(&store_);
+
+  {
+    ClientContext context;
+    PrepareRequest request;
+    PrepareResponse response;
+    request.set_ballot(ballot);
+
+    stub->Prepare(&context, request, &response);
+
+    EXPECT_EQ(OK, response.type());
+    EXPECT_EQ(3, response.instances_size());
+    EXPECT_TRUE(IsExecuted(response.instances(0)));
+    EXPECT_TRUE(IsExecuted(response.instances(1)));
+    EXPECT_EQ(instance3, response.instances(2));
+  }
+
+  {
+    ClientContext context;
+    HeartbeatRequest request;
+    HeartbeatResponse response;
+    request.set_ballot(ballot);
+    request.set_last_executed(index2);
+    request.set_global_last_executed(2);
+
+    stub->Heartbeat(&context, request, &response);
+  }
+
+  {
+    ClientContext context;
+    PrepareRequest request;
+    PrepareResponse response;
+    request.set_ballot(ballot);
+
+    stub->Prepare(&context, request, &response);
+
+    EXPECT_EQ(OK, response.type());
+    EXPECT_EQ(1, response.instances_size());
+    EXPECT_EQ(instance3, response.instances(0));
+  }
 
   peer0_.StopRPCServer();
   t.join();
