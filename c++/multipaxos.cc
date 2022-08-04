@@ -284,8 +284,10 @@ Result MultiPaxos::SendAccepts(int64_t ballot,
     while (state->leader_ == id_ && state->num_oks_ <= rpc_peers_.size() / 2 &&
            state->num_rpcs_ != rpc_peers_.size())
       state->cv_.wait(lock);
-    if (state->num_oks_ > rpc_peers_.size() / 2)
+    if (state->num_oks_ > rpc_peers_.size() / 2) {
+      log_->Commit(index);
       return Result{ResultType::kOk, std::nullopt};
+    }
     if (state->leader_ != id_)
       return Result{ResultType::kSomeoneElseLeader, state->leader_};
   }
