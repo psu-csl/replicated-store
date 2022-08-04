@@ -101,6 +101,7 @@ cc_test(
     srcs = ["multipaxos.cc", "multipaxos_test.cc"],
     deps = [
         ":multipaxos",
+        ":test_util",
         "@com_github_grpc_grpc//:grpc++",
         "@com_google_googletest//:gtest_main",
     ],

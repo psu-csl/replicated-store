@@ -4,7 +4,9 @@
 
 #include "json.h"
 #include "log.h"
+#include "memkvstore.h"
 #include "multipaxos.h"
+#include "test_util.h"
 
 using namespace std::chrono;
 
@@ -70,6 +72,7 @@ class MultiPaxosTest : public testing::Test {
   json config0_, config1_, config2_;
   Log log0_, log1_, log2_;
   MultiPaxos peer0_, peer1_, peer2_;
+  MemKVStore store_;
 };
 
 TEST_F(MultiPaxosTest, Constructor) {
@@ -131,6 +134,60 @@ TEST_F(MultiPaxosTest, HeartbeatChangesLeaderToFollower) {
 
   EXPECT_FALSE(IsLeader(peer0_));
   EXPECT_EQ(1, Leader(peer0_));
+
+  peer0_.StopRPCServer();
+  t.join();
+}
+
+TEST_F(MultiPaxosTest, HeartbeatCommitsAndTrims) {
+  std::thread t([this] { peer0_.StartRPCServer(); });
+
+  auto ballot = peer0_.NextBallot();
+
+  auto index1 = log0_.AdvanceLastIndex();
+  log0_.Append(MakeInstance(ballot, index1));
+
+  auto index2 = log0_.AdvanceLastIndex();
+  log0_.Append(MakeInstance(ballot, index2));
+
+  auto index3 = log0_.AdvanceLastIndex();
+  log0_.Append(MakeInstance(ballot, index3));
+
+  auto stub = MultiPaxosRPC::NewStub(grpc::CreateChannel(
+      config0_["peers"][0], grpc::InsecureChannelCredentials()));
+
+  {
+    ClientContext context;
+    HeartbeatRequest request;
+    HeartbeatResponse response;
+    request.set_ballot(ballot);
+    request.set_last_executed(index2);
+    request.set_global_last_executed(0);
+
+    stub->Heartbeat(&context, request, &response);
+  }
+
+  EXPECT_TRUE(IsCommitted(*log0_[index1]));
+  EXPECT_TRUE(IsCommitted(*log0_[index2]));
+  EXPECT_TRUE(IsInProgress(*log0_[index3]));
+
+  log0_.Execute(&store_);
+  log0_.Execute(&store_);
+
+  {
+    ClientContext context;
+    HeartbeatRequest request;
+    HeartbeatResponse response;
+    request.set_ballot(ballot);
+    request.set_last_executed(index2);
+    request.set_global_last_executed(index2);
+
+    stub->Heartbeat(&context, request, &response);
+  }
+
+  EXPECT_EQ(nullptr, log0_[index1]);
+  EXPECT_EQ(nullptr, log0_[index2]);
+  EXPECT_TRUE(IsInProgress(*log0_[index3]));
 
   peer0_.StopRPCServer();
   t.join();

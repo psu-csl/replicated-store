@@ -433,6 +433,7 @@
           continue
       return true
 
+
 - unit tests
 
   - constructor
@@ -469,6 +470,17 @@
          know it.
       4) in thread main, send request0 to peer0
       5) ensure that peer0 is not a leader anymore and considers peer1 as the leader.
+
+  - heartbeat_commits_and_trims
+
+    - append to log0 three in-progress instances with indices 1, 2, and 3
+    - instantiate peer0 with log0
+    - send a heartbeat rpc to peer0 with last_executed = 2 and
+      global_last_executed = 0
+    - ensure that instances 1 and 2 are in committed state
+    - send another heartbeat rpc to peer0 with last_executed = 2 and
+      global_last_executed = 2
+    - ensure that instances 1 and 2 are trimmed
 
   - one_leader_elected
     - start peer0, peer1, peer2, wait for 3x of heartbeat interval and then
