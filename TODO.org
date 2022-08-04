@@ -35,6 +35,18 @@
 
 ** All
 
+*** handle gaps due to temporary disconnect
+    - Currently, if a peer temporarily disconnects and then reconnects, then it
+      will have a gap in its log. it will not be able to execute entries past
+      the gap, it will not be able to prune its log, which will prevent everyone
+      else from pruning their logs. when we have a gap like this, we should
+      either (1) force a new leader election to recover the lost entries, or (2)
+      ask other peers and fill our log, or (3) resort to using log pruning that
+      persists the state machine to disk and prunes the log without hearing from
+      the peers. we do not implement this at the moment: if a peer temporarily
+      disconnects and accrues a gap, then log pruning will be stuck on all
+      processes.
+
 *** handle timeouts in RPCs
     - with the most recent design (heap-allocated refcounted state), this should
       just work, but we need to actually try and see if it works.
@@ -43,6 +55,9 @@
 
 
 *** explore the cost of sending RPCs to self
+
+*** evaluate the choice of a resizable circular buffer for log
+    - see how boost implements it
 
 *** async version
 
