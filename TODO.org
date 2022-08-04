@@ -9,6 +9,7 @@
       generated one. Refactor such that we have only proto generated classes.
 
 ** C++
+*** avoid holding the lock for a long time in rpc handlers
 
 *** consider replacing ballot with atomic and using the CAS loop
     - and make sure to insert PAUSEs below, per recommendation of Thiago on C++
