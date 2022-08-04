@@ -11,6 +11,9 @@
 ** C++
 *** avoid holding the lock for a long time in rpc handlers
 
+*** explore the overhead of locking ballot_; replace NextBallot with CAS loop,
+    - remove the lock, and change ballot to atomic and measure the overhead.
+
 *** consider replacing ballot with atomic and using the CAS loop
     - and make sure to insert PAUSEs below, per recommendation of Thiago on C++
       slack: https://herbsutter.com/2012/08/31/reader-qa-how-to-write-a-cas-loop-using-stdatomics/
@@ -20,6 +23,16 @@
     - using std::variant and using the same function for quorum detection in the
       while loop at the end of SendXXX functions.
 
+*** currently, replicant hangs on accept() and we stop the program using C-c.
+    - this has further implications because, e.g., a standalone heartbeat thread
+      will not be able to know when to stop; this is not a problem because the
+      OS will clean up if we C-c and exit the main thread, but a cleaner
+      solution is  desirable.
+
+*** reimplement concurrency stuff using C++20 features.
+
+*** handle errors in asio calls
+
 ** All
 
 *** handle timeouts in RPCs
@@ -27,6 +40,11 @@
       just work, but we need to actually try and see if it works.
 
 *** rethink class interface and hide methods that don't need to be public
+
+
+*** explore the cost of sending RPCs to self
+
+*** async version
 
 * DONE
 
