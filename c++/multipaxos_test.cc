@@ -340,8 +340,8 @@ TEST_F(MultiPaxosTest, OneLeaderElected) {
   std::thread t1([this] { peers_[1]->Start(); });
   std::thread t2([this] { peers_[2]->Start(); });
 
-  auto heartbeat_3x =
-      milliseconds(3 * static_cast<int>(configs_[0]["heartbeat_interval"]));
+  int heartbeat = configs_[0]["heartbeat_interval"];
+  auto heartbeat_3x = 3 * milliseconds(heartbeat);
 
   std::this_thread::sleep_for(heartbeat_3x);
 
