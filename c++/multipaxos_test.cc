@@ -159,7 +159,7 @@ TEST_F(MultiPaxosTest, NextBallot) {
   EXPECT_EQ(peer2, Leader(*peers_[2]));
 }
 
-TEST_F(MultiPaxosTest, RPCsWithLowerBallotIgnored) {
+TEST_F(MultiPaxosTest, RequestsWithLowerBallotIgnored) {
   std::thread t([this] { peers_[0]->StartRPCServer(); });
   auto stub = MakeStub(configs_[0]["peers"][0]);
 
@@ -186,7 +186,7 @@ TEST_F(MultiPaxosTest, RPCsWithLowerBallotIgnored) {
   t.join();
 }
 
-TEST_F(MultiPaxosTest, RPCsWithHigherBallotChangeLeaderToFollower) {
+TEST_F(MultiPaxosTest, RequestsWithHigherBallotChangeLeaderToFollower) {
   std::thread t([this] { peers_[0]->StartRPCServer(); });
   auto stub = MakeStub(configs_[0]["peers"][0]);
 
