@@ -112,10 +112,12 @@ class MultiPaxosTest : public testing::Test {
       auto config = json::parse(MakeConfig(id));
       auto log = std::make_unique<Log>();
       auto peer = std::make_unique<MultiPaxos>(log.get(), config);
+      auto store = std::make_unique<MemKVStore>();
 
       configs_.push_back(config);
       logs_.push_back(std::move(log));
       peers_.push_back(std::move(peer));
+      stores_.push_back(std::move(store));
     }
   }
 
@@ -137,7 +139,7 @@ class MultiPaxosTest : public testing::Test {
   std::vector<json> configs_;
   std::vector<std::unique_ptr<Log>> logs_;
   std::vector<std::unique_ptr<MultiPaxos>> peers_;
-  MemKVStore store_;
+  std::vector<std::unique_ptr<KVStore>> stores_;
 };
 
 TEST_F(MultiPaxosTest, Constructor) {
@@ -237,8 +239,8 @@ TEST_F(MultiPaxosTest, HeartbeatCommitsAndTrims) {
   EXPECT_TRUE(IsCommitted(*(*logs_[0])[index2]));
   EXPECT_TRUE(IsInProgress(*(*logs_[0])[index3]));
 
-  logs_[0]->Execute(&store_);
-  logs_[0]->Execute(&store_);
+  logs_[0]->Execute(stores_[0].get());
+  logs_[0]->Execute(stores_[0].get());
 
   auto r2 = SendHeartbeat(stub.get(), ballot, index2, index2);
   EXPECT_EQ(OK, r2.type());
@@ -279,8 +281,8 @@ TEST_F(MultiPaxosTest, PrepareRespondsWithCorrectInstances) {
   auto r2 = SendHeartbeat(stub.get(), ballot, index2, 0);
   EXPECT_EQ(OK, r2.type());
 
-  logs_[0]->Execute(&store_);
-  logs_[0]->Execute(&store_);
+  logs_[0]->Execute(stores_[0].get());
+  logs_[0]->Execute(stores_[0].get());
 
   auto r3 = SendPrepare(stub.get(), ballot);
   EXPECT_EQ(OK, r3.type());
