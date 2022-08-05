@@ -529,6 +529,18 @@
     - call send_accepts from peer0_ and expect it to become a follower assume
       peer2 as the leader
 
+  - send_heartbeats
+    - ensure that send_heartbeats works correctly; specifically, it returns the
+      passed in global_last_executed when it hasn't heard from all of the peers,
+      and it returns the new global_last_executed when it has heard from all of
+      the peers.
+      - append to peer0, peer1, peer2 logs an instance at index 1
+      - commit and execute the instance in all peers' logs
+      - start peer0 and peer1 rpc servers
+      - call send_heartbeats with global_last_executed = 0 and expect 0 as the response
+      - start peer2 rpc server
+      - call send_heartbeats with global_last_executed = 0 and expect 1 as the response
+
   - one_leader_elected
     - start peer0, peer1, peer2, wait for 3x of heartbeat interval and then
       check that a single leader is elected.

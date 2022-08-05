@@ -383,6 +383,42 @@ TEST_F(MultiPaxosTest, PrepareResponseWithHighBallotChangesLeaderToFollower) {
   t2.join();
 }
 
+TEST_F(MultiPaxosTest, SendHeartbeats) {
+  std::thread t0([this] { peers_[0]->StartRPCServer(); });
+  std::thread t1([this] { peers_[1]->StartRPCServer(); });
+
+  auto ballot = peers_[0]->NextBallot();
+  auto index = logs_[0]->AdvanceLastIndex();
+  auto instance = MakeInstance(ballot, index);
+
+  logs_[0]->Append(instance);
+  logs_[1]->Append(instance);
+  logs_[2]->Append(instance);
+
+  logs_[0]->Commit(index);
+  logs_[1]->Commit(index);
+  logs_[2]->Commit(index);
+
+  logs_[0]->Execute(stores_[0].get());
+  logs_[1]->Execute(stores_[1].get());
+  logs_[2]->Execute(stores_[2].get());
+
+  EXPECT_EQ(0, peers_[0]->SendHeartbeats(ballot, 0));
+
+  std::thread t2([this] { peers_[2]->StartRPCServer(); });
+
+  std::this_thread::sleep_for(seconds(2));
+
+  EXPECT_EQ(index, peers_[0]->SendHeartbeats(ballot, 0));
+
+  peers_[0]->StopRPCServer();
+  peers_[1]->StopRPCServer();
+  peers_[2]->StopRPCServer();
+  t0.join();
+  t1.join();
+  t2.join();
+}
+
 TEST_F(MultiPaxosTest, AcceptResponseWithHighBallotChangesLeaderToFollower) {
   std::thread t0([this] { peers_[0]->StartRPCServer(); });
   std::thread t1([this] { peers_[1]->StartRPCServer(); });
