@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <chrono>
+#include <memory>
 #include <thread>
 
 #include "json.h"
@@ -29,16 +30,7 @@ using multipaxos::PrepareResponse;
 using multipaxos::ResponseType::OK;
 using multipaxos::ResponseType::REJECT;
 
-std::string MakeConfig(int64_t id) {
-  return R"({ "id": )" + std::to_string(id) + R"(,
-              "threadpool_size": 8,
-              "heartbeat_delta": 10,
-              "heartbeat_interval": 300,
-              "peers": [ "127.0.0.1:3000",
-                         "127.0.0.1:3001",
-                         "127.0.0.1:3002"]
-            })";
-}
+static const int kNumPeers = 3;
 
 int64_t Leader(MultiPaxos const& peer) {
   auto [ballot, is_ready] = peer.Ballot();
@@ -65,9 +57,7 @@ HeartbeatResponse SendHeartbeat(MultiPaxosRPC::Stub* stub,
   request.set_ballot(ballot);
   request.set_last_executed(last_executed);
   request.set_global_last_executed(global_last_executed);
-
   stub->Heartbeat(&context, request, &response);
-
   return response;
 }
 
@@ -77,9 +67,7 @@ PrepareResponse SendPrepare(MultiPaxosRPC::Stub* stub, int64_t ballot) {
   PrepareResponse response;
 
   request.set_ballot(ballot);
-
   stub->Prepare(&context, request, &response);
-
   return response;
 }
 
@@ -89,9 +77,7 @@ AcceptResponse SendAccept(MultiPaxosRPC::Stub* stub, Instance const& instance) {
   AcceptResponse response;
 
   *request.mutable_instance() = instance;
-
   stub->Accept(&context, request, &response);
-
   return response;
 }
 
@@ -100,40 +86,63 @@ std::unique_ptr<MultiPaxosRPC::Stub> MakeStub(std::string const& target) {
       grpc::CreateChannel(target, grpc::InsecureChannelCredentials()));
 }
 
+std::string MakeConfig(int64_t id) {
+  CHECK(id < kNumPeers);
+  auto r = R"({ "id": )" + std::to_string(id) + R"(,
+              "threadpool_size": 8,
+              "heartbeat_delta": 10,
+              "heartbeat_interval": 300,
+              "peers": [)";
+
+  for (auto i = 0; i < kNumPeers; ++i) {
+    r += R"("127.0.0.1:300)" + std::to_string(i) + R"(")";
+    if (i + 1 < kNumPeers)
+      r += R"(,)";
+  }
+  r += R"(]})";
+
+  return r;
+}
+
 class MultiPaxosTest : public testing::Test {
  public:
-  MultiPaxosTest()
-      : config0_(json::parse(MakeConfig(0))),
-        config1_(json::parse(MakeConfig(1))),
-        config2_(json::parse(MakeConfig(2))),
-        peer0_(&log0_, config0_),
-        peer1_(&log1_, config1_),
-        peer2_(&log2_, config2_) {}
+  MultiPaxosTest() {
+    for (auto id = 0; id < kNumPeers; ++id) {
+      auto config = json::parse(MakeConfig(id));
+      auto log = std::make_unique<Log>();
+      auto peer = std::make_unique<MultiPaxos>(log.get(), config);
 
-  bool OneLeader() const {
-    if (IsLeader(peer0_))
-      return !IsLeader(peer1_) && !IsLeader(peer2_) && Leader(peer1_) == 0 &&
-             Leader(peer2_) == 0;
-    if (IsLeader(peer1_))
-      return !IsLeader(peer0_) && !IsLeader(peer2_) && Leader(peer0_) == 1 &&
-             Leader(peer2_) == 1;
-    if (IsLeader(peer2_))
-      return !IsLeader(peer0_) && !IsLeader(peer1_) && Leader(peer0_) == 2 &&
-             Leader(peer1_) == 2;
-    return false;
+      configs_.push_back(config);
+      logs_.push_back(std::move(log));
+      peers_.push_back(std::move(peer));
+    }
+  }
+
+  MultiPaxos* OneLeader() const {
+    auto leader = Leader(*peers_[0]);
+    auto num_leaders = 0;
+    for (auto const& p : peers_)
+      if (IsLeader(*p)) {
+        ++num_leaders;
+        if (num_leaders > 1 || p->Id() != leader)
+          return nullptr;
+      } else if (Leader(*p) != leader) {
+        return nullptr;
+      }
+    return peers_[leader].get();
   }
 
  protected:
-  json config0_, config1_, config2_;
-  Log log0_, log1_, log2_;
-  MultiPaxos peer0_, peer1_, peer2_;
+  std::vector<json> configs_;
+  std::vector<std::unique_ptr<Log>> logs_;
+  std::vector<std::unique_ptr<MultiPaxos>> peers_;
   MemKVStore store_;
 };
 
 TEST_F(MultiPaxosTest, Constructor) {
-  EXPECT_EQ(kMaxNumPeers, Leader(peer0_));
-  EXPECT_FALSE(IsLeader(peer0_));
-  EXPECT_FALSE(IsSomeoneElseLeader(peer0_));
+  EXPECT_EQ(kMaxNumPeers, Leader(*peers_[0]));
+  EXPECT_FALSE(IsLeader(*peers_[0]));
+  EXPECT_FALSE(IsSomeoneElseLeader(*peers_[0]));
 }
 
 TEST_F(MultiPaxosTest, NextBallot) {
@@ -141,128 +150,128 @@ TEST_F(MultiPaxosTest, NextBallot) {
   int ballot = peer2;
 
   ballot += kRoundIncrement;
-  EXPECT_EQ(ballot, peer2_.NextBallot());
+  EXPECT_EQ(ballot, peers_[2]->NextBallot());
   ballot += kRoundIncrement;
-  EXPECT_EQ(ballot, peer2_.NextBallot());
+  EXPECT_EQ(ballot, peers_[2]->NextBallot());
 
-  EXPECT_TRUE(IsLeader(peer2_));
-  EXPECT_FALSE(IsSomeoneElseLeader(peer2_));
-  EXPECT_EQ(peer2, Leader(peer2_));
+  EXPECT_TRUE(IsLeader(*peers_[2]));
+  EXPECT_FALSE(IsSomeoneElseLeader(*peers_[2]));
+  EXPECT_EQ(peer2, Leader(*peers_[2]));
 }
 
 TEST_F(MultiPaxosTest, RPCsWithLowerBallotIgnored) {
-  std::thread t([this] { peer0_.StartRPCServer(); });
+  std::thread t([this] { peers_[0]->StartRPCServer(); });
 
-  peer0_.NextBallot();
-  peer0_.NextBallot();
+  peers_[0]->NextBallot();
+  peers_[0]->NextBallot();
 
-  auto stub = MakeStub(config0_["peers"][0]);
+  auto stub = MakeStub(configs_[0]["peers"][0]);
 
-  auto stale_ballot = peer1_.NextBallot();
+  auto stale_ballot = peers_[1]->NextBallot();
 
   SendHeartbeat(stub.get(), stale_ballot, 0, 0);
-  EXPECT_TRUE(IsLeader(peer0_));
+  EXPECT_TRUE(IsLeader(*peers_[0]));
 
   auto r1 = SendPrepare(stub.get(), stale_ballot);
   EXPECT_EQ(REJECT, r1.type());
-  EXPECT_TRUE(IsLeader(peer0_));
+  EXPECT_TRUE(IsLeader(*peers_[0]));
 
-  auto index = log0_.AdvanceLastIndex();
+  auto index = logs_[0]->AdvanceLastIndex();
   auto instance = MakeInstance(stale_ballot, index);
   auto r2 = SendAccept(stub.get(), instance);
   EXPECT_EQ(REJECT, r2.type());
-  EXPECT_TRUE(IsLeader(peer0_));
-  EXPECT_EQ(nullptr, log0_[index]);
+  EXPECT_TRUE(IsLeader(*peers_[0]));
+  EXPECT_EQ(nullptr, (*logs_[0])[index]);
 
-  peer0_.StopRPCServer();
+  peers_[0]->StopRPCServer();
   t.join();
 }
 
 TEST_F(MultiPaxosTest, RPCsWithHigherBallotChangeLeaderToFollower) {
-  std::thread t([this] { peer0_.StartRPCServer(); });
+  std::thread t([this] { peers_[0]->StartRPCServer(); });
 
-  auto stub = MakeStub(config0_["peers"][0]);
+  auto stub = MakeStub(configs_[0]["peers"][0]);
 
-  peer0_.NextBallot();
-  EXPECT_TRUE(IsLeader(peer0_));
-  SendHeartbeat(stub.get(), peer1_.NextBallot(), 0, 0);
-  EXPECT_FALSE(IsLeader(peer0_));
-  EXPECT_EQ(1, Leader(peer0_));
+  peers_[0]->NextBallot();
+  EXPECT_TRUE(IsLeader(*peers_[0]));
+  SendHeartbeat(stub.get(), peers_[1]->NextBallot(), 0, 0);
+  EXPECT_FALSE(IsLeader(*peers_[0]));
+  EXPECT_EQ(1, Leader(*peers_[0]));
 
-  peer0_.NextBallot();
-  EXPECT_TRUE(IsLeader(peer0_));
-  auto r1 = SendPrepare(stub.get(), peer1_.NextBallot());
+  peers_[0]->NextBallot();
+  EXPECT_TRUE(IsLeader(*peers_[0]));
+  auto r1 = SendPrepare(stub.get(), peers_[1]->NextBallot());
   EXPECT_EQ(OK, r1.type());
-  EXPECT_FALSE(IsLeader(peer0_));
-  EXPECT_EQ(1, Leader(peer0_));
+  EXPECT_FALSE(IsLeader(*peers_[0]));
+  EXPECT_EQ(1, Leader(*peers_[0]));
 
-  peer0_.NextBallot();
-  EXPECT_TRUE(IsLeader(peer0_));
-  auto index = log0_.AdvanceLastIndex();
-  auto instance = MakeInstance(peer1_.NextBallot(), index);
+  peers_[0]->NextBallot();
+  EXPECT_TRUE(IsLeader(*peers_[0]));
+  auto index = logs_[0]->AdvanceLastIndex();
+  auto instance = MakeInstance(peers_[1]->NextBallot(), index);
   auto r2 = SendAccept(stub.get(), instance);
   EXPECT_EQ(OK, r2.type());
-  EXPECT_FALSE(IsLeader(peer0_));
-  EXPECT_EQ(1, Leader(peer0_));
+  EXPECT_FALSE(IsLeader(*peers_[0]));
+  EXPECT_EQ(1, Leader(*peers_[0]));
 
-  peer0_.StopRPCServer();
+  peers_[0]->StopRPCServer();
   t.join();
 }
 
 TEST_F(MultiPaxosTest, HeartbeatCommitsAndTrims) {
-  std::thread t([this] { peer0_.StartRPCServer(); });
+  std::thread t([this] { peers_[0]->StartRPCServer(); });
 
-  auto ballot = peer0_.NextBallot();
+  auto ballot = peers_[0]->NextBallot();
 
-  auto index1 = log0_.AdvanceLastIndex();
-  log0_.Append(MakeInstance(ballot, index1));
+  auto index1 = logs_[0]->AdvanceLastIndex();
+  logs_[0]->Append(MakeInstance(ballot, index1));
 
-  auto index2 = log0_.AdvanceLastIndex();
-  log0_.Append(MakeInstance(ballot, index2));
+  auto index2 = logs_[0]->AdvanceLastIndex();
+  logs_[0]->Append(MakeInstance(ballot, index2));
 
-  auto index3 = log0_.AdvanceLastIndex();
-  log0_.Append(MakeInstance(ballot, index3));
+  auto index3 = logs_[0]->AdvanceLastIndex();
+  logs_[0]->Append(MakeInstance(ballot, index3));
 
-  auto stub = MakeStub(config0_["peers"][0]);
+  auto stub = MakeStub(configs_[0]["peers"][0]);
   auto r1 = SendHeartbeat(stub.get(), ballot, index2, 0);
 
   EXPECT_EQ(0, r1.last_executed());
-  EXPECT_TRUE(IsCommitted(*log0_[index1]));
-  EXPECT_TRUE(IsCommitted(*log0_[index2]));
-  EXPECT_TRUE(IsInProgress(*log0_[index3]));
+  EXPECT_TRUE(IsCommitted(*(*logs_[0])[index1]));
+  EXPECT_TRUE(IsCommitted(*(*logs_[0])[index2]));
+  EXPECT_TRUE(IsInProgress(*(*logs_[0])[index3]));
 
-  log0_.Execute(&store_);
-  log0_.Execute(&store_);
+  logs_[0]->Execute(&store_);
+  logs_[0]->Execute(&store_);
 
   auto r2 = SendHeartbeat(stub.get(), ballot, index2, index2);
 
   EXPECT_EQ(index2, r2.last_executed());
-  EXPECT_EQ(nullptr, log0_[index1]);
-  EXPECT_EQ(nullptr, log0_[index2]);
-  EXPECT_TRUE(IsInProgress(*log0_[index3]));
+  EXPECT_EQ(nullptr, (*logs_[0])[index1]);
+  EXPECT_EQ(nullptr, (*logs_[0])[index2]);
+  EXPECT_TRUE(IsInProgress(*(*logs_[0])[index3]));
 
-  peer0_.StopRPCServer();
+  peers_[0]->StopRPCServer();
   t.join();
 }
 
 TEST_F(MultiPaxosTest, PrepareRespondsWithCorrectInstances) {
-  std::thread t([this] { peer0_.StartRPCServer(); });
+  std::thread t([this] { peers_[0]->StartRPCServer(); });
 
-  auto ballot = peer0_.NextBallot();
+  auto ballot = peers_[0]->NextBallot();
 
-  auto index1 = log0_.AdvanceLastIndex();
+  auto index1 = logs_[0]->AdvanceLastIndex();
   auto instance1 = MakeInstance(ballot, index1);
-  log0_.Append(instance1);
+  logs_[0]->Append(instance1);
 
-  auto index2 = log0_.AdvanceLastIndex();
+  auto index2 = logs_[0]->AdvanceLastIndex();
   auto instance2 = MakeInstance(ballot, index2);
-  log0_.Append(instance2);
+  logs_[0]->Append(instance2);
 
-  auto index3 = log0_.AdvanceLastIndex();
+  auto index3 = logs_[0]->AdvanceLastIndex();
   auto instance3 = MakeInstance(ballot, index3);
-  log0_.Append(instance3);
+  logs_[0]->Append(instance3);
 
-  auto stub = MakeStub(config0_["peers"][0]);
+  auto stub = MakeStub(configs_[0]["peers"][0]);
 
   auto r1 = SendPrepare(stub.get(), ballot);
 
@@ -274,8 +283,8 @@ TEST_F(MultiPaxosTest, PrepareRespondsWithCorrectInstances) {
 
   SendHeartbeat(stub.get(), ballot, index2, 0);
 
-  log0_.Execute(&store_);
-  log0_.Execute(&store_);
+  logs_[0]->Execute(&store_);
+  logs_[0]->Execute(&store_);
 
   auto r2 = SendPrepare(stub.get(), ballot);
 
@@ -293,54 +302,54 @@ TEST_F(MultiPaxosTest, PrepareRespondsWithCorrectInstances) {
   EXPECT_EQ(1, r3.instances_size());
   EXPECT_EQ(instance3, r3.instances(0));
 
-  peer0_.StopRPCServer();
+  peers_[0]->StopRPCServer();
   t.join();
 }
 
 TEST_F(MultiPaxosTest, AcceptAppendsToLog) {
-  std::thread t([this] { peer0_.StartRPCServer(); });
+  std::thread t([this] { peers_[0]->StartRPCServer(); });
 
-  auto ballot = peer0_.NextBallot();
+  auto ballot = peers_[0]->NextBallot();
 
-  auto index1 = log0_.AdvanceLastIndex();
+  auto index1 = logs_[0]->AdvanceLastIndex();
   auto instance1 = MakeInstance(ballot, index1);
 
-  auto index2 = log0_.AdvanceLastIndex();
+  auto index2 = logs_[0]->AdvanceLastIndex();
   auto instance2 = MakeInstance(ballot, index2);
 
-  auto stub = MakeStub(config0_["peers"][0]);
+  auto stub = MakeStub(configs_[0]["peers"][0]);
 
   auto r1 = SendAccept(stub.get(), instance1);
 
   EXPECT_EQ(OK, r1.type());
-  EXPECT_EQ(instance1, *log0_[index1]);
-  EXPECT_EQ(nullptr, log0_[index2]);
+  EXPECT_EQ(instance1, *(*logs_[0])[index1]);
+  EXPECT_EQ(nullptr, (*logs_[0])[index2]);
 
   auto r2 = SendAccept(stub.get(), instance2);
 
   EXPECT_EQ(OK, r2.type());
-  EXPECT_EQ(instance1, *log0_[index1]);
-  EXPECT_EQ(instance2, *log0_[index2]);
+  EXPECT_EQ(instance1, *(*logs_[0])[index1]);
+  EXPECT_EQ(instance2, *(*logs_[0])[index2]);
 
-  peer0_.StopRPCServer();
+  peers_[0]->StopRPCServer();
   t.join();
 }
 
 TEST_F(MultiPaxosTest, OneLeaderElected) {
-  std::thread t0([this] { peer0_.Start(); });
-  std::thread t1([this] { peer1_.Start(); });
-  std::thread t2([this] { peer2_.Start(); });
+  std::thread t0([this] { peers_[0]->Start(); });
+  std::thread t1([this] { peers_[1]->Start(); });
+  std::thread t2([this] { peers_[2]->Start(); });
 
   auto heartbeat_3x =
-      milliseconds(3 * static_cast<int>(config0_["heartbeat_interval"]));
+      milliseconds(3 * static_cast<int>(configs_[0]["heartbeat_interval"]));
 
   std::this_thread::sleep_for(heartbeat_3x);
 
-  EXPECT_TRUE(OneLeader());
+  EXPECT_NE(nullptr, OneLeader());
 
-  peer0_.Stop();
-  peer1_.Stop();
-  peer2_.Stop();
+  peers_[0]->Stop();
+  peers_[1]->Stop();
+  peers_[2]->Stop();
   t0.join();
   t1.join();
   t2.join();

@@ -121,6 +121,7 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
 
   void SleepForRandomInterval() {
     auto sleep_time = heartbeat_interval_ + dist_(engine_);
+    DLOG(INFO) << "sleeping for " << sleep_time;
     std::this_thread::sleep_for(std::chrono::milliseconds(sleep_time));
   }
 
