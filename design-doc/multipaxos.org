@@ -502,7 +502,7 @@
   - accept_appends_to_log
     - send an accept rpc to peer0 and ensure that instance is appended to log.
 
-  - heartbeat_response_with_high_ballot_change_leader_to_follower
+  - heartbeat_response_with_high_ballot_changes_leader_to_follower
     - call peer0_.next_ballot to make it a leader
     - call peer1_.next_ballot to make it a leader
     - call peer2_.next_ballot to make it a leader
@@ -511,13 +511,22 @@
     - call send_heartbeats from peer0_ and expect it to become a follower assume
       peer2 as the leader
 
-  - prepare_response_with_high_ballot_change_leader_to_follower
+  - prepare_response_with_high_ballot_changes_leader_to_follower
     - call peer0_.next_ballot to make it a leader
     - call peer1_.next_ballot to make it a leader
     - call peer2_.next_ballot to make it a leader
     - send a heartbeat with peer2_'s ballot to peer1_ to establish peer2 as a
       leader in peer1 as well
     - call send_prepares from peer0_ and expect it to become a follower assume
+      peer2 as the leader
+
+  - accept_response_with_high_ballot_changes_leader_to_follower
+    - call peer0_.next_ballot to make it a leader
+    - call peer1_.next_ballot to make it a leader
+    - call peer2_.next_ballot to make it a leader
+    - send a heartbeat with peer2_'s ballot to peer1_ to establish peer2 as a
+      leader in peer1 as well
+    - call send_accepts from peer0_ and expect it to become a follower assume
       peer2 as the leader
 
   - one_leader_elected

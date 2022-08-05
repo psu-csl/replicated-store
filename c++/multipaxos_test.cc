@@ -15,6 +15,7 @@ using nlohmann::json;
 
 using grpc::ClientContext;
 
+using multipaxos::Command;
 using multipaxos::Instance;
 using multipaxos::MultiPaxosRPC;
 
@@ -324,7 +325,7 @@ TEST_F(MultiPaxosTest, AcceptAppendsToLog) {
   t.join();
 }
 
-TEST_F(MultiPaxosTest, HeartbeatResponseWithHighBallotChangeLeaderToFollower) {
+TEST_F(MultiPaxosTest, HeartbeatResponseWithHighBallotChangesLeaderToFollower) {
   std::thread t0([this] { peers_[0]->StartRPCServer(); });
   std::thread t1([this] { peers_[1]->StartRPCServer(); });
   std::thread t2([this] { peers_[2]->StartRPCServer(); });
@@ -352,7 +353,7 @@ TEST_F(MultiPaxosTest, HeartbeatResponseWithHighBallotChangeLeaderToFollower) {
   t2.join();
 }
 
-TEST_F(MultiPaxosTest, PrepareResponseWithHighBallotChangeLeaderToFollower) {
+TEST_F(MultiPaxosTest, PrepareResponseWithHighBallotChangesLeaderToFollower) {
   std::thread t0([this] { peers_[0]->StartRPCServer(); });
   std::thread t1([this] { peers_[1]->StartRPCServer(); });
   std::thread t2([this] { peers_[2]->StartRPCServer(); });
@@ -369,6 +370,34 @@ TEST_F(MultiPaxosTest, PrepareResponseWithHighBallotChangeLeaderToFollower) {
 
   EXPECT_TRUE(IsLeader(*peers_[0]));
   peers_[0]->SendPrepares(peer0_ballot);
+  EXPECT_FALSE(IsLeader(*peers_[0]));
+  EXPECT_EQ(2, Leader(*peers_[0]));
+
+  peers_[0]->StopRPCServer();
+  peers_[1]->StopRPCServer();
+  peers_[2]->StopRPCServer();
+  t0.join();
+  t1.join();
+  t2.join();
+}
+
+TEST_F(MultiPaxosTest, AcceptResponseWithHighBallotChangesLeaderToFollower) {
+  std::thread t0([this] { peers_[0]->StartRPCServer(); });
+  std::thread t1([this] { peers_[1]->StartRPCServer(); });
+  std::thread t2([this] { peers_[2]->StartRPCServer(); });
+  auto stub1 = MakeStub(configs_[0]["peers"][1]);
+
+  auto peer0_ballot = peers_[0]->NextBallot();
+  peers_[1]->NextBallot();
+  auto peer2_ballot = peers_[2]->NextBallot();
+
+  auto r = SendHeartbeat(stub1.get(), peer2_ballot, 0, 0);
+  EXPECT_EQ(OK, r.type());
+  EXPECT_FALSE(IsLeader(*peers_[1]));
+  EXPECT_EQ(2, Leader(*peers_[1]));
+
+  EXPECT_TRUE(IsLeader(*peers_[0]));
+  peers_[0]->SendAccepts(peer0_ballot, 1, Command(), 0);
   EXPECT_FALSE(IsLeader(*peers_[0]));
   EXPECT_EQ(2, Leader(*peers_[0]));
 
