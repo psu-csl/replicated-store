@@ -193,8 +193,12 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
 
 struct heartbeat_state_t {
   heartbeat_state_t(int64_t leader, int64_t min_last_executed)
-      : num_rpcs_(0), leader_(leader), min_last_executed_(min_last_executed) {}
+      : num_rpcs_(0),
+        num_oks_(0),
+        leader_(leader),
+        min_last_executed_(min_last_executed) {}
   size_t num_rpcs_;
+  size_t num_oks_;
   int64_t leader_;
   int64_t min_last_executed_ = 0;
   std::mutex mu_;

@@ -177,9 +177,19 @@ int64_t MultiPaxos::SendHeartbeats(int64_t ballot,
       {
         std::scoped_lock lock(state->mu_);
         ++state->num_rpcs_;
-        if (s.ok())
-          if (response.last_executed() < state->min_last_executed_)
-            state->min_last_executed_ = response.last_executed();
+        if (s.ok()) {
+          if (response.type() == OK) {
+            ++state->num_oks_;
+            if (response.last_executed() < state->min_last_executed_)
+              state->min_last_executed_ = response.last_executed();
+          } else {
+            std::scoped_lock lock(mu_);
+            if (response.ballot() >= ballot_) {
+              SetBallot(response.ballot());
+              state->leader_ = Leader(ballot_);
+            }
+          }
+        }
       }
       state->cv_.notify_one();
     });
@@ -188,7 +198,7 @@ int64_t MultiPaxos::SendHeartbeats(int64_t ballot,
     std::unique_lock lock(state->mu_);
     while (state->leader_ == id_ && state->num_rpcs_ != rpc_peers_.size())
       state->cv_.wait(lock);
-    if (state->num_rpcs_ == rpc_peers_.size())
+    if (state->num_oks_ == rpc_peers_.size())
       return state->min_last_executed_;
   }
   return global_last_executed;
@@ -320,8 +330,12 @@ Status MultiPaxos::Heartbeat(ServerContext*,
     SetBallot(request->ballot());
     log_->CommitUntil(request->last_executed(), request->ballot());
     log_->TrimUntil(request->global_last_executed());
+    response->set_last_executed(log_->LastExecuted());
+    response->set_type(OK);
+  } else {
+    response->set_ballot(ballot_);
+    response->set_type(REJECT);
   }
-  response->set_last_executed(log_->LastExecuted());
   return Status::OK;
 }
 
