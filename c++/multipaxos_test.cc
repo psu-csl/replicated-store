@@ -447,6 +447,32 @@ TEST_F(MultiPaxosTest, SendHeartbeats) {
   t2.join();
 }
 
+TEST_F(MultiPaxosTest, SendPrepares) {
+  std::thread t0([this] { peers_[0]->StartRPCServer(); });
+
+  auto ballot = peers_[0]->NextBallot();
+  auto index = logs_[0]->AdvanceLastIndex();
+  auto instance = MakeInstance(ballot, index);
+
+  logs_[0]->Append(instance);
+  logs_[1]->Append(instance);
+  logs_[2]->Append(instance);
+
+  EXPECT_EQ(std::nullopt, peers_[0]->SendPrepares(ballot));
+
+  std::thread t1([this] { peers_[1]->StartRPCServer(); });
+
+  std::this_thread::sleep_for(seconds(2));
+
+  log_map_t expected_log{{index, instance}};
+  EXPECT_EQ(expected_log, *peers_[0]->SendPrepares(ballot));
+
+  peers_[0]->StopRPCServer();
+  peers_[1]->StopRPCServer();
+  t0.join();
+  t1.join();
+}
+
 TEST_F(MultiPaxosTest, OneLeaderElected) {
   std::thread t0([this] { peers_[0]->Start(); });
   std::thread t1([this] { peers_[1]->Start(); });

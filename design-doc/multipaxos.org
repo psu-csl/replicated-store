@@ -541,6 +541,17 @@
       - start peer2 rpc server
       - call send_heartbeats with global_last_executed = 0 and expect 1 as the response
 
+  - send_prepares
+    - ensure that send_prepares works correctly; specifically, it returns null
+      when it hasn't received responses from quorum, and it returns proper log
+      when it has heard from the quorum.
+      - append to peer0, peer1 logs an instance at index 1
+      - start peer0 rpc server
+      - call send_prepares and expect null as the response
+      - start peer1 rpc server
+      - call send_prepares and expect a response with a log containing the
+        instance
+
   - one_leader_elected
     - start peer0, peer1, peer2, wait for 3x of heartbeat interval and then
       check that a single leader is elected.
