@@ -13,46 +13,46 @@ import (
 	"time"
 )
 
-const N = 3
+const NumPeers = 3
 
 var (
-	configs []*config.Config
-	logs    []*log.Log
-	peers   []*Multipaxos
-	stores  []*store.MemKVStore
+	configs = make([]config.Config, NumPeers)
+	logs    = make([]*log.Log, NumPeers)
+	peers   = make([]*Multipaxos, NumPeers)
+	stores  = make([]*store.MemKVStore, NumPeers)
 )
 
 func setupPeers() {
-	logs[0] = log.NewLog()
-	logs[1] = log.NewLog()
-	logs[2] = log.NewLog()
-	peers[0] = NewMultipaxos(config.DefaultConfig(0, N), logs[0])
-	peers[1] = NewMultipaxos(config.DefaultConfig(1, N), logs[1])
-	peers[2] = NewMultipaxos(config.DefaultConfig(2, N), logs[2])
+	for i:= int64(0); i < NumPeers; i++ {
+		configs[i] = config.DefaultConfig(i, NumPeers)
+		logs[i] = log.NewLog()
+		stores[i] = store.NewMemKVStore()
+		peers[i] = NewMultipaxos(configs[i], logs[i])
+	}
 }
 
-func setup() {
+func setupServer() {
 	setupPeers()
 	peers[0].Start()
 	peers[1].Start()
 	peers[2].Start()
 }
 
-func setupOnePeer() {
-	logs[0] = log.NewLog()
-	peers[0] = NewMultipaxos(config.DefaultConfig(0, 1), logs[0])
-	peers[0].StartServer()
+func setupOnePeer(id int64) {
+	configs[id] = config.DefaultConfig(id, NumPeers)
+	logs[id] = log.NewLog()
+	stores[id] = store.NewMemKVStore()
+	peers[id] = NewMultipaxos(configs[id], logs[id])
 }
 
 func tearDown() {
-	peers[0].Stop()
-	peers[1].Stop()
-	peers[2].Stop()
+	for _, peer := range peers {
+		peer.Stop()
+	}
 }
 
 func TestNewMultipaxos(t *testing.T) {
-	logs[0] = log.NewLog()
-	peers[0] = NewMultipaxos(config.DefaultConfig(0, N), logs[0])
+	setupOnePeer(0)
 
 	assert.Equal(t, MaxNumPeers, LeaderByPeer(peers[0]))
 	assert.False(t, IsLeaderByPeer(peers[0]))
@@ -60,8 +60,7 @@ func TestNewMultipaxos(t *testing.T) {
 }
 
 func TestNextBallot(t *testing.T) {
-	logs[2] = log.NewLog()
-	peers[2] = NewMultipaxos(config.DefaultConfig(2, N), logs[0])
+	setupOnePeer(2)
 	id := peers[2].Id()
 	ballot := id
 
@@ -136,7 +135,7 @@ func TestNextBallotAfterHeartbeat(t *testing.T) {
 }
 
 func TestOneLeaderElected(t *testing.T) {
-	setup()
+	setupServer()
 	defer tearDown()
 
 	time.Sleep(1000 * time.Millisecond)
