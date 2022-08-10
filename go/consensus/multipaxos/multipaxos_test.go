@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/psu-csl/replicated-store/go/config"
 	pb "github.com/psu-csl/replicated-store/go/consensus/multipaxos/comm"
+	"github.com/psu-csl/replicated-store/go/consensus/multipaxos/util"
 	"github.com/psu-csl/replicated-store/go/log"
 	"github.com/psu-csl/replicated-store/go/store"
 	"github.com/stretchr/testify/assert"
@@ -93,11 +94,8 @@ func TestRequestsWithLowerBallotIgnored(t *testing.T) {
 	assert.True(t, IsLeaderByPeer(peers[0]))
 
 	index := logs[0].AdvanceLastIndex()
-	instance := pb.Instance{
-		Ballot: staleBallot,
-		Index:  index,
-	}
-	r3 := sendAccept(stub, &instance)
+	instance := util.MakeInstance(staleBallot, index)
+	r3 := sendAccept(stub, instance)
 	assert.EqualValues(t, pb.ResponseType_REJECT, r3.GetType())
 	assert.True(t, IsLeaderByPeer(peers[0]))
 	assert.Nil(t, logs[0].Find(index))
@@ -128,11 +126,8 @@ func TestRequestsWithHigherBallotChangeLeaderToFollower(t *testing.T) {
 	peers[0].NextBallot()
 	assert.True(t, IsLeaderByPeer(peers[0]))
 	index := logs[0].AdvanceLastIndex()
-	instance := pb.Instance{
-		Ballot: peers[1].NextBallot(),
-		Index:  index,
-	}
-	r3 := sendAccept(stub, &instance)
+	instance := util.MakeInstance(peers[1].NextBallot(), index)
+	r3 := sendAccept(stub, instance)
 	assert.EqualValues(t, pb.ResponseType_OK, r3.GetType())
 	assert.False(t, IsLeaderByPeer(peers[0]))
 	assert.EqualValues(t, 1, LeaderByPeer(peers[0]))
