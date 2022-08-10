@@ -35,6 +35,8 @@
 
 ** All
 
+*** avoid sleeps in tests due to TCP connection re-establishment
+
 *** handle gaps due to temporary disconnect
     - Currently, if a peer temporarily disconnects and then reconnects, then it
       will have a gap in its log. it will not be able to execute entries past
