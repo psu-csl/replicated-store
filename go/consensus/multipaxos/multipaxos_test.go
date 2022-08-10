@@ -155,6 +155,109 @@ func TestNextBallotAfterHeartbeat(t *testing.T) {
 	peers[0].Stop()
 }
 
+func TestHeartbeatCommitsAndTrims(t *testing.T) {
+	setupOnePeer(0)
+	peers[0].StartServer()
+	stub := createStub(configs[0].Peers[0])
+
+	ballot := peers[0].NextBallot()
+	index1 := logs[0].AdvanceLastIndex()
+	logs[0].Append(util.MakeInstance(ballot, index1))
+	index2 := logs[0].AdvanceLastIndex()
+	logs[0].Append(util.MakeInstance(ballot, index2))
+	index3 := logs[0].AdvanceLastIndex()
+	logs[0].Append(util.MakeInstance(ballot, index3))
+
+	r1 := sendHeartbeat(stub, ballot, index2, 0)
+	assert.EqualValues(t, pb.ResponseType_OK, r1.GetType())
+	assert.EqualValues(t, 0, r1.LastExecuted)
+	assert.True(t, log.IsCommitted(logs[0].Find(index1)))
+	assert.True(t, log.IsCommitted(logs[0].Find(index2)))
+	assert.True(t, log.IsInProgress(logs[0].Find(index3)))
+
+	logs[0].Execute(stores[0])
+	logs[0].Execute(stores[0])
+
+	r2 := sendHeartbeat(stub, ballot, index2, index2)
+	assert.EqualValues(t, pb.ResponseType_OK, r2.GetType())
+	assert.EqualValues(t, index2, r2.LastExecuted)
+	assert.Nil(t, logs[0].Find(index1))
+	assert.Nil(t, logs[0].Find(index2))
+	assert.True(t, log.IsInProgress(logs[0].Find(index3)))
+
+	peers[0].Stop()
+}
+
+func TestPrepareRespondsWithCorrectInstances(t *testing.T) {
+	setupOnePeer(0)
+	peers[0].StartServer()
+	stub := createStub(configs[0].Peers[0])
+
+	ballot := peers[0].NextBallot()
+	index1 := logs[0].AdvanceLastIndex()
+	instance1 := util.MakeInstance(ballot, index1)
+	logs[0].Append(instance1)
+	index2 := logs[0].AdvanceLastIndex()
+	instance2 := util.MakeInstance(ballot, index2)
+	logs[0].Append(instance2)
+	index3 := logs[0].AdvanceLastIndex()
+	instance3 := util.MakeInstance(ballot, index3)
+	logs[0].Append(instance3)
+
+	r1 := sendPrepare(stub, ballot)
+	assert.EqualValues(t, pb.ResponseType_OK, r1.GetType())
+	assert.EqualValues(t, 3, len(r1.GetLogs()))
+	assert.True(t, log.IsEqualInstance(instance1, r1.GetLogs()[0]))
+	assert.True(t, log.IsEqualInstance(instance2, r1.GetLogs()[1]))
+	assert.True(t, log.IsEqualInstance(instance3, r1.GetLogs()[2]))
+
+	r2 := sendHeartbeat(stub, ballot, index2, 0)
+	assert.EqualValues(t, pb.ResponseType_OK, r2.GetType())
+	logs[0].Execute(stores[0])
+	logs[0].Execute(stores[0])
+
+	r3 := sendPrepare(stub, ballot)
+	assert.EqualValues(t, pb.ResponseType_OK, r3.GetType())
+	assert.EqualValues(t, 3, len(r3.GetLogs()))
+	assert.True(t, log.IsExecuted(r3.GetLogs()[0]))
+	assert.True(t, log.IsExecuted(r3.GetLogs()[1]))
+	assert.True(t, log.IsEqualInstance(instance3, r1.GetLogs()[2]))
+
+	r4 := sendHeartbeat(stub, ballot, index2, 2)
+	assert.EqualValues(t, pb.ResponseType_OK, r4.GetType())
+
+	r5 := sendPrepare(stub, ballot)
+	assert.EqualValues(t, pb.ResponseType_OK, r5.GetType())
+	assert.EqualValues(t, 1, len(r5.GetLogs()))
+	assert.True(t, log.IsEqualInstance(instance3, r5.GetLogs()[0]))
+
+	peers[0].Stop()
+}
+
+func TestAcceptAppendsToLog(t *testing.T) {
+	setupOnePeer(0)
+	peers[0].StartServer()
+	stub := createStub(configs[0].Peers[0])
+
+	ballot := peers[0].NextBallot()
+	index1 := logs[0].AdvanceLastIndex()
+	instance1 := util.MakeInstance(ballot, index1)
+	index2 := logs[0].AdvanceLastIndex()
+	instance2 := util.MakeInstance(ballot, index2)
+
+	r1 := sendAccept(stub, instance1)
+	assert.EqualValues(t, pb.ResponseType_OK, r1.GetType())
+	assert.True(t, log.IsEqualInstance(instance1, logs[0].Find(index1)))
+	assert.Nil(t, logs[0].Find(index2))
+
+	r2 := sendAccept(stub, instance2)
+	assert.EqualValues(t, pb.ResponseType_OK, r2.GetType())
+	assert.True(t, log.IsEqualInstance(instance1, logs[0].Find(index1)))
+	assert.True(t, log.IsEqualInstance(instance2, logs[0].Find(index2)))
+
+	peers[0].Stop()
+}
+
 func TestOneLeaderElected(t *testing.T) {
 	setupServer()
 	defer tearDown()
