@@ -349,13 +349,19 @@ func (p *Multipaxos) Heartbeat(ctx context.Context,
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
+	response := &pb.HeartbeatResponse{}
 	if request.GetBallot() >= p.ballot {
 		atomic.StoreInt64(&p.lastHeartbeat, time.Now().UnixNano() / 1e6)
 		p.setBallot(request.GetBallot())
 		p.log.CommitUntil(request.GetLastExecuted(), request.GetBallot())
 		p.log.TrimUntil(request.GetGlobalLastExecuted())
+		response.LastExecuted = p.log.LastExecuted()
+		response.Type = pb.ResponseType_OK
+	} else {
+		response.Ballot = p.ballot
+		response.Type = pb.ResponseType_REJECT
 	}
-	return &pb.HeartbeatResponse{LastExecuted: p.log.LastExecuted()}, nil
+	return response, nil
 }
 
 func (p *Multipaxos) Prepare(ctx context.Context,

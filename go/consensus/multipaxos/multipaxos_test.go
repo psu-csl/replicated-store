@@ -74,40 +74,66 @@ func TestNextBallot(t *testing.T) {
 	assert.Equal(t, id, LeaderByPeer(peers[2]))
 }
 
-func TestHeartbeatIgnoreStaleRPC(t *testing.T) {
-	setupPeers()
+func TestRequestsWithLowerBallotIgnored(t *testing.T) {
+	setupOnePeer(0)
+	setupOnePeer(1)
 	peers[0].StartServer()
-	stub := createStub()
+	stub := createStub(configs[0].Peers[0])
 
 	peers[0].NextBallot()
 	peers[0].NextBallot()
+	staleBallot := peers[1].NextBallot()
 
-	ctx := context.Background()
-	request := pb.HeartbeatRequest{
-		Ballot: peers[1].NextBallot(),
-	}
-	_, err := stub.Heartbeat(ctx, &request)
-
-	assert.Nil(t, err)
+	r1 := sendHeartbeat(stub, staleBallot, 0, 0)
+	assert.EqualValues(t, pb.ResponseType_REJECT, r1.GetType())
 	assert.True(t, IsLeaderByPeer(peers[0]))
+
+	r2 := sendPrepare(stub, staleBallot)
+	assert.EqualValues(t, pb.ResponseType_REJECT, r2.GetType())
+	assert.True(t, IsLeaderByPeer(peers[0]))
+
+	index := logs[0].AdvanceLastIndex()
+	instance := pb.Instance{
+		Ballot: staleBallot,
+		Index:  index,
+	}
+	r3 := sendAccept(stub, &instance)
+	assert.EqualValues(t, pb.ResponseType_REJECT, r3.GetType())
+	assert.True(t, IsLeaderByPeer(peers[0]))
+	assert.Nil(t, logs[0].Find(index))
 
 	peers[0].Stop()
 }
 
-func TestHeartbeatChangesLeaderToFollower(t *testing.T) {
-	setupPeers()
+func TestRequestsWithHigherBallotChangeLeaderToFollower(t *testing.T) {
+	setupOnePeer(0)
+	setupOnePeer(1)
 	peers[0].StartServer()
-	stub := createStub()
+	stub := createStub(configs[0].Peers[0])
 
 	peers[0].NextBallot()
+	assert.True(t, IsLeaderByPeer(peers[0]))
+	r1 := sendHeartbeat(stub, peers[1].NextBallot(), 0, 0)
+	assert.EqualValues(t, pb.ResponseType_OK, r1.GetType())
+	assert.False(t, IsLeaderByPeer(peers[0]))
+	assert.EqualValues(t, 1, LeaderByPeer(peers[0]))
 
-	ctx := context.Background()
-	request := pb.HeartbeatRequest{
+	peers[0].NextBallot()
+	assert.True(t, IsLeaderByPeer(peers[0]))
+	r2 := sendPrepare(stub, peers[1].NextBallot())
+	assert.EqualValues(t, pb.ResponseType_OK, r2.GetType())
+	assert.False(t, IsLeaderByPeer(peers[0]))
+	assert.EqualValues(t, 1, LeaderByPeer(peers[0]))
+
+	peers[0].NextBallot()
+	assert.True(t, IsLeaderByPeer(peers[0]))
+	index := logs[0].AdvanceLastIndex()
+	instance := pb.Instance{
 		Ballot: peers[1].NextBallot(),
+		Index:  index,
 	}
-	_, err := stub.Heartbeat(ctx, &request)
-
-	assert.Nil(t, err)
+	r3 := sendAccept(stub, &instance)
+	assert.EqualValues(t, pb.ResponseType_OK, r3.GetType())
 	assert.False(t, IsLeaderByPeer(peers[0]))
 	assert.EqualValues(t, 1, LeaderByPeer(peers[0]))
 
@@ -117,7 +143,7 @@ func TestHeartbeatChangesLeaderToFollower(t *testing.T) {
 func TestNextBallotAfterHeartbeat(t *testing.T) {
 	setupPeers()
 	peers[0].StartServer()
-	stub := createStub()
+	stub := createStub(configs[0].Peers[0])
 	ballot := peers[0].Id()
 
 	ctx := context.Background()
@@ -168,8 +194,8 @@ func TestReplicateWithLeader(t *testing.T) {
 	peers[0].Stop()
 }
 
-func createStub() pb.MultiPaxosRPCClient {
-	conn, err := grpc.Dial(":3000", grpc.WithTransportCredentials(insecure.
+func createStub(target string) pb.MultiPaxosRPCClient {
+	conn, err := grpc.Dial(target, grpc.WithTransportCredentials(insecure.
 		NewCredentials()))
 	if err != nil {
 		panic("dial error")
