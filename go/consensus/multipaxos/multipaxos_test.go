@@ -467,9 +467,9 @@ func TestSendAccepts(t *testing.T) {
 
 	ballot := peers[0].NextBallot()
 	index1 := logs[0].AdvanceLastIndex()
-	instance1 := util.MakeInstance(ballot, index1)
+	instance1 := util.MakeInstanceWithType(ballot, index1, pb.CommandType_PUT)
 
-	r1 := peers[0].SendAccepts(ballot, index1, &pb.Command{}, 0)
+	r1 := peers[0].SendAccepts(ballot, index1, &pb.Command{Type: pb.CommandType_PUT}, 0)
 	assert.EqualValues(t, Retry, r1.Type)
 	assert.True(t, log.IsInProgress(logs[0].Find(index1)))
 	assert.Nil(t, logs[1].Find(index1))
@@ -477,7 +477,7 @@ func TestSendAccepts(t *testing.T) {
 
 	peers[1].StartServer()
 	peers[0].Connect()
-	r2 := peers[0].SendAccepts(ballot, index1, &pb.Command{}, 0)
+	r2 := peers[0].SendAccepts(ballot, index1, &pb.Command{Type: pb.CommandType_PUT}, 0)
 	assert.EqualValues(t, Ok, r2.Type)
 	assert.True(t, log.IsCommitted(logs[0].Find(index1)))
 	assert.True(t, log.IsEqualInstance(instance1, logs[1].Find(index1)))
@@ -486,8 +486,8 @@ func TestSendAccepts(t *testing.T) {
 	peers[2].StartServer()
 	peers[0].Connect()
 	index2 := logs[0].AdvanceLastIndex()
-	instance2 := util.MakeInstance(ballot, index2)
-	r3 := peers[0].SendAccepts(ballot, index2, &pb.Command{}, 0)
+	instance2 := util.MakeInstanceWithType(ballot, index2, pb.CommandType_DEL)
+	r3 := peers[0].SendAccepts(ballot, index2, &pb.Command{Type: pb.CommandType_DEL}, 0)
 	time.Sleep(100 * time.Millisecond)
 	assert.EqualValues(t, Ok, r3.Type)
 	assert.True(t, log.IsCommitted(logs[0].Find(index2)))
@@ -495,24 +495,40 @@ func TestSendAccepts(t *testing.T) {
 	assert.True(t, log.IsEqualInstance(instance2, logs[2].Find(index2)))
 }
 
-func TestOneLeaderElected(t *testing.T) {
-	setupServer()
-	defer tearDown()
-
-	time.Sleep(1000 * time.Millisecond)
-	assert.True(t, oneLeader())
-}
-
 func TestReplicateRetry(t *testing.T) {
 	setupPeers()
 
-	result := peers[0].Replicate(&pb.Command{Type: pb.CommandType_GET}, 0)
-	assert.Equal(t, Retry, result.Type)
-	assert.Equal(t, NoLeader, result.Leader)
+	r1 := peers[0].Replicate(&pb.Command{}, 0)
+	assert.Equal(t, Retry, r1.Type)
+	assert.Equal(t, NoLeader, r1.Leader)
+
+	peers[0].NextBallot()
+	r2 := peers[0].Replicate(&pb.Command{}, 0)
+	assert.Equal(t, Retry, r2.Type)
+	assert.Equal(t, NoLeader, r2.Leader)
 }
 
-func TestReplicateWithLeader(t *testing.T) {
+func TestReplicateSomeOneElseLeader(t *testing.T) {
 	setupPeers()
+	peers[0].StartServer()
+	peers[1].StartServer()
+	defer peers[0].Stop()
+	defer peers[1].Stop()
+	stub := makeStub(configs[0].Peers[0])
+
+	ballot := peers[1].NextBallot()
+	r1 := sendHeartbeat(stub, ballot, 0, 0)
+	assert.EqualValues(t, pb.ResponseType_OK, r1.GetType())
+	assert.EqualValues(t, 1, LeaderByPeer(peers[0]))
+
+	r2 := peers[0].Replicate(&pb.Command{}, 0)
+	assert.EqualValues(t, SomeElseLeader, r2.Type)
+	assert.EqualValues(t, 1, r2.Leader)
+}
+
+func TestReplicateReady(t *testing.T) {
+	setupPeers()
+	defer tearDown()
 
 	peers[1].StartServer()
 	peers[2].StartServer()
@@ -521,12 +537,14 @@ func TestReplicateWithLeader(t *testing.T) {
 	result := peers[0].Replicate(&pb.Command{Type: pb.CommandType_PUT}, 0)
 	assert.Equal(t, Ok, result.Type)
 	assert.Equal(t, int64(0), result.Leader)
+}
 
-	result = peers[1].Replicate(&pb.Command{Type: pb.CommandType_DEL}, 0)
-	assert.Equal(t, SomeElseLeader, result.Type)
-	assert.Equal(t, int64(0), result.Leader)
+func TestOneLeaderElected(t *testing.T) {
+	setupServer()
+	defer tearDown()
 
-	peers[0].Stop()
+	time.Sleep(1000 * time.Millisecond)
+	assert.True(t, oneLeader())
 }
 
 func makeStub(target string) pb.MultiPaxosRPCClient {

@@ -37,10 +37,10 @@ func TestInsert(t *testing.T) {
 		index int64 = 1
 		ballot int64 = 1
 	)
-	assert.True(t, Insert(instanceLog, util.MakeInstanceWithIndexAndType(ballot, index,
+	assert.True(t, Insert(instanceLog, util.MakeInstanceWithType(ballot, index,
 		pb.CommandType_PUT)))
 	assert.Equal(t, pb.CommandType_PUT, instanceLog[index].GetCommand().GetType())
-	assert.False(t, Insert(instanceLog, util.MakeInstanceWithIndexAndType(ballot, index,
+	assert.False(t, Insert(instanceLog, util.MakeInstanceWithType(ballot, index,
 		pb.CommandType_PUT)))
 }
 
@@ -51,10 +51,10 @@ func TestInsertUpdateInProgress(t *testing.T) {
 		loBallot   int64 = 1
 		highBallot int64 = 2
 	)
-	assert.True(t, Insert(instanceLog, util.MakeInstanceWithIndexAndType(loBallot,
+	assert.True(t, Insert(instanceLog, util.MakeInstanceWithType(loBallot,
 		index, pb.CommandType_PUT)))
 	assert.Equal(t, pb.CommandType_PUT, instanceLog[index].GetCommand().GetType())
-	assert.False(t, Insert(instanceLog, util.MakeInstanceWithIndexAndType(highBallot,
+	assert.False(t, Insert(instanceLog, util.MakeInstanceWithType(highBallot,
 		index, pb.CommandType_DEL)))
 	assert.Equal(t, pb.CommandType_DEL, instanceLog[index].GetCommand().GetType())
 }
@@ -78,10 +78,10 @@ func TestInsertStale(t *testing.T) {
 		loBallot   int64 = 1
 		highBallot int64 = 2
 	)
-	assert.True(t, Insert(instanceLog, util.MakeInstanceWithIndexAndType(highBallot,
+	assert.True(t, Insert(instanceLog, util.MakeInstanceWithType(highBallot,
 		index, pb.CommandType_PUT)))
 	assert.Equal(t, pb.CommandType_PUT, instanceLog[index].GetCommand().GetType())
-	assert.False(t, Insert(instanceLog, util.MakeInstanceWithIndexAndType(loBallot,
+	assert.False(t, Insert(instanceLog, util.MakeInstanceWithType(loBallot,
 		index, pb.CommandType_DEL)))
 	assert.Equal(t, pb.CommandType_PUT, instanceLog[index].GetCommand().GetType())
 }
@@ -159,8 +159,8 @@ func TestAppendHighBallotOverride(t *testing.T) {
 		loBallot int64 = 0
 		hiBallot int64 = 1
 	)
-	log1.Append(util.MakeInstanceWithIndexAndType(loBallot, index, pb.CommandType_PUT))
-	log1.Append(util.MakeInstanceWithIndexAndType(hiBallot, index, pb.CommandType_DEL))
+	log1.Append(util.MakeInstanceWithType(loBallot, index, pb.CommandType_PUT))
+	log1.Append(util.MakeInstanceWithType(hiBallot, index, pb.CommandType_DEL))
 	assert.Equal(t, pb.CommandType_DEL, log1.log[index].GetCommand().Type)
 }
 
@@ -172,8 +172,8 @@ func TestAppendLowBallotNoEffect(t *testing.T)  {
 		loBallot int64 = 0
 		hiBallot int64 = 1
 	)
-	log1.Append(util.MakeInstanceWithIndexAndType(hiBallot, index, pb.CommandType_PUT))
-	log1.Append(util.MakeInstanceWithIndexAndType(loBallot, index, pb.CommandType_DEL))
+	log1.Append(util.MakeInstanceWithType(hiBallot, index, pb.CommandType_PUT))
+	log1.Append(util.MakeInstanceWithType(loBallot, index, pb.CommandType_DEL))
 	assert.Equal(t, pb.CommandType_PUT, log1.log[index].GetCommand().Type)
 }
 
