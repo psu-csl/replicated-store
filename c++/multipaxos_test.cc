@@ -390,13 +390,15 @@ TEST_F(MultiPaxosTest, AcceptResponseWithHighBallotChangesLeaderToFollower) {
   peers_[1]->NextBallot();
   auto peer2_ballot = peers_[2]->NextBallot();
 
-  auto r = SendCommit(stub1.get(), peer2_ballot, 0, 0);
-  EXPECT_EQ(OK, r.type());
+  auto commit_result = SendCommit(stub1.get(), peer2_ballot, 0, 0);
+  EXPECT_EQ(OK, commit_result.type());
   EXPECT_FALSE(IsLeader(*peers_[1]));
   EXPECT_EQ(2, Leader(*peers_[1]));
 
   EXPECT_TRUE(IsLeader(*peers_[0]));
-  peers_[0]->RunAcceptPhase(peer0_ballot, 1, Command(), 0);
+  auto accept_result = peers_[0]->RunAcceptPhase(peer0_ballot, 1, Command(), 0);
+  EXPECT_EQ(ResultType::kSomeoneElseLeader, accept_result.type_);
+  EXPECT_EQ(2, *accept_result.leader_);
   EXPECT_FALSE(IsLeader(*peers_[0]));
   EXPECT_EQ(2, Leader(*peers_[0]));
 
