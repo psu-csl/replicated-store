@@ -192,13 +192,6 @@ TEST_F(MultiPaxosTest, RequestsWithHigherBallotChangeLeaderToFollower) {
 
   peers_[0]->NextBallot();
   EXPECT_TRUE(IsLeader(*peers_[0]));
-  auto r1 = SendCommit(stub.get(), peers_[1]->NextBallot(), 0, 0);
-  EXPECT_EQ(OK, r1.type());
-  EXPECT_FALSE(IsLeader(*peers_[0]));
-  EXPECT_EQ(1, Leader(*peers_[0]));
-
-  peers_[0]->NextBallot();
-  EXPECT_TRUE(IsLeader(*peers_[0]));
   auto r2 = SendPrepare(stub.get(), peers_[1]->NextBallot());
   EXPECT_EQ(OK, r2.type());
   EXPECT_FALSE(IsLeader(*peers_[0]));
@@ -210,6 +203,13 @@ TEST_F(MultiPaxosTest, RequestsWithHigherBallotChangeLeaderToFollower) {
   auto instance = MakeInstance(peers_[1]->NextBallot(), index);
   auto r3 = SendAccept(stub.get(), instance);
   EXPECT_EQ(OK, r3.type());
+  EXPECT_FALSE(IsLeader(*peers_[0]));
+  EXPECT_EQ(1, Leader(*peers_[0]));
+
+  peers_[0]->NextBallot();
+  EXPECT_TRUE(IsLeader(*peers_[0]));
+  auto r1 = SendCommit(stub.get(), peers_[1]->NextBallot(), 0, 0);
+  EXPECT_EQ(OK, r1.type());
   EXPECT_FALSE(IsLeader(*peers_[0]));
   EXPECT_EQ(1, Leader(*peers_[0]));
 
