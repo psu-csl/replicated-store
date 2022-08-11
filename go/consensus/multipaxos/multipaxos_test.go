@@ -383,6 +383,82 @@ func TestSendHeartbeatsWithDifferentProgress(t *testing.T) {
 	assert.EqualValues(t, numInstances, gle2)
 }
 
+func TestSendPreparesMajority(t *testing.T) {
+	setupPeers()
+	peers[0].StartServer()
+	defer peers[0].Stop()
+
+	expect := make(map[int64]*pb.Instance)
+	ballot := peers[0].NextBallot()
+	index := logs[0].AdvanceLastIndex()
+	for i, log := range logs {
+		instance := util.MakeInstance(ballot, index)
+		expect[index] = instance
+		log.Append(instance)
+		log.Commit(index)
+		log.Execute(stores[i])
+	}
+	assert.Nil(t, peers[0].SendPrepares(ballot))
+
+	peers[1].StartServer()
+	defer peers[1].Stop()
+	time.Sleep(2 * time.Second)
+
+	logMap := peers[0].SendPrepares(ballot)
+	assert.Equal(t, len(expect), len(logMap))
+	for index, instance := range expect {
+		assert.True(t, log.IsEqualInstance(instance, logMap[index]))
+	}
+}
+
+func TestSendPreparesWithMerge(t *testing.T) {
+	setupPeers()
+	defer tearDown()
+	peers[0].StartServer()
+	peers[1].StartServer()
+	peers[0].Connect()
+
+	//Instances in log_0
+	ballot0 := peers[0].NextBallot()
+	index1 := logs[0].AdvanceLastIndex()
+	index2 := logs[0].AdvanceLastIndex()
+	peer0I2 := util.MakeInstance(ballot0, index2)
+	logs[0].Append(peer0I2)
+
+	//Instance in log_1
+	ballot1 := peers[1].NextBallot()
+	peer1I1 := util.MakeInstance(ballot1, logs[1].AdvanceLastIndex())
+	peer1I2 := util.MakeInstance(ballot1, logs[1].AdvanceLastIndex())
+	logs[1].Append(peer1I1)
+	logs[1].Commit(index1)
+	logs[1].Append(peer1I2)
+
+	leaderBallot := peers[0].NextBallot()
+	logMap := peers[0].SendPrepares(leaderBallot)
+	assert.EqualValues(t, 2, len(logMap))
+	assert.EqualValues(t, ballot1, logMap[index1].GetBallot())
+	assert.True(t, log.IsCommitted(logMap[index1]))
+	assert.EqualValues(t, ballot1, logMap[index2].GetBallot())
+	assert.True(t, log.IsInProgress(logMap[index2]))
+
+	peers[2].StartServer()
+	peers[0].Connect()
+
+	// Instances in log_2
+	ballot2 := peers[2].NextBallot()
+	peer2I1 := util.MakeInstance(ballot2, logs[2].AdvanceLastIndex())
+	peer2I2 := util.MakeInstance(ballot1, logs[2].AdvanceLastIndex())
+	logs[2].Append(peer2I1)
+	logs[2].Append(peer2I2)
+
+	logMap = peers[0].SendPrepares(leaderBallot)
+	assert.EqualValues(t, 2, len(logMap))
+	assert.EqualValues(t, ballot1, logMap[index1].GetBallot())
+	assert.True(t, log.IsCommitted(logMap[index1]))
+	assert.EqualValues(t, ballot1, logMap[index2].GetBallot())
+	assert.True(t, log.IsInProgress(logMap[index2]))
+}
+
 func TestOneLeaderElected(t *testing.T) {
 	setupServer()
 	defer tearDown()
