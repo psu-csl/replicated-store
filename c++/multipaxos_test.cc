@@ -167,20 +167,20 @@ TEST_F(MultiPaxosTest, RequestsWithLowerBallotIgnored) {
   peers_[0]->NextBallot();
   auto stale_ballot = peers_[1]->NextBallot();
 
-  auto r1 = SendCommit(stub.get(), stale_ballot, 0, 0);
+  auto r1 = SendPrepare(stub.get(), stale_ballot);
   EXPECT_EQ(REJECT, r1.type());
-  EXPECT_TRUE(IsLeader(*peers_[0]));
-
-  auto r2 = SendPrepare(stub.get(), stale_ballot);
-  EXPECT_EQ(REJECT, r2.type());
   EXPECT_TRUE(IsLeader(*peers_[0]));
 
   auto index = logs_[0]->AdvanceLastIndex();
   auto instance = MakeInstance(stale_ballot, index);
-  auto r3 = SendAccept(stub.get(), instance);
-  EXPECT_EQ(REJECT, r3.type());
+  auto r2 = SendAccept(stub.get(), instance);
+  EXPECT_EQ(REJECT, r2.type());
   EXPECT_TRUE(IsLeader(*peers_[0]));
   EXPECT_EQ(nullptr, (*logs_[0])[index]);
+
+  auto r3 = SendCommit(stub.get(), stale_ballot, 0, 0);
+  EXPECT_EQ(REJECT, r3.type());
+  EXPECT_TRUE(IsLeader(*peers_[0]));
 
   peers_[0]->StopRPCServer();
   t.join();
@@ -192,8 +192,8 @@ TEST_F(MultiPaxosTest, RequestsWithHigherBallotChangeLeaderToFollower) {
 
   peers_[0]->NextBallot();
   EXPECT_TRUE(IsLeader(*peers_[0]));
-  auto r2 = SendPrepare(stub.get(), peers_[1]->NextBallot());
-  EXPECT_EQ(OK, r2.type());
+  auto r1 = SendPrepare(stub.get(), peers_[1]->NextBallot());
+  EXPECT_EQ(OK, r1.type());
   EXPECT_FALSE(IsLeader(*peers_[0]));
   EXPECT_EQ(1, Leader(*peers_[0]));
 
@@ -201,50 +201,17 @@ TEST_F(MultiPaxosTest, RequestsWithHigherBallotChangeLeaderToFollower) {
   EXPECT_TRUE(IsLeader(*peers_[0]));
   auto index = logs_[0]->AdvanceLastIndex();
   auto instance = MakeInstance(peers_[1]->NextBallot(), index);
-  auto r3 = SendAccept(stub.get(), instance);
-  EXPECT_EQ(OK, r3.type());
+  auto r2 = SendAccept(stub.get(), instance);
+  EXPECT_EQ(OK, r2.type());
   EXPECT_FALSE(IsLeader(*peers_[0]));
   EXPECT_EQ(1, Leader(*peers_[0]));
 
   peers_[0]->NextBallot();
   EXPECT_TRUE(IsLeader(*peers_[0]));
-  auto r1 = SendCommit(stub.get(), peers_[1]->NextBallot(), 0, 0);
-  EXPECT_EQ(OK, r1.type());
+  auto r3 = SendCommit(stub.get(), peers_[1]->NextBallot(), 0, 0);
+  EXPECT_EQ(OK, r3.type());
   EXPECT_FALSE(IsLeader(*peers_[0]));
   EXPECT_EQ(1, Leader(*peers_[0]));
-
-  peers_[0]->StopRPCServer();
-  t.join();
-}
-
-TEST_F(MultiPaxosTest, CommitCommitsAndTrims) {
-  std::thread t([this] { peers_[0]->StartRPCServer(); });
-  auto stub = MakeStub(configs_[0]["peers"][0]);
-
-  auto ballot = peers_[0]->NextBallot();
-  auto index1 = logs_[0]->AdvanceLastIndex();
-  logs_[0]->Append(MakeInstance(ballot, index1));
-  auto index2 = logs_[0]->AdvanceLastIndex();
-  logs_[0]->Append(MakeInstance(ballot, index2));
-  auto index3 = logs_[0]->AdvanceLastIndex();
-  logs_[0]->Append(MakeInstance(ballot, index3));
-
-  auto r1 = SendCommit(stub.get(), ballot, index2, 0);
-  EXPECT_EQ(OK, r1.type());
-  EXPECT_EQ(0, r1.last_executed());
-  EXPECT_TRUE(IsCommitted(*(*logs_[0])[index1]));
-  EXPECT_TRUE(IsCommitted(*(*logs_[0])[index2]));
-  EXPECT_TRUE(IsInProgress(*(*logs_[0])[index3]));
-
-  logs_[0]->Execute(stores_[0].get());
-  logs_[0]->Execute(stores_[0].get());
-
-  auto r2 = SendCommit(stub.get(), ballot, index2, index2);
-  EXPECT_EQ(OK, r2.type());
-  EXPECT_EQ(index2, r2.last_executed());
-  EXPECT_EQ(nullptr, (*logs_[0])[index1]);
-  EXPECT_EQ(nullptr, (*logs_[0])[index2]);
-  EXPECT_TRUE(IsInProgress(*(*logs_[0])[index3]));
 
   peers_[0]->StopRPCServer();
   t.join();
@@ -324,32 +291,37 @@ TEST_F(MultiPaxosTest, AcceptAppendsToLog) {
   t.join();
 }
 
-TEST_F(MultiPaxosTest, CommitResponseWithHighBallotChangesLeaderToFollower) {
-  std::thread t0([this] { peers_[0]->StartRPCServer(); });
-  std::thread t1([this] { peers_[1]->StartRPCServer(); });
-  std::thread t2([this] { peers_[2]->StartRPCServer(); });
-  auto stub1 = MakeStub(configs_[0]["peers"][1]);
+TEST_F(MultiPaxosTest, CommitCommitsAndTrims) {
+  std::thread t([this] { peers_[0]->StartRPCServer(); });
+  auto stub = MakeStub(configs_[0]["peers"][0]);
 
-  auto peer0_ballot = peers_[0]->NextBallot();
-  peers_[1]->NextBallot();
-  auto peer2_ballot = peers_[2]->NextBallot();
+  auto ballot = peers_[0]->NextBallot();
+  auto index1 = logs_[0]->AdvanceLastIndex();
+  logs_[0]->Append(MakeInstance(ballot, index1));
+  auto index2 = logs_[0]->AdvanceLastIndex();
+  logs_[0]->Append(MakeInstance(ballot, index2));
+  auto index3 = logs_[0]->AdvanceLastIndex();
+  logs_[0]->Append(MakeInstance(ballot, index3));
 
-  auto r = SendCommit(stub1.get(), peer2_ballot, 0, 0);
-  EXPECT_EQ(OK, r.type());
-  EXPECT_FALSE(IsLeader(*peers_[1]));
-  EXPECT_EQ(2, Leader(*peers_[1]));
+  auto r1 = SendCommit(stub.get(), ballot, index2, 0);
+  EXPECT_EQ(OK, r1.type());
+  EXPECT_EQ(0, r1.last_executed());
+  EXPECT_TRUE(IsCommitted(*(*logs_[0])[index1]));
+  EXPECT_TRUE(IsCommitted(*(*logs_[0])[index2]));
+  EXPECT_TRUE(IsInProgress(*(*logs_[0])[index3]));
 
-  EXPECT_TRUE(IsLeader(*peers_[0]));
-  peers_[0]->RunCommitPhase(peer0_ballot, 0);
-  EXPECT_FALSE(IsLeader(*peers_[0]));
-  EXPECT_EQ(2, Leader(*peers_[0]));
+  logs_[0]->Execute(stores_[0].get());
+  logs_[0]->Execute(stores_[0].get());
+
+  auto r2 = SendCommit(stub.get(), ballot, index2, index2);
+  EXPECT_EQ(OK, r2.type());
+  EXPECT_EQ(index2, r2.last_executed());
+  EXPECT_EQ(nullptr, (*logs_[0])[index1]);
+  EXPECT_EQ(nullptr, (*logs_[0])[index2]);
+  EXPECT_TRUE(IsInProgress(*(*logs_[0])[index3]));
 
   peers_[0]->StopRPCServer();
-  peers_[1]->StopRPCServer();
-  peers_[2]->StopRPCServer();
-  t0.join();
-  t1.join();
-  t2.join();
+  t.join();
 }
 
 TEST_F(MultiPaxosTest, PrepareResponseWithHighBallotChangesLeaderToFollower) {
@@ -410,37 +382,25 @@ TEST_F(MultiPaxosTest, AcceptResponseWithHighBallotChangesLeaderToFollower) {
   t2.join();
 }
 
-TEST_F(MultiPaxosTest, RunCommitPhase) {
+TEST_F(MultiPaxosTest, CommitResponseWithHighBallotChangesLeaderToFollower) {
   std::thread t0([this] { peers_[0]->StartRPCServer(); });
   std::thread t1([this] { peers_[1]->StartRPCServer(); });
-
-  auto ballot = peers_[0]->NextBallot();
-
-  for (size_t index = 1; index <= 3; ++index) {
-    for (size_t peer = 0; peer < kNumPeers; ++peer) {
-      if (index == 3 && peer == 2)
-        continue;
-      logs_[peer]->Append(MakeInstance(ballot, index, COMMITTED));
-      logs_[peer]->Execute(stores_[peer].get());
-    }
-  }
-
-  auto gle = peers_[0]->RunCommitPhase(ballot, 0);
-  EXPECT_EQ(0, gle);
-
   std::thread t2([this] { peers_[2]->StartRPCServer(); });
+  auto stub1 = MakeStub(configs_[0]["peers"][1]);
 
-  logs_[2]->Append(MakeInstance(ballot, 3));
+  auto peer0_ballot = peers_[0]->NextBallot();
+  peers_[1]->NextBallot();
+  auto peer2_ballot = peers_[2]->NextBallot();
 
-  std::this_thread::sleep_for(seconds(2));
+  auto r = SendCommit(stub1.get(), peer2_ballot, 0, 0);
+  EXPECT_EQ(OK, r.type());
+  EXPECT_FALSE(IsLeader(*peers_[1]));
+  EXPECT_EQ(2, Leader(*peers_[1]));
 
-  gle = peers_[0]->RunCommitPhase(ballot, gle);
-  EXPECT_EQ(2, gle);
-
-  logs_[2]->Execute(stores_[2].get());
-
-  gle = peers_[0]->RunCommitPhase(ballot, gle);
-  EXPECT_EQ(3, gle);
+  EXPECT_TRUE(IsLeader(*peers_[0]));
+  peers_[0]->RunCommitPhase(peer0_ballot, 0);
+  EXPECT_FALSE(IsLeader(*peers_[0]));
+  EXPECT_EQ(2, Leader(*peers_[0]));
 
   peers_[0]->StopRPCServer();
   peers_[1]->StopRPCServer();
@@ -508,6 +468,46 @@ TEST_F(MultiPaxosTest, RunAcceptPhase) {
   peers_[1]->StopRPCServer();
   t0.join();
   t1.join();
+}
+
+TEST_F(MultiPaxosTest, RunCommitPhase) {
+  std::thread t0([this] { peers_[0]->StartRPCServer(); });
+  std::thread t1([this] { peers_[1]->StartRPCServer(); });
+
+  auto ballot = peers_[0]->NextBallot();
+
+  for (size_t index = 1; index <= 3; ++index) {
+    for (size_t peer = 0; peer < kNumPeers; ++peer) {
+      if (index == 3 && peer == 2)
+        continue;
+      logs_[peer]->Append(MakeInstance(ballot, index, COMMITTED));
+      logs_[peer]->Execute(stores_[peer].get());
+    }
+  }
+
+  auto gle = peers_[0]->RunCommitPhase(ballot, 0);
+  EXPECT_EQ(0, gle);
+
+  std::thread t2([this] { peers_[2]->StartRPCServer(); });
+
+  logs_[2]->Append(MakeInstance(ballot, 3));
+
+  std::this_thread::sleep_for(seconds(2));
+
+  gle = peers_[0]->RunCommitPhase(ballot, gle);
+  EXPECT_EQ(2, gle);
+
+  logs_[2]->Execute(stores_[2].get());
+
+  gle = peers_[0]->RunCommitPhase(ballot, gle);
+  EXPECT_EQ(3, gle);
+
+  peers_[0]->StopRPCServer();
+  peers_[1]->StopRPCServer();
+  peers_[2]->StopRPCServer();
+  t0.join();
+  t1.join();
+  t2.join();
 }
 
 TEST_F(MultiPaxosTest, OneLeaderElected) {

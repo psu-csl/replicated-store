@@ -22,12 +22,14 @@ using multipaxos::InstanceState::INPROGRESS;
 using multipaxos::ResponseType::OK;
 using multipaxos::ResponseType::REJECT;
 
-using multipaxos::AcceptRequest;
-using multipaxos::AcceptResponse;
 using multipaxos::CommitRequest;
 using multipaxos::CommitResponse;
+
 using multipaxos::PrepareRequest;
 using multipaxos::PrepareResponse;
+
+using multipaxos::AcceptRequest;
+using multipaxos::AcceptResponse;
 
 MultiPaxos::MultiPaxos(Log* log, json const& config)
     : ready_(false),
@@ -42,8 +44,8 @@ MultiPaxos::MultiPaxos(Log* log, json const& config)
       last_commit_(0),
       rpc_server_running_(false),
       thread_pool_(config["threadpool_size"]),
-      commit_thread_running_(false),
-      prepare_thread_running_(false) {
+      prepare_thread_running_(false),
+      commit_thread_running_(false) {
   int64_t id = 0;
   for (std::string const peer : config["peers"])
     rpc_peers_.emplace_back(id++,
@@ -52,8 +54,8 @@ MultiPaxos::MultiPaxos(Log* log, json const& config)
 }
 
 void MultiPaxos::Start() {
-  StartCommitThread();
   StartPrepareThread();
+  StartCommitThread();
   StartRPCServer();
 }
 

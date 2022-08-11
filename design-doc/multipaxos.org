@@ -450,7 +450,7 @@
       2) in thread main, call peer0.next_ballot twice
       3) in thread main, create an RPC request and set its ballot to the
          result of calling peer1.next_ballot
-      4) in thread main, invoke commit, prepare, accept RPCs on peer0
+      4) in thread main, invoke prepare, accept, commit RPCs on peer0
 
       since peer1.next_ballot was called once, the ballot on the RPCs should be
       smaller than the ballot on peer0; therefore, the RPCs should be ignored
@@ -469,19 +469,7 @@
       4) in thread main, send the request to peer0
       5) check that peer0 is not a leader anymore and considers peer1 as the
          leader.
-      6) repeat the above for commit, prepare, and accept requests
-
-  - commit_commits_and_trims
-    - append to log0 three in-progress instances with indices 1, 2, and 3
-    - send a commit rpc to peer0 with last_executed = 2 and
-      global_last_executed = 0
-    - check that the last_executed in response is 0 and instances 1 and 2 are in
-      committed state
-    - execute instances 1 and 2 in the log
-    - send another commit rpc to peer0 with last_executed = 2 and
-      global_last_executed = 2
-    - check that the last_executed in response is 2 and instances 1 and 2 are
-      trimmed
+      6) repeat the above for prepare, accept, and commit requests
 
   - prepare_responsds_with_correct_instances
     - append to log0 three in-progress instances with indices 1, 2, and 3
@@ -501,14 +489,17 @@
   - accept_appends_to_log
     - send an accept rpc to peer0 and check that instance is appended to log.
 
-  - commit_response_with_high_ballot_changes_leader_to_follower
-    - call peer0_.next_ballot to make it a leader
-    - call peer1_.next_ballot to make it a leader
-    - call peer2_.next_ballot to make it a leader
-    - send a commit with peer2_'s ballot to peer1_ to establish peer2 as a
-      leader in peer1 as well
-    - call run_commit_phase from peer0_ and expect it to become a follower
-      assume peer2 as the leader
+  - commit_commits_and_trims
+    - append to log0 three in-progress instances with indices 1, 2, and 3
+    - send a commit rpc to peer0 with last_executed = 2 and
+      global_last_executed = 0
+    - check that the last_executed in response is 0 and instances 1 and 2 are in
+      committed state
+    - execute instances 1 and 2 in the log
+    - send another commit rpc to peer0 with last_executed = 2 and
+      global_last_executed = 2
+    - check that the last_executed in response is 2 and instances 1 and 2 are
+      trimmed
 
   - prepare_response_with_high_ballot_changes_leader_to_follower
     - call peer0_.next_ballot to make it a leader
@@ -528,26 +519,14 @@
     - call run_accept_phase from peer0_ and expect it to become a follower
       assume peer2 as the leader
 
-  - run_commit_phase
-    - check that run_commit_phase returns the passed in global_last_executed
-      when it hasn't heard from all of the peers, and it returns the new
-      global_last_executed when it has heard from all of the peers.
-      - append to peer0 committed instances at index 1, 2, and 3, and execute
-        all instances
-      - append to peer1 committed instances at index 1, 2, and 3, and execute
-        all instances
-      - append to peer2 committed instances at index 1 and 2, and execute all
-        instances
-      - start peer0 and peer1 rpc servers
-      - call run_commit_phase with global_last_executed = 0 and expect 0 as the
-        response
-      - start peer2 rpc server
-      - append to peer2 a committed instance at index 3
-      - call run_commit_phase with global_last_executed = 0 and expect 2 as the
-        response
-      - peer2 should have now committed the instance at index3; execute it
-      - call run_commit_phase with global_last_executed = 2 expect 3 as the
-        response
+  - commit_response_with_high_ballot_changes_leader_to_follower
+    - call peer0_.next_ballot to make it a leader
+    - call peer1_.next_ballot to make it a leader
+    - call peer2_.next_ballot to make it a leader
+    - send a commit with peer2_'s ballot to peer1_ to establish peer2 as a
+      leader in peer1 as well
+    - call run_commit_phase from peer0_ and expect it to become a follower
+      assume peer2 as the leader
 
   - run_prepare_phase
     - check that run_prepare_phase returns null when it hasn't received
@@ -571,6 +550,27 @@
     - call peer0.run_accept_phase and expect ok as the response and log0 has the
       instance at index 1 in committed state and peer1 in in-progress state and
       peer2 has no entry at index 1.
+
+  - run_commit_phase
+    - check that run_commit_phase returns the passed in global_last_executed
+      when it hasn't heard from all of the peers, and it returns the new
+      global_last_executed when it has heard from all of the peers.
+      - append to peer0 committed instances at index 1, 2, and 3, and execute
+        all instances
+      - append to peer1 committed instances at index 1, 2, and 3, and execute
+        all instances
+      - append to peer2 committed instances at index 1 and 2, and execute all
+        instances
+      - start peer0 and peer1 rpc servers
+      - call run_commit_phase with global_last_executed = 0 and expect 0 as the
+        response
+      - start peer2 rpc server
+      - append to peer2 a committed instance at index 3
+      - call run_commit_phase with global_last_executed = 0 and expect 2 as the
+        response
+      - peer2 should have now committed the instance at index3; execute it
+      - call run_commit_phase with global_last_executed = 2 expect 3 as the
+        response
 
   - one_leader_elected
     - start peer0, peer1, peer2, wait for 3x of commit interval and then

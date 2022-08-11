@@ -184,11 +184,11 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
   std::condition_variable cv_leader_;
   std::condition_variable cv_follower_;
 
-  std::atomic<bool> commit_thread_running_;
-  std::thread commit_thread_;
-
   std::atomic<bool> prepare_thread_running_;
   std::thread prepare_thread_;
+
+  std::atomic<bool> commit_thread_running_;
+  std::thread commit_thread_;
 };
 
 struct prepare_state_t {
