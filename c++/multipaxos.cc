@@ -259,6 +259,52 @@ Result MultiPaxos::RunAcceptPhase(int64_t ballot,
   return Result{ResultType::kRetry, std::nullopt};
 }
 
+int64_t MultiPaxos::RunCommitPhase(int64_t ballot,
+                                   int64_t global_last_executed) {
+  auto state = std::make_shared<heartbeat_state_t>(id_, log_->LastExecuted());
+
+  HeartbeatRequest request;
+  request.set_ballot(ballot);
+  request.set_sender(id_);
+  request.set_last_executed(state->min_last_executed_);
+  request.set_global_last_executed(global_last_executed);
+
+  for (auto& peer : rpc_peers_) {
+    asio::post(thread_pool_, [this, state, &peer, request] {
+      ClientContext context;
+      HeartbeatResponse response;
+      Status s = peer.stub_->Heartbeat(&context, std::move(request), &response);
+      DLOG(INFO) << id_ << " sent heartbeat to " << peer.id_;
+      {
+        std::scoped_lock lock(state->mu_);
+        ++state->num_rpcs_;
+        if (s.ok()) {
+          if (response.type() == OK) {
+            ++state->num_oks_;
+            if (response.last_executed() < state->min_last_executed_)
+              state->min_last_executed_ = response.last_executed();
+          } else {
+            std::scoped_lock lock(mu_);
+            if (response.ballot() >= ballot_) {
+              SetBallot(response.ballot());
+              state->leader_ = Leader(ballot_);
+            }
+          }
+        }
+      }
+      state->cv_.notify_one();
+    });
+  }
+  {
+    std::unique_lock lock(state->mu_);
+    while (state->leader_ == id_ && state->num_rpcs_ != rpc_peers_.size())
+      state->cv_.wait(lock);
+    if (state->num_oks_ == rpc_peers_.size())
+      return state->min_last_executed_;
+  }
+  return global_last_executed;
+}
+
 void MultiPaxos::Replay(int64_t ballot, std::optional<log_map_t> const& log) {
   if (!log)
     return;
