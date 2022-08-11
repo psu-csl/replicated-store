@@ -34,6 +34,10 @@
 *** handle errors in asio calls
 
 ** All
+*** reorder the code in tests/doc/code to match the protocol
+    - currently things are mixed up with commit stuff followed by prepare and
+      then accept, mainly due to our rename of heartbeat to commit; fix the
+      order in all files
 *** remove sender_id field from protobuf requests
 *** avoid sleeps in tests due to TCP connection re-establishment
 
