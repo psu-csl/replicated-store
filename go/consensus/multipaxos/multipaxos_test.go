@@ -411,6 +411,46 @@ func TestSendPreparesMajority(t *testing.T) {
 	}
 }
 
+func TestSendPreapresWithReplay(t *testing.T) {
+	setupPeers()
+	defer tearDown()
+	for _, peer := range peers {
+		peer.StartServer()
+	}
+	peers[2].Connect()
+
+	ballot0 := peers[0].NextBallot()
+	index1 := logs[0].AdvanceLastIndex()
+	instance1 := util.MakeInstance(ballot0, index1)
+	logs[0].Append(instance1)
+	logs[1].Append(instance1)
+	logs[0].Commit(index1)
+
+	ballot1 := peers[1].NextBallot()
+	logs[1].AdvanceLastIndex()
+	index2 := logs[1].AdvanceLastIndex()
+	instance2 := util.MakeInstance(ballot1, index2)
+	logs[0].Append(instance2)
+	logs[1].Append(instance2)
+	logs[2].Append(instance2)
+
+	ballot2 := peers[2].NextBallot()
+	logMap := peers[2].SendPrepares(ballot2)
+	assert.EqualValues(t, 2, len(logMap))
+
+	peers[2].Replay(ballot2, logMap)
+
+	instance1.Ballot = ballot2
+	assert.True(t, log.IsCommitted(logs[0].Find(index1)))
+	assert.True(t, log.IsCommitted(logs[2].Find(index1)))
+	assert.True(t, log.IsEqualInstance(instance1, logs[1].Find(index1)))
+
+	instance2.Ballot = ballot2
+	assert.True(t, log.IsCommitted(logs[2].Find(index2)))
+	assert.True(t, log.IsEqualInstance(instance2, logs[0].Find(index2)))
+	assert.True(t, log.IsEqualInstance(instance2, logs[1].Find(index2)))
+}
+
 func TestSendPreparesWithMerge(t *testing.T) {
 	setupPeers()
 	defer tearDown()
