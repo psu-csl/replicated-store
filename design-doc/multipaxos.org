@@ -529,10 +529,9 @@
       assume peer2 as the leader
 
   - run_commit_phase
-    - check that run_commit_phase works correctly; specifically, it returns the
-      passed in global_last_executed when it hasn't heard from all of the peers,
-      and it returns the new global_last_executed when it has heard from all of
-      the peers.
+    - check that run_commit_phase returns the passed in global_last_executed
+      when it hasn't heard from all of the peers, and it returns the new
+      global_last_executed when it has heard from all of the peers.
       - append to peer0 committed instances at index 1, 2, and 3, and execute
         all instances
       - append to peer1 committed instances at index 1, 2, and 3, and execute
@@ -551,15 +550,27 @@
         response
 
   - run_prepare_phase
-    - check that run_prepare_phase works correctly; specifically, it returns
-      null when it hasn't received responses from quorum, and it returns proper
-      log when it has heard from the quorum.
+    - check that run_prepare_phase returns null when it hasn't received
+      responses from quorum, and it returns proper log when it has heard from
+      the quorum.
       - append to peer0, peer1 logs an instance at index 1
       - start peer0 rpc server
       - call run_prepare_phase and expect null as the response
       - start peer1 rpc server
       - call run_prepare_phase and expect a response with a log containing the
         instance
+
+  - run_accept_phase
+    - check that run_accept_phase returns retry when it hasn't heard back from
+      the quorum, and it returns ok otherwise
+    - start peer0 rpc server
+    - call peer0.run_accept_phase and expect retry as the response and log0 has
+      the instance at index 1 in in-progress state and peer1 and peer2 have no
+      entries at index 1
+    - start peer1 rpc server
+    - call peer0.run_accept_phase and expect ok as the response and log0 has the
+      instance at index 1 in committed state and peer1 in in-progress state and
+      peer2 has no entry at index 1.
 
   - one_leader_elected
     - start peer0, peer1, peer2, wait for 3x of commit interval and then

@@ -474,6 +474,40 @@ TEST_F(MultiPaxosTest, RunPreparePhase) {
   t1.join();
 }
 
+TEST_F(MultiPaxosTest, RunAcceptPhase) {
+  std::thread t0([this] { peers_[0]->StartRPCServer(); });
+
+  auto ballot = peers_[0]->NextBallot();
+  auto index = logs_[0]->AdvanceLastIndex();
+
+  auto result = peers_[0]->RunAcceptPhase(ballot, index, Command(), 0);
+
+  EXPECT_EQ(ResultType::kRetry, result.type_);
+  EXPECT_EQ(std::nullopt, result.leader_);
+
+  EXPECT_TRUE(IsInProgress(*(*logs_[0])[index]));
+  EXPECT_EQ(nullptr, (*logs_[1])[index]);
+  EXPECT_EQ(nullptr, (*logs_[2])[index]);
+
+  std::thread t1([this] { peers_[1]->StartRPCServer(); });
+
+  std::this_thread::sleep_for(seconds(2));
+
+  result = peers_[0]->RunAcceptPhase(ballot, index, Command(), 0);
+
+  EXPECT_EQ(ResultType::kOk, result.type_);
+  EXPECT_EQ(std::nullopt, result.leader_);
+
+  EXPECT_TRUE(IsCommitted(*(*logs_[0])[index]));
+  EXPECT_TRUE(IsInProgress(*(*logs_[1])[index]));
+  EXPECT_EQ(nullptr, (*logs_[2])[index]);
+
+  peers_[0]->StopRPCServer();
+  peers_[1]->StopRPCServer();
+  t0.join();
+  t1.join();
+}
+
 TEST_F(MultiPaxosTest, OneLeaderElected) {
   std::thread t0([this] { peers_[0]->Start(); });
   std::thread t1([this] { peers_[1]->Start(); });
