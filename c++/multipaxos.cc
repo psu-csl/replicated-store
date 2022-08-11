@@ -122,8 +122,8 @@ Result MultiPaxos::Replicate(Command command, client_id_t client_id) {
   auto [ballot, ready] = Ballot();
   if (IsLeader(ballot, id_)) {
     if (ready)
-      return BroadcastAccept(ballot, log_->AdvanceLastIndex(), command,
-                             client_id);
+      return RunAcceptPhase(ballot, log_->AdvanceLastIndex(), command,
+                            client_id);
     return Result{ResultType::kRetry, std::nullopt};
   }
   if (IsSomeoneElseLeader(ballot, id_))
@@ -139,7 +139,7 @@ void MultiPaxos::HeartbeatThread() {
       auto [ballot, ready] = Ballot();
       if (!IsLeader(ballot, id_))
         break;
-      gle = BroadcastHeartbeat(ballot, gle);
+      gle = RunCommitPhase(ballot, gle);
       SleepForHeartbeatInterval();
     }
   }
@@ -153,14 +153,14 @@ void MultiPaxos::PrepareThread() {
       if (ReceivedHeartbeat())
         continue;
       auto ballot = NextBallot();
-      Replay(ballot, BroadcastPrepare(ballot));
+      Replay(ballot, RunPreparePhase(ballot));
       break;
     }
   }
 }
 
-int64_t MultiPaxos::BroadcastHeartbeat(int64_t ballot,
-                                       int64_t global_last_executed) {
+int64_t MultiPaxos::RunCommitPhase(int64_t ballot,
+                                   int64_t global_last_executed) {
   auto state = std::make_shared<heartbeat_state_t>(id_, log_->LastExecuted());
 
   HeartbeatRequest request;
@@ -205,7 +205,7 @@ int64_t MultiPaxos::BroadcastHeartbeat(int64_t ballot,
   return global_last_executed;
 }
 
-std::optional<log_map_t> MultiPaxos::BroadcastPrepare(int64_t ballot) {
+std::optional<log_map_t> MultiPaxos::RunPreparePhase(int64_t ballot) {
   auto state = std::make_shared<prepare_state_t>(id_);
 
   PrepareRequest request;
@@ -249,10 +249,10 @@ std::optional<log_map_t> MultiPaxos::BroadcastPrepare(int64_t ballot) {
   return std::nullopt;
 }
 
-Result MultiPaxos::BroadcastAccept(int64_t ballot,
-                                   int64_t index,
-                                   Command command,
-                                   client_id_t client_id) {
+Result MultiPaxos::RunAcceptPhase(int64_t ballot,
+                                  int64_t index,
+                                  Command command,
+                                  client_id_t client_id) {
   auto state = std::make_shared<accept_state_t>(id_);
 
   Instance instance;
@@ -309,35 +309,16 @@ void MultiPaxos::Replay(int64_t ballot, std::optional<log_map_t> const& log) {
   if (!log)
     return;
   for (auto const& [index, instance] : *log) {
-    Result r = BroadcastAccept(ballot, instance.index(), instance.command(),
-                               instance.client_id());
+    Result r = RunAcceptPhase(ballot, instance.index(), instance.command(),
+                              instance.client_id());
     while (r.type_ == ResultType::kRetry)
-      r = BroadcastAccept(ballot, instance.index(), instance.command(),
-                          instance.client_id());
+      r = RunAcceptPhase(ballot, instance.index(), instance.command(),
+                         instance.client_id());
     if (r.type_ == ResultType::kSomeoneElseLeader)
       return;
   }
   ready_ = true;
   DLOG(INFO) << id_ << " leader is ready to serve";
-}
-
-Status MultiPaxos::Heartbeat(ServerContext*,
-                             const HeartbeatRequest* request,
-                             HeartbeatResponse* response) {
-  DLOG(INFO) << id_ << " received heartbeat rpc from " << request->sender();
-  std::scoped_lock lock(mu_);
-  if (request->ballot() >= ballot_) {
-    last_heartbeat_ = Now();
-    SetBallot(request->ballot());
-    log_->CommitUntil(request->last_executed(), request->ballot());
-    log_->TrimUntil(request->global_last_executed());
-    response->set_last_executed(log_->LastExecuted());
-    response->set_type(OK);
-  } else {
-    response->set_ballot(ballot_);
-    response->set_type(REJECT);
-  }
-  return Status::OK;
 }
 
 Status MultiPaxos::Prepare(ServerContext*,
@@ -365,6 +346,25 @@ Status MultiPaxos::Accept(ServerContext*,
   if (request->instance().ballot() >= ballot_) {
     SetBallot(request->instance().ballot());
     log_->Append(request->instance());
+    response->set_type(OK);
+  } else {
+    response->set_ballot(ballot_);
+    response->set_type(REJECT);
+  }
+  return Status::OK;
+}
+
+Status MultiPaxos::Heartbeat(ServerContext*,
+                             const HeartbeatRequest* request,
+                             HeartbeatResponse* response) {
+  DLOG(INFO) << id_ << " received heartbeat rpc from " << request->sender();
+  std::scoped_lock lock(mu_);
+  if (request->ballot() >= ballot_) {
+    last_heartbeat_ = Now();
+    SetBallot(request->ballot());
+    log_->CommitUntil(request->last_executed(), request->ballot());
+    log_->TrimUntil(request->global_last_executed());
+    response->set_last_executed(log_->LastExecuted());
     response->set_type(OK);
   } else {
     response->set_ballot(ballot_);

@@ -343,7 +343,7 @@ TEST_F(MultiPaxosTest, HeartbeatResponseWithHighBallotChangesLeaderToFollower) {
   EXPECT_EQ(2, Leader(*peers_[1]));
 
   EXPECT_TRUE(IsLeader(*peers_[0]));
-  peers_[0]->BroadcastHeartbeat(peer0_ballot, 0);
+  peers_[0]->RunCommitPhase(peer0_ballot, 0);
   EXPECT_FALSE(IsLeader(*peers_[0]));
   EXPECT_EQ(2, Leader(*peers_[0]));
 
@@ -371,7 +371,7 @@ TEST_F(MultiPaxosTest, PrepareResponseWithHighBallotChangesLeaderToFollower) {
   EXPECT_EQ(2, Leader(*peers_[1]));
 
   EXPECT_TRUE(IsLeader(*peers_[0]));
-  peers_[0]->BroadcastPrepare(peer0_ballot);
+  peers_[0]->RunPreparePhase(peer0_ballot);
   EXPECT_FALSE(IsLeader(*peers_[0]));
   EXPECT_EQ(2, Leader(*peers_[0]));
 
@@ -399,7 +399,7 @@ TEST_F(MultiPaxosTest, AcceptResponseWithHighBallotChangesLeaderToFollower) {
   EXPECT_EQ(2, Leader(*peers_[1]));
 
   EXPECT_TRUE(IsLeader(*peers_[0]));
-  peers_[0]->BroadcastAccept(peer0_ballot, 1, Command(), 0);
+  peers_[0]->RunAcceptPhase(peer0_ballot, 1, Command(), 0);
   EXPECT_FALSE(IsLeader(*peers_[0]));
   EXPECT_EQ(2, Leader(*peers_[0]));
 
@@ -411,7 +411,7 @@ TEST_F(MultiPaxosTest, AcceptResponseWithHighBallotChangesLeaderToFollower) {
   t2.join();
 }
 
-TEST_F(MultiPaxosTest, BroadcastHeartbeat) {
+TEST_F(MultiPaxosTest, RunCommitPhase) {
   std::thread t0([this] { peers_[0]->StartRPCServer(); });
   std::thread t1([this] { peers_[1]->StartRPCServer(); });
 
@@ -431,13 +431,13 @@ TEST_F(MultiPaxosTest, BroadcastHeartbeat) {
   logs_[1]->Execute(stores_[1].get());
   logs_[2]->Execute(stores_[2].get());
 
-  EXPECT_EQ(0, peers_[0]->BroadcastHeartbeat(ballot, 0));
+  EXPECT_EQ(0, peers_[0]->RunCommitPhase(ballot, 0));
 
   std::thread t2([this] { peers_[2]->StartRPCServer(); });
 
   std::this_thread::sleep_for(seconds(2));
 
-  EXPECT_EQ(index, peers_[0]->BroadcastHeartbeat(ballot, 0));
+  EXPECT_EQ(index, peers_[0]->RunCommitPhase(ballot, 0));
 
   peers_[0]->StopRPCServer();
   peers_[1]->StopRPCServer();
@@ -447,7 +447,7 @@ TEST_F(MultiPaxosTest, BroadcastHeartbeat) {
   t2.join();
 }
 
-TEST_F(MultiPaxosTest, BroadcastPrepare) {
+TEST_F(MultiPaxosTest, RunPreparePhase) {
   std::thread t0([this] { peers_[0]->StartRPCServer(); });
 
   auto ballot = peers_[0]->NextBallot();
@@ -458,14 +458,14 @@ TEST_F(MultiPaxosTest, BroadcastPrepare) {
   logs_[1]->Append(instance);
   logs_[2]->Append(instance);
 
-  EXPECT_EQ(std::nullopt, peers_[0]->BroadcastPrepare(ballot));
+  EXPECT_EQ(std::nullopt, peers_[0]->RunPreparePhase(ballot));
 
   std::thread t1([this] { peers_[1]->StartRPCServer(); });
 
   std::this_thread::sleep_for(seconds(2));
 
   log_map_t expected_log{{index, instance}};
-  EXPECT_EQ(expected_log, *peers_[0]->BroadcastPrepare(ballot));
+  EXPECT_EQ(expected_log, *peers_[0]->RunPreparePhase(ballot));
 
   peers_[0]->StopRPCServer();
   peers_[1]->StopRPCServer();

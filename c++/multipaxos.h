@@ -143,20 +143,16 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
   void HeartbeatThread();
   void PrepareThread();
 
-  int64_t BroadcastHeartbeat(int64_t ballot, int64_t global_last_executed);
-  std::optional<log_map_t> BroadcastPrepare(int64_t ballot);
-  Result BroadcastAccept(int64_t ballot,
-                         int64_t index,
-                         multipaxos::Command command,
-                         client_id_t client_id);
+  std::optional<log_map_t> RunPreparePhase(int64_t ballot);
+  Result RunAcceptPhase(int64_t ballot,
+                        int64_t index,
+                        multipaxos::Command command,
+                        client_id_t client_id);
+  int64_t RunCommitPhase(int64_t ballot, int64_t global_last_executed);
 
   void Replay(int64_t ballot, std::optional<log_map_t> const& log);
 
  private:
-  grpc::Status Heartbeat(grpc::ServerContext*,
-                         const multipaxos::HeartbeatRequest*,
-                         multipaxos::HeartbeatResponse*) override;
-
   grpc::Status Prepare(grpc::ServerContext*,
                        const multipaxos::PrepareRequest*,
                        multipaxos::PrepareResponse*) override;
@@ -164,6 +160,10 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
   grpc::Status Accept(grpc::ServerContext*,
                       const multipaxos::AcceptRequest*,
                       multipaxos::AcceptResponse*) override;
+
+  grpc::Status Heartbeat(grpc::ServerContext*,
+                         const multipaxos::HeartbeatRequest*,
+                         multipaxos::HeartbeatResponse*) override;
 
   std::atomic<bool> ready_;
   int64_t ballot_;
