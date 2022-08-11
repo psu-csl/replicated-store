@@ -428,12 +428,13 @@ TEST_F(MultiPaxosTest, RunCommitPhase) {
 
   std::thread t2([this] { peers_[2]->StartRPCServer(); });
 
+  logs_[2]->Append(MakeInstance(ballot, 3));
+
   std::this_thread::sleep_for(seconds(2));
 
   gle = peers_[0]->RunCommitPhase(ballot, gle);
   EXPECT_EQ(2, gle);
 
-  logs_[2]->Append(MakeInstance(ballot, 3, COMMITTED));
   logs_[2]->Execute(stores_[2].get());
 
   gle = peers_[0]->RunCommitPhase(ballot, gle);
