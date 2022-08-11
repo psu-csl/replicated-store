@@ -547,7 +547,7 @@
       - call run_commit_phase with global_last_executed = 0 and expect 2 as the
         response
       - peer2 should have now committed the instance at index3; execute it
-      - call run_commit_phase with global_last_executed = 0 2 expect 3 as the
+      - call run_commit_phase with global_last_executed = 2 expect 3 as the
         response
 
   - run_prepare_phase
