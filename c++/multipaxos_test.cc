@@ -423,13 +423,21 @@ TEST_F(MultiPaxosTest, RunCommitPhase) {
     }
   }
 
-  EXPECT_EQ(0, peers_[0]->RunCommitPhase(ballot, 0));
+  auto gle = peers_[0]->RunCommitPhase(ballot, 0);
+  EXPECT_EQ(0, gle);
 
   std::thread t2([this] { peers_[2]->StartRPCServer(); });
 
   std::this_thread::sleep_for(seconds(2));
 
-  EXPECT_EQ(2, peers_[0]->RunCommitPhase(ballot, 0));
+  gle = peers_[0]->RunCommitPhase(ballot, gle);
+  EXPECT_EQ(2, gle);
+
+  logs_[2]->Append(MakeInstance(ballot, 3, COMMITTED));
+  logs_[2]->Execute(stores_[2].get());
+
+  gle = peers_[0]->RunCommitPhase(ballot, gle);
+  EXPECT_EQ(3, gle);
 
   peers_[0]->StopRPCServer();
   peers_[1]->StopRPCServer();
