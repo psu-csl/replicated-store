@@ -122,7 +122,8 @@ Result MultiPaxos::Replicate(Command command, client_id_t client_id) {
   auto [ballot, ready] = Ballot();
   if (IsLeader(ballot, id_)) {
     if (ready)
-      return SendAccepts(ballot, log_->AdvanceLastIndex(), command, client_id);
+      return BroadcastAccept(ballot, log_->AdvanceLastIndex(), command,
+                             client_id);
     return Result{ResultType::kRetry, std::nullopt};
   }
   if (IsSomeoneElseLeader(ballot, id_))
@@ -138,7 +139,7 @@ void MultiPaxos::HeartbeatThread() {
       auto [ballot, ready] = Ballot();
       if (!IsLeader(ballot, id_))
         break;
-      gle = SendHeartbeats(ballot, gle);
+      gle = BroadcastHeartbeat(ballot, gle);
       SleepForHeartbeatInterval();
     }
   }
@@ -152,14 +153,14 @@ void MultiPaxos::PrepareThread() {
       if (ReceivedHeartbeat())
         continue;
       auto ballot = NextBallot();
-      Replay(ballot, SendPrepares(ballot));
+      Replay(ballot, BroadcastPrepare(ballot));
       break;
     }
   }
 }
 
-int64_t MultiPaxos::SendHeartbeats(int64_t ballot,
-                                   int64_t global_last_executed) {
+int64_t MultiPaxos::BroadcastHeartbeat(int64_t ballot,
+                                       int64_t global_last_executed) {
   auto state = std::make_shared<heartbeat_state_t>(id_, log_->LastExecuted());
 
   HeartbeatRequest request;
@@ -204,7 +205,7 @@ int64_t MultiPaxos::SendHeartbeats(int64_t ballot,
   return global_last_executed;
 }
 
-std::optional<log_map_t> MultiPaxos::SendPrepares(int64_t ballot) {
+std::optional<log_map_t> MultiPaxos::BroadcastPrepare(int64_t ballot) {
   auto state = std::make_shared<prepare_state_t>(id_);
 
   PrepareRequest request;
@@ -248,10 +249,10 @@ std::optional<log_map_t> MultiPaxos::SendPrepares(int64_t ballot) {
   return std::nullopt;
 }
 
-Result MultiPaxos::SendAccepts(int64_t ballot,
-                               int64_t index,
-                               Command command,
-                               client_id_t client_id) {
+Result MultiPaxos::BroadcastAccept(int64_t ballot,
+                                   int64_t index,
+                                   Command command,
+                                   client_id_t client_id) {
   auto state = std::make_shared<accept_state_t>(id_);
 
   Instance instance;
@@ -308,11 +309,11 @@ void MultiPaxos::Replay(int64_t ballot, std::optional<log_map_t> const& log) {
   if (!log)
     return;
   for (auto const& [index, instance] : *log) {
-    Result r = SendAccepts(ballot, instance.index(), instance.command(),
-                           instance.client_id());
+    Result r = BroadcastAccept(ballot, instance.index(), instance.command(),
+                               instance.client_id());
     while (r.type_ == ResultType::kRetry)
-      r = SendAccepts(ballot, instance.index(), instance.command(),
-                      instance.client_id());
+      r = BroadcastAccept(ballot, instance.index(), instance.command(),
+                          instance.client_id());
     if (r.type_ == ResultType::kSomeoneElseLeader)
       return;
   }

@@ -143,12 +143,12 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
   void HeartbeatThread();
   void PrepareThread();
 
-  int64_t SendHeartbeats(int64_t ballot, int64_t global_last_executed);
-  std::optional<log_map_t> SendPrepares(int64_t ballot);
-  Result SendAccepts(int64_t ballot,
-                     int64_t index,
-                     multipaxos::Command command,
-                     client_id_t client_id);
+  int64_t BroadcastHeartbeat(int64_t ballot, int64_t global_last_executed);
+  std::optional<log_map_t> BroadcastPrepare(int64_t ballot);
+  Result BroadcastAccept(int64_t ballot,
+                         int64_t index,
+                         multipaxos::Command command,
+                         client_id_t client_id);
 
   void Replay(int64_t ballot, std::optional<log_map_t> const& log);
 

@@ -508,8 +508,8 @@
     - call peer2_.next_ballot to make it a leader
     - send a heartbeat with peer2_'s ballot to peer1_ to establish peer2 as a
       leader in peer1 as well
-    - call send_heartbeats from peer0_ and expect it to become a follower assume
-      peer2 as the leader
+    - call broadcast_heartbeat from peer0_ and expect it to become a follower
+      assume peer2 as the leader
 
   - prepare_response_with_high_ballot_changes_leader_to_follower
     - call peer0_.next_ballot to make it a leader
@@ -517,8 +517,8 @@
     - call peer2_.next_ballot to make it a leader
     - send a heartbeat with peer2_'s ballot to peer1_ to establish peer2 as a
       leader in peer1 as well
-    - call send_prepares from peer0_ and expect it to become a follower assume
-      peer2 as the leader
+    - call broadcast_prepare from peer0_ and expect it to become a follower
+      assume peer2 as the leader
 
   - accept_response_with_high_ballot_changes_leader_to_follower
     - call peer0_.next_ballot to make it a leader
@@ -526,30 +526,32 @@
     - call peer2_.next_ballot to make it a leader
     - send a heartbeat with peer2_'s ballot to peer1_ to establish peer2 as a
       leader in peer1 as well
-    - call send_accepts from peer0_ and expect it to become a follower assume
-      peer2 as the leader
+    - call broadcast_accept from peer0_ and expect it to become a follower
+      assume peer2 as the leader
 
-  - send_heartbeats
-    - ensure that send_heartbeats works correctly; specifically, it returns the
-      passed in global_last_executed when it hasn't heard from all of the peers,
-      and it returns the new global_last_executed when it has heard from all of
-      the peers.
+  - broadcast_heartbeat
+    - ensure that broadcast_heartbeat works correctly; specifically, it returns
+      the passed in global_last_executed when it hasn't heard from all of the
+      peers, and it returns the new global_last_executed when it has heard from
+      all of the peers.
       - append to peer0, peer1, peer2 logs an instance at index 1
       - commit and execute the instance in all peers' logs
       - start peer0 and peer1 rpc servers
-      - call send_heartbeats with global_last_executed = 0 and expect 0 as the response
+      - call broadcast_heartbeat with global_last_executed = 0 and expect 0 as
+        the response
       - start peer2 rpc server
-      - call send_heartbeats with global_last_executed = 0 and expect 1 as the response
+      - call broadcast_heartbeat with global_last_executed = 0 and expect 1 as
+        the response
 
-  - send_prepares
-    - ensure that send_prepares works correctly; specifically, it returns null
-      when it hasn't received responses from quorum, and it returns proper log
-      when it has heard from the quorum.
+  - broadcast_prepare
+    - ensure that broadcast_prepare works correctly; specifically, it returns
+      null when it hasn't received responses from quorum, and it returns proper
+      log when it has heard from the quorum.
       - append to peer0, peer1 logs an instance at index 1
       - start peer0 rpc server
-      - call send_prepares and expect null as the response
+      - call broadcast_prepare and expect null as the response
       - start peer1 rpc server
-      - call send_prepares and expect a response with a log containing the
+      - call broadcast_prepare and expect a response with a log containing the
         instance
 
   - one_leader_elected
