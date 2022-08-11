@@ -20,7 +20,7 @@ const (
 	RoundIncrement = IdBits + 1
 	MaxNumPeers int64 = 0xf
 	NoLeader int64 = -1
-	RPCTimeout  = 100
+	RPCTimeout  = 300
 )
 
 type Multipaxos struct {
@@ -64,6 +64,8 @@ func NewMultipaxos(config config.Config, log *consensusLog.Log) *Multipaxos {
 	paxos.rpcServerRunningCv = sync.NewCond(&paxos.mu)
 	paxos.cvFollower = sync.NewCond(&paxos.mu)
 	paxos.cvLeader = sync.NewCond(&paxos.mu)
+
+	paxos.Connect()
 
 	return &paxos
 }
@@ -166,6 +168,7 @@ func (p *Multipaxos) SendHeartbeats(ballot int64, globalLastExecuted int64) int6
 			ctx, cancel := context.WithTimeout(context.Background(),
 				RPCTimeout*time.Millisecond)
 			defer cancel()
+			//ctx := context.Background()
 
 			response, err := peer.Heartbeat(ctx, &request)
 			mu.Lock()

@@ -79,7 +79,7 @@ func TestRequestsWithLowerBallotIgnored(t *testing.T) {
 	setupOnePeer(0)
 	setupOnePeer(1)
 	peers[0].StartServer()
-	stub := createStub(configs[0].Peers[0])
+	stub := makeStub(configs[0].Peers[0])
 
 	peers[0].NextBallot()
 	peers[0].NextBallot()
@@ -107,7 +107,7 @@ func TestRequestsWithHigherBallotChangeLeaderToFollower(t *testing.T) {
 	setupOnePeer(0)
 	setupOnePeer(1)
 	peers[0].StartServer()
-	stub := createStub(configs[0].Peers[0])
+	stub := makeStub(configs[0].Peers[0])
 
 	peers[0].NextBallot()
 	assert.True(t, IsLeaderByPeer(peers[0]))
@@ -138,7 +138,7 @@ func TestRequestsWithHigherBallotChangeLeaderToFollower(t *testing.T) {
 func TestNextBallotAfterHeartbeat(t *testing.T) {
 	setupPeers()
 	peers[0].StartServer()
-	stub := createStub(configs[0].Peers[0])
+	stub := makeStub(configs[0].Peers[0])
 	ballot := peers[0].Id()
 
 	ctx := context.Background()
@@ -158,7 +158,7 @@ func TestNextBallotAfterHeartbeat(t *testing.T) {
 func TestHeartbeatCommitsAndTrims(t *testing.T) {
 	setupOnePeer(0)
 	peers[0].StartServer()
-	stub := createStub(configs[0].Peers[0])
+	stub := makeStub(configs[0].Peers[0])
 
 	ballot := peers[0].NextBallot()
 	index1 := logs[0].AdvanceLastIndex()
@@ -191,7 +191,7 @@ func TestHeartbeatCommitsAndTrims(t *testing.T) {
 func TestPrepareRespondsWithCorrectInstances(t *testing.T) {
 	setupOnePeer(0)
 	peers[0].StartServer()
-	stub := createStub(configs[0].Peers[0])
+	stub := makeStub(configs[0].Peers[0])
 
 	ballot := peers[0].NextBallot()
 	index1 := logs[0].AdvanceLastIndex()
@@ -237,7 +237,7 @@ func TestPrepareRespondsWithCorrectInstances(t *testing.T) {
 func TestAcceptAppendsToLog(t *testing.T) {
 	setupOnePeer(0)
 	peers[0].StartServer()
-	stub := createStub(configs[0].Peers[0])
+	stub := makeStub(configs[0].Peers[0])
 
 	ballot := peers[0].NextBallot()
 	index1 := logs[0].AdvanceLastIndex()
@@ -256,6 +256,75 @@ func TestAcceptAppendsToLog(t *testing.T) {
 	assert.True(t, log.IsEqualInstance(instance2, logs[0].Find(index2)))
 
 	peers[0].Stop()
+}
+
+func TestHeartbeatResponseWithHighBallotChangesLeaderToFollower(t *testing.T) {
+	setupPeers()
+	defer tearDown()
+	for _, peer := range peers {
+		peer.StartServer()
+		peer.Connect()
+	}
+	stub1 := makeStub(configs[0].Peers[1])
+
+	peer0Ballot := peers[0].NextBallot()
+	peer2Ballot := peers[2].NextBallot()
+
+	r := sendHeartbeat(stub1, peer2Ballot, 0, 0)
+	assert.EqualValues(t, pb.ResponseType_OK, r.GetType())
+	assert.False(t, IsLeaderByPeer(peers[1]))
+	assert.EqualValues(t, 2, LeaderByPeer(peers[1]))
+
+	assert.True(t, IsLeaderByPeer(peers[0]))
+	peers[0].SendHeartbeats(peer0Ballot, 0)
+	assert.False(t, IsLeaderByPeer(peers[0]))
+	assert.EqualValues(t, 2, LeaderByPeer(peers[0]))
+}
+
+func TestPrepareResponseWithHighBallotChangesLeaderToFollower(t *testing.T) {
+	setupPeers()
+	defer tearDown()
+	for _, peer := range peers {
+		peer.StartServer()
+		peer.Connect()
+	}
+	stub1 := makeStub(configs[0].Peers[1])
+
+	peer0Ballot := peers[0].NextBallot()
+	peer2Ballot := peers[2].NextBallot()
+
+	r := sendHeartbeat(stub1, peer2Ballot, 0, 0)
+	assert.EqualValues(t, pb.ResponseType_OK, r.GetType())
+	assert.False(t, IsLeaderByPeer(peers[1]))
+	assert.EqualValues(t, 2, LeaderByPeer(peers[1]))
+
+	assert.True(t, IsLeaderByPeer(peers[0]))
+	peers[0].SendPrepares(peer0Ballot)
+	assert.False(t, IsLeaderByPeer(peers[0]))
+	assert.EqualValues(t, 2, LeaderByPeer(peers[0]))
+}
+
+func TestAcceptResponseWithHighBallotChangesLeaderToFollower(t *testing.T) {
+	setupPeers()
+	defer tearDown()
+	for _, peer := range peers {
+		peer.StartServer()
+		peer.Connect()
+	}
+	stub1 := makeStub(configs[0].Peers[1])
+
+	peer0Ballot := peers[0].NextBallot()
+	peer2Ballot := peers[2].NextBallot()
+
+	r := sendHeartbeat(stub1, peer2Ballot, 0, 0)
+	assert.EqualValues(t, pb.ResponseType_OK, r.GetType())
+	assert.False(t, IsLeaderByPeer(peers[1]))
+	assert.EqualValues(t, 2, LeaderByPeer(peers[1]))
+
+	assert.True(t, IsLeaderByPeer(peers[0]))
+	peers[0].SendAccepts(peer0Ballot, 1, &pb.Command{}, 0)
+	assert.False(t, IsLeaderByPeer(peers[0]))
+	assert.EqualValues(t, 2, LeaderByPeer(peers[0]))
 }
 
 func TestOneLeaderElected(t *testing.T) {
@@ -292,7 +361,7 @@ func TestReplicateWithLeader(t *testing.T) {
 	peers[0].Stop()
 }
 
-func createStub(target string) pb.MultiPaxosRPCClient {
+func makeStub(target string) pb.MultiPaxosRPCClient {
 	conn, err := grpc.Dial(target, grpc.WithTransportCredentials(insecure.
 		NewCredentials()))
 	if err != nil {
