@@ -459,6 +459,42 @@ func TestSendPreparesWithMerge(t *testing.T) {
 	assert.True(t, log.IsInProgress(logMap[index2]))
 }
 
+func TestSendAccepts(t *testing.T) {
+	setupPeers()
+	defer tearDown()
+	peers[0].StartServer()
+	peers[0].Connect()
+
+	ballot := peers[0].NextBallot()
+	index1 := logs[0].AdvanceLastIndex()
+	instance1 := util.MakeInstance(ballot, index1)
+
+	r1 := peers[0].SendAccepts(ballot, index1, &pb.Command{}, 0)
+	assert.EqualValues(t, Retry, r1.Type)
+	assert.True(t, log.IsInProgress(logs[0].Find(index1)))
+	assert.Nil(t, logs[1].Find(index1))
+	assert.Nil(t, logs[2].Find(index1))
+
+	peers[1].StartServer()
+	peers[0].Connect()
+	r2 := peers[0].SendAccepts(ballot, index1, &pb.Command{}, 0)
+	assert.EqualValues(t, Ok, r2.Type)
+	assert.True(t, log.IsCommitted(logs[0].Find(index1)))
+	assert.True(t, log.IsEqualInstance(instance1, logs[1].Find(index1)))
+	assert.Nil(t, logs[2].Find(index1))
+
+	peers[2].StartServer()
+	peers[0].Connect()
+	index2 := logs[0].AdvanceLastIndex()
+	instance2 := util.MakeInstance(ballot, index2)
+	r3 := peers[0].SendAccepts(ballot, index2, &pb.Command{}, 0)
+	time.Sleep(100 * time.Millisecond)
+	assert.EqualValues(t, Ok, r3.Type)
+	assert.True(t, log.IsCommitted(logs[0].Find(index2)))
+	assert.True(t, log.IsEqualInstance(instance2, logs[1].Find(index2)))
+	assert.True(t, log.IsEqualInstance(instance2, logs[2].Find(index2)))
+}
+
 func TestOneLeaderElected(t *testing.T) {
 	setupServer()
 	defer tearDown()
