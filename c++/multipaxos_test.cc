@@ -15,19 +15,16 @@ using nlohmann::json;
 
 using grpc::ClientContext;
 
-using multipaxos::Command;
-using multipaxos::Instance;
-using multipaxos::MultiPaxosRPC;
-
 using multipaxos::AcceptRequest;
 using multipaxos::AcceptResponse;
-
+using multipaxos::Command;
 using multipaxos::HeartbeatRequest;
 using multipaxos::HeartbeatResponse;
-
+using multipaxos::Instance;
+using multipaxos::MultiPaxosRPC;
 using multipaxos::PrepareRequest;
 using multipaxos::PrepareResponse;
-
+using multipaxos::InstanceState::COMMITTED;
 using multipaxos::ResponseType::OK;
 using multipaxos::ResponseType::REJECT;
 
@@ -416,20 +413,15 @@ TEST_F(MultiPaxosTest, RunCommitPhase) {
   std::thread t1([this] { peers_[1]->StartRPCServer(); });
 
   auto ballot = peers_[0]->NextBallot();
-  auto index = logs_[0]->AdvanceLastIndex();
-  auto instance = MakeInstance(ballot, index);
 
-  logs_[0]->Append(instance);
-  logs_[1]->Append(instance);
-  logs_[2]->Append(instance);
-
-  logs_[0]->Commit(index);
-  logs_[1]->Commit(index);
-  logs_[2]->Commit(index);
-
-  logs_[0]->Execute(stores_[0].get());
-  logs_[1]->Execute(stores_[1].get());
-  logs_[2]->Execute(stores_[2].get());
+  for (size_t index = 1; index <= 3; ++index) {
+    for (size_t peer = 0; peer < kNumPeers; ++peer) {
+      if (index == 3 && peer == 2)
+        continue;
+      logs_[peer]->Append(MakeInstance(ballot, index, COMMITTED));
+      logs_[peer]->Execute(stores_[peer].get());
+    }
+  }
 
   EXPECT_EQ(0, peers_[0]->RunCommitPhase(ballot, 0));
 
@@ -437,7 +429,7 @@ TEST_F(MultiPaxosTest, RunCommitPhase) {
 
   std::this_thread::sleep_for(seconds(2));
 
-  EXPECT_EQ(index, peers_[0]->RunCommitPhase(ballot, 0));
+  EXPECT_EQ(2, peers_[0]->RunCommitPhase(ballot, 0));
 
   peers_[0]->StopRPCServer();
   peers_[1]->StopRPCServer();

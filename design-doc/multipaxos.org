@@ -467,7 +467,7 @@
       3) in thread main, create an RPC request and set its ballot to the result
          of calling peer1.next_ballot -- now peer1 is a leader with a higher
          ballot number than peer0, but peer0 does not yet know it.
-      4) in thread main, send request0 to peer0
+      4) in thread main, send the request to peer0
       5) check that peer0 is not a leader anymore and considers peer1 as the
          leader.
       6) repeat the above for heartbeat, prepare, and accept requests
@@ -534,13 +534,14 @@
       passed in global_last_executed when it hasn't heard from all of the peers,
       and it returns the new global_last_executed when it has heard from all of
       the peers.
-      - append to peer0, peer1, peer2 logs an instance at index 1
-      - commit and execute the instance in all peers' logs
+      - append to peer0 committed instances at index 1, 2, and 3
+      - append to peer1 committed instances at index 1, 2, and 3
+      - append to peer2 committed instances at index 1 and 2
       - start peer0 and peer1 rpc servers
       - call run_commit_phase with global_last_executed = 0 and expect 0 as the
         response
       - start peer2 rpc server
-      - call run_commit_phase with global_last_executed = 0 and expect 1 as the
+      - call run_commit_phase with global_last_executed = 0 and expect 2 as the
         response
 
   - run_prepare_phase
