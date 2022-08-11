@@ -16,6 +16,12 @@ Instance MakeInstance(int64_t ballot, int64_t index) {
   return i;
 }
 
+Instance MakeInstance(int64_t ballot, int64_t index, InstanceState state) {
+  auto i = MakeInstance(ballot, index);
+  i.set_state(state);
+  return i;
+}
+
 Instance MakeInstance(int64_t ballot, int64_t index, CommandType type) {
   auto i = MakeInstance(ballot, index);
   i.mutable_command()->set_type(type);
