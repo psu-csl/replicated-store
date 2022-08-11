@@ -544,9 +544,10 @@
       - call run_commit_phase with global_last_executed = 0 and expect 0 as the
         response
       - start peer2 rpc server
+      - append to peer2 a committed instance at index 3
       - call run_commit_phase with global_last_executed = 0 and expect 2 as the
         response
-      - append to peer2 a committed instance at index 3 and execute it
+      - peer2 should have now committed the instance at index3; execute it
       - call run_commit_phase with global_last_executed = 0 2 expect 3 as the
         response
 
