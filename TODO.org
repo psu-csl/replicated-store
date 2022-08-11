@@ -34,7 +34,7 @@
 *** handle errors in asio calls
 
 ** All
-
+*** remove sender_id field from protobuf requests
 *** avoid sleeps in tests due to TCP connection re-establishment
 
 *** handle gaps due to temporary disconnect
