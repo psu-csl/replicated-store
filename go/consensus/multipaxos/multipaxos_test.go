@@ -327,6 +327,62 @@ func TestAcceptResponseWithHighBallotChangesLeaderToFollower(t *testing.T) {
 	assert.EqualValues(t, 2, LeaderByPeer(peers[0]))
 }
 
+func TestSendHeartbeats(t *testing.T) {
+	setupPeers()
+	defer tearDown()
+	peers[0].StartServer()
+	peers[1].StartServer()
+
+	ballot := peers[0].NextBallot()
+	index := logs[0].AdvanceLastIndex()
+	for i, log := range logs {
+		instance := util.MakeInstance(ballot, index)
+		log.Append(instance)
+		log.Commit(index)
+		log.Execute(stores[i])
+	}
+
+	assert.EqualValues(t, 0, peers[0].SendHeartbeats(ballot, 0))
+
+	peers[2].StartServer()
+	time.Sleep(2 * time.Second)
+
+	assert.EqualValues(t, index, peers[0].SendHeartbeats(ballot, 0))
+}
+
+func TestSendHeartbeatsWithDifferentProgress(t *testing.T) {
+	setupPeers()
+	defer tearDown()
+	for _, peer := range peers {
+		peer.StartServer()
+	}
+	time.Sleep(2*time.Second)
+
+	numInstances := 10
+	numHalfInstance := numInstances / 2
+	ballot := peers[0].NextBallot()
+	for i, log := range logs {
+		for num := 0; num < numInstances; num++ {
+			index := log.AdvanceLastIndex()
+			instance := util.MakeInstance(ballot, index)
+			log.Append(instance)
+			log.Commit(index)
+			if i != 2 || num < numHalfInstance {
+				log.Execute(stores[i])
+			}
+		}
+	}
+
+	gle1 := peers[0].SendHeartbeats(ballot, 0)
+	assert.EqualValues(t, numHalfInstance, gle1)
+
+	for index := numHalfInstance; index < numInstances; index++ {
+		logs[2].Execute(stores[2])
+	}
+	gle2 := peers[0].SendHeartbeats(ballot, gle1)
+	assert.EqualValues(t, numInstances, gle2)
+}
+
 func TestOneLeaderElected(t *testing.T) {
 	setupServer()
 	defer tearDown()

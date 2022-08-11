@@ -165,10 +165,10 @@ func (p *Multipaxos) SendHeartbeats(ballot int64, globalLastExecuted int64) int6
 
 	for i, peer := range p.rpcPeers {
 		go func(i int, peer pb.MultiPaxosRPCClient) {
-			ctx, cancel := context.WithTimeout(context.Background(),
-				RPCTimeout*time.Millisecond)
-			defer cancel()
-			//ctx := context.Background()
+			//ctx, cancel := context.WithTimeout(context.Background(),
+			//	RPCTimeout*time.Millisecond)
+			//defer cancel()
+			ctx := context.Background()
 
 			response, err := peer.Heartbeat(ctx, &request)
 			mu.Lock()
@@ -222,9 +222,10 @@ func (p *Multipaxos) SendPrepares(ballot int64) map[int64]*pb.Instance {
 
 	for i, peer := range p.rpcPeers {
 		go func(i int, peer pb.MultiPaxosRPCClient) {
-			ctx, cancel := context.WithTimeout(context.Background(),
-				RPCTimeout*time.Millisecond)
-			defer cancel()
+			//ctx, cancel := context.WithTimeout(context.Background(),
+			//	RPCTimeout*time.Millisecond)
+			//defer cancel()
+			ctx := context.Background()
 
 			response, err := peer.Prepare(ctx, &request)
 			mu.Lock()
