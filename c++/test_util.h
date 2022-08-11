@@ -7,6 +7,10 @@ multipaxos::Instance MakeInstance(int64_t ballot, int64_t index);
 
 multipaxos::Instance MakeInstance(int64_t ballot,
                                   int64_t index,
+                                  multipaxos::InstanceState state);
+
+multipaxos::Instance MakeInstance(int64_t ballot,
+                                  int64_t index,
                                   multipaxos::CommandType type);
 
 multipaxos::Instance MakeInstance(int64_t ballot,
