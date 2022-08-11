@@ -105,7 +105,7 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
 
   void WaitUntilLeader() {
     std::unique_lock lock(mu_);
-    while (heartbeat_thread_running_ && !IsLeader(ballot_, id_))
+    while (commit_thread_running_ && !IsLeader(ballot_, id_))
       cv_leader_.wait(lock);
   }
 
@@ -115,33 +115,33 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
       cv_follower_.wait(lock);
   }
 
-  void SleepForHeartbeatInterval() const {
-    std::this_thread::sleep_for(std::chrono::milliseconds(heartbeat_interval_));
+  void SleepForCommitInterval() const {
+    std::this_thread::sleep_for(std::chrono::milliseconds(commit_interval_));
   }
 
   void SleepForRandomInterval() {
-    auto sleep_time = heartbeat_interval_ + dist_(engine_);
+    auto sleep_time = commit_interval_ + dist_(engine_);
     std::this_thread::sleep_for(std::chrono::milliseconds(sleep_time));
   }
 
-  bool ReceivedHeartbeat() const {
-    return Now() - last_heartbeat_ < heartbeat_interval_;
+  bool ReceivedCommit() const {
+    return Now() - last_commit_ < commit_interval_;
   }
 
   void Start();
   void StartRPCServer();
-  void StartHeartbeatThread();
   void StartPrepareThread();
+  void StartCommitThread();
 
   void Stop();
   void StopRPCServer();
-  void StopHeartbeatThread();
   void StopPrepareThread();
+  void StopCommitThread();
 
   Result Replicate(multipaxos::Command command, client_id_t client_id);
 
-  void HeartbeatThread();
   void PrepareThread();
+  void CommitThread();
 
   std::optional<log_map_t> RunPreparePhase(int64_t ballot);
   Result RunAcceptPhase(int64_t ballot,
@@ -161,19 +161,19 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
                       const multipaxos::AcceptRequest*,
                       multipaxos::AcceptResponse*) override;
 
-  grpc::Status Heartbeat(grpc::ServerContext*,
-                         const multipaxos::HeartbeatRequest*,
-                         multipaxos::HeartbeatResponse*) override;
+  grpc::Status Commit(grpc::ServerContext*,
+                      const multipaxos::CommitRequest*,
+                      multipaxos::CommitResponse*) override;
 
   std::atomic<bool> ready_;
   int64_t ballot_;
   Log* log_;
   int64_t id_;
-  long heartbeat_interval_;
+  long commit_interval_;
   std::mt19937 engine_;
   std::uniform_int_distribution<int> dist_;
   std::string port_;
-  std::atomic<long> last_heartbeat_;
+  std::atomic<long> last_commit_;
   std::vector<rpc_peer_t> rpc_peers_;
   rpc_server_t rpc_server_;
   bool rpc_server_running_;
@@ -184,25 +184,11 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
   std::condition_variable cv_leader_;
   std::condition_variable cv_follower_;
 
-  std::atomic<bool> heartbeat_thread_running_;
-  std::thread heartbeat_thread_;
+  std::atomic<bool> commit_thread_running_;
+  std::thread commit_thread_;
 
   std::atomic<bool> prepare_thread_running_;
   std::thread prepare_thread_;
-};
-
-struct heartbeat_state_t {
-  heartbeat_state_t(int64_t leader, int64_t min_last_executed)
-      : num_rpcs_(0),
-        num_oks_(0),
-        leader_(leader),
-        min_last_executed_(min_last_executed) {}
-  size_t num_rpcs_;
-  size_t num_oks_;
-  int64_t leader_;
-  int64_t min_last_executed_ = 0;
-  std::mutex mu_;
-  std::condition_variable cv_;
 };
 
 struct prepare_state_t {
@@ -222,6 +208,20 @@ struct accept_state_t {
   size_t num_rpcs_;
   size_t num_oks_;
   int64_t leader_;
+  std::mutex mu_;
+  std::condition_variable cv_;
+};
+
+struct commit_state_t {
+  commit_state_t(int64_t leader, int64_t min_last_executed)
+      : num_rpcs_(0),
+        num_oks_(0),
+        leader_(leader),
+        min_last_executed_(min_last_executed) {}
+  size_t num_rpcs_;
+  size_t num_oks_;
+  int64_t leader_;
+  int64_t min_last_executed_ = 0;
   std::mutex mu_;
   std::condition_variable cv_;
 };

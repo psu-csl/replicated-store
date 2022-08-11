@@ -4,8 +4,8 @@
 
   - members
 
-    - running_: atomic<bool>; a flag used by long-running threads (heartbeat
-      thread and prepare thread) to know when to stop running; initialized to
+    - running_: atomic<bool>; a flag used by long-running threads (prepare
+      thread and commit thread) to know when to stop running; initialized to
       false, set to true with the start() method and to false with the
       shutdown() method.
 
@@ -48,11 +48,11 @@
       processed the merged log; the |ready_| flag tracks the readiness for
       accepting commands from clients. initialized to false.
 
-    - last_heartbeat_: timestamp; timestamp of the last heartbeat received from the current
-      leader. initialized to 0.
+    - last_commit_: timestamp; timestamp of the last commit received from the
+      current leader. initialized to 0.
 
-    - heartbeat_interval_: milliseconds; time between two consecutive
-      heartbeats. initialized from the configuration file.
+    - commit_interval_: milliseconds; time between two consecutive commits.
+      initialized from the configuration file.
 
     - rpc_peers_: stubs to RPC peers; initialized based on the configuration file
 
@@ -66,42 +66,41 @@
     - tp_: thread_pool; a thread pool to which we post RPC requests to peers;
       initialized from the configuration file.
 
-    # the followings are heartbeat thread related variables. we cannot make them
-    # local to the heartbeat thread because the heartbeat thread posts tasks to
-    # the threadpool tp_; it is possible that the threads from the threadpool
-    # outlive the heartbeat thread, and if these variables are local to the
-    # heartbeat thread, then the threadpool threads will end up referencing
-    # destroyed variables. One other possible solution is to have the threadpool
-    # local to the heartbeat thread as well.
+    # the followings are commit thread related variables. we cannot make them
+    # local to the commit thread because the commit thread posts tasks to the
+    # threadpool tp_; it is possible that the threads from the threadpool
+    # outlive the commit thread, and if these variables are local to the commit
+    # thread, then the threadpool threads will end up referencing destroyed
+    # variables. One other possible solution is to have the threadpool local to
+    # the commit thread as well.
 
-    - heartbeat_thread_: thread; runs the function heartbeat_thread() until
-      shutdown() is called.
+    - commit_thread_: thread; runs the function commit_thread() until shutdown()
+      is called.
 
-    - cv_leader_: condition variable; heartbeat_thread sleeps on this condition
+    - cv_leader_: condition variable; commit_thread sleeps on this condition
       variable to get notified when this peer becomes a leader.
 
-    - heartbeat_request_: heartbeat RPC request protobuf; initialized every time
-      right before heartbeats are sent by acquiring mu_ and getting a consistent
-      set of its fields (ballot, last_executed, and global_last_executed) from
-      this peer.
+    - commit_request_: commit RPC request protobuf; initialized every time right
+      before commits are sent by acquiring mu_ and getting a consistent set of
+      its fields (ballot, last_executed, and global_last_executed) from this
+      peer.
 
-    - heartbeat_num_rpcs_: int; the number of heartbeat rpcs sent; initialized
-      to 0 every time right before heartbeats are sent.
+    - commit_num_rpcs_: int; the number of commit rpcs sent; initialized
+      to 0 every time right before commits are sent.
 
-    - heartbeat_responses_: array of ints; the values of responses to
-      heartbeats; reset to empty every time right before heartbeats are sent.
+    - commit_responses_: array of ints; the values of responses to commits;
+      reset to empty every time right before commit are sent.
 
-    - heartbeat_mu_: mutex; serializes access to heartbeat_num_responses_ and
-      heartbeat_ok_responses_ among thread pool threads and the heartbeat
-      thread.
+    - commit_mu_: mutex; serializes access to commit_num_responses_ and
+      commit_ok_responses_ among thread pool threads and the commit thread.
 
-    - heartbeat_cv_: condition variable; the heartbeat thread waits on this
-      condition variable and it is woken up every time an RPC posted by a
-      threadpool thread completes and signals this condition variable.
+    - commit_cv_: condition variable; the commit thread waits on this condition
+      variable and it is woken up every time an RPC posted by a threadpool
+      thread completes and signals this condition variable.
 
     # the followings are prepare thread related variables. we cannot make them
     # local to the prepare thread for the same reason as above, with the
-    # heartbeat thread.
+    # commit thread.
 
     - prepare_thread_: thread; runs the function prepare_thread() until
       shutdown() is called.
@@ -127,15 +126,15 @@
 
   - types
 
-    - heartbeat_rpc_request
-      - ballot_: ballot of the leader sending the heartbeat RPC
-      - last_executed_: last_executed_ of the leader sending the heartbeat RPC
-      - global_last_executed_: global_last_executed of the leader sending the heartbeat RPC
+    - commit_rpc_request
+      - ballot_: ballot of the leader sending the commit RPC
+      - last_executed_: last_executed_ of the leader sending the commit RPC
+      - global_last_executed_: global_last_executed of the leader sending the commit RPC
       - sender: id of the sender
 
-    - heartbeat_rpc_response
+    - commit_rpc_response
       - last_executed_: last_executed_ of the follower responding to the
-        heartbeat RPC
+        commit RPC
 
     - prepare_rpc_request
       - ballot_: ballot of the sender
@@ -167,19 +166,19 @@
       instantiate RPC server
 
     - start()
-      # starts all the threads of the peer: RPC server threads, heartbeat
+      # starts all the threads of the peer: RPC server threads, commit
       # threads, prepare threads. a multipaxos instance on which start() was
       # called, must have a corresponding shutdown() call for a graceful
       # shutdown; conversely, if start() wasn't called, then shutdown() must not
       # be called.
       running_ = true
-      heartbeat_thread_ = thread(heartbeat_thread()) # start heartbeat thread
+      commit_thread_ = thread(commit_thread()) # start commit thread
       rpc_server_->wait() # start the RPC server so it listens for incoming calls
 
     - shutdown()
       running_ = false
       cv_leader_.notify_all()
-      heartbeat_thread_.join()
+      commit_thread_.join()
       rpc_server_->shutdown() # stop the RPC server
 
     - next_ballot() -> int
@@ -188,7 +187,7 @@
       # the id if this peer, since |ballot_| could have been generated by
       # another peer. calling this method makes this peer the leader, which is
       # why we also signal the cv_leader_ condition variable to wake up the
-      # long-running threads, heartbeat_thread and prepare_thread.
+      # long-running threads, commit_thread and prepare_thread.
       # preconditions:
       # postconditions:
       mu_.lock() # unlocks on return
@@ -247,64 +246,64 @@
       # election in progress
       return accept_result_t{type_: retry, leader_: N/A}
 
-    - heartbeat_handler(request: heartbeat_rpc_request)
-      # description: handler for the heartbeat RPC
+    - commit_handler(request: commit_rpc_request)
+      # description: handler for the commit RPC
       # preconditions:
       # postconditions:
 
       mu_.lock() # unlocks on return
       if request.ballot_ >= ballot_
-        last_heartbeat_ = time::now()
+        last_commit_ = time::now()
         ballot_ = request.ballot_
         stale_rpc = false
         log_.commit_until(request_.last_executed_, ballot_)
         log_.trim_until(request_.global_last_executed)
-      return heartbeat_rpc_response{last_executed_: log_.last_executed()}
+      return commit_rpc_response{last_executed_: log_.last_executed()}
 
-    - heartbeat_thread()
+    - commit_thread()
       while (running_)
         wait_until_leader()
         # this peer is a leader now
         #
         # initialize global_last_executed and update it later on each iteration;
-        # we send a heartbeat to ourselves as well, which results in trimming of
+        # we send a commit to ourselves as well, which results in trimming of
         # our log.
         global_last_executed = log_.global_last_executed()
         while (running_)
-          heartbeat_num_rpcs_ = 0
-          heartbeat_responses_ = []
+          commit_num_rpcs_ = 0
+          commit_responses_ = []
 
           mu_.lock()
-          heartbeat_request_.set_ballot(ballot_)
+          commit_request_.set_ballot(ballot_)
           mu_.unlock
-          heartbeat_request_.set_last_executed(log_.last_executed())
-          heartbeat_request_.set_global_last_executed(global_last_executed)
+          commit_request_.set_last_executed(log_.last_executed())
+          commit_request_.set_global_last_executed(global_last_executed)
 
           for each peer p
             post a closure to a thread pool {
-              status = p.Heartbeat(heartbeat_request_)
-              heartbeat_mu_.lock()
-              ++heartbeat_num_rpcs_
+              status = p.Commit(commit_request_)
+              commit_mu_.lock()
+              ++commit_num_rpcs_
               if status.ok
-                heartbeat_responses_.push_back(status.response)
-              heartbeat_cv_.notify_one()
+                commit_responses_.push_back(status.response)
+              commit_cv_.notify_one()
             }
-            heartbeat_mu_.unlock()
+            commit_mu_.unlock()
 
-          heartbeat_mu_.lock()
-          # for heartbeats, we have to wait until we have sent rpcs to all of
+          commit_mu_.lock()
+          # for commits, we have to wait until we have sent rpcs to all of
           # the peers; this is unlike accept or prepare rpcs because with
-          # heartbeats we receive last_executed from peers, and if we want to
+          # commits we receive last_executed from peers, and if we want to
           # advance global_last_executed, we need to receive last_executed from
           # all peers so that we could be sure the new global_last_executed is a
           # global minimum.
-          while (is_leader() && heartbeat_num_rpcs_ != peers_.size())
-            heartbeat_cv_.wait(hb_mu)
-          if heartbeat_responses_.size() == peer_.size()
+          while (is_leader() && commit_num_rpcs_ != peers_.size())
+            commit_cv_.wait(hb_mu)
+          if commit_responses_.size() == peer_.size()
             global_last_executed = min(ok_responses)
-          heartbeat_mu_.unlock()
+          commit_mu_.unlock()
 
-          sleep(heartbeat_interval_)
+          sleep(commit_interval_)
           if !is_leader()
             break
 
@@ -360,14 +359,14 @@
       for (;;) {
         sleep until follower
         for (;;) {
-          sleep(heartbeat_interval_ + random(10, heartbeat_interval_))
-          if time::now() - last_heartbeat_ < heartbeat_interval_:
+          sleep(commit_interval_ + random(10, commit_interval_))
+          if time::now() - last_commit_ < commit_interval_:
             continue
           prepare_result_t result = prepare()
           if result.type_ != ok:
             continue
           # we are a leader
-          wake up heartbeat_thread
+          wake up commit_thread
           ready_ = false
           log_.merge(result.logs_)
           if (replay())
@@ -445,13 +444,13 @@
 
   - requests_with_lower_ballot_ignored
     - check that stale RPCs (those with older than peer's ballot numbers) are
-      ignored by the heartbeat RPC handler:
+      ignored by the commit RPC handler:
 
       1) in thread t0 start peer0 RPC server
       2) in thread main, call peer0.next_ballot twice
       3) in thread main, create an RPC request and set its ballot to the
          result of calling peer1.next_ballot
-      4) in thread main, invoke heartbeat, prepare, accept RPCs on peer0
+      4) in thread main, invoke commit, prepare, accept RPCs on peer0
 
       since peer1.next_ballot was called once, the ballot on the RPCs should be
       smaller than the ballot on peer0; therefore, the RPCs should be ignored
@@ -470,16 +469,16 @@
       4) in thread main, send the request to peer0
       5) check that peer0 is not a leader anymore and considers peer1 as the
          leader.
-      6) repeat the above for heartbeat, prepare, and accept requests
+      6) repeat the above for commit, prepare, and accept requests
 
-  - heartbeat_commits_and_trims
+  - commit_commits_and_trims
     - append to log0 three in-progress instances with indices 1, 2, and 3
-    - send a heartbeat rpc to peer0 with last_executed = 2 and
+    - send a commit rpc to peer0 with last_executed = 2 and
       global_last_executed = 0
     - check that the last_executed in response is 0 and instances 1 and 2 are in
       committed state
     - execute instances 1 and 2 in the log
-    - send another heartbeat rpc to peer0 with last_executed = 2 and
+    - send another commit rpc to peer0 with last_executed = 2 and
       global_last_executed = 2
     - check that the last_executed in response is 2 and instances 1 and 2 are
       trimmed
@@ -489,12 +488,12 @@
     - instantiate peer0 with log0
     - send a prepare rpc to peer0 and check that the response contains instances
       1, 2, and 3
-    - send a heartbeat rpc to peer0 with last_executed = 2 and
+    - send a commit rpc to peer0 with last_executed = 2 and
       global_last_executed = 0
     - execute instances 1 and 2 in the log
     - send a prepare rpc to peer0 and check that the response contains instances
       1 and 2 in executed state and instance 3 in in-progress state
-    - send another heartbeat rpc to peer0 with last_executed = 2 and
+    - send another commit rpc to peer0 with last_executed = 2 and
       global_last_executed = 2
     - send a prepare rpc to peer0 and check that the response contains only the
       instance 3
@@ -502,11 +501,11 @@
   - accept_appends_to_log
     - send an accept rpc to peer0 and check that instance is appended to log.
 
-  - heartbeat_response_with_high_ballot_changes_leader_to_follower
+  - commit_response_with_high_ballot_changes_leader_to_follower
     - call peer0_.next_ballot to make it a leader
     - call peer1_.next_ballot to make it a leader
     - call peer2_.next_ballot to make it a leader
-    - send a heartbeat with peer2_'s ballot to peer1_ to establish peer2 as a
+    - send a commit with peer2_'s ballot to peer1_ to establish peer2 as a
       leader in peer1 as well
     - call run_commit_phase from peer0_ and expect it to become a follower
       assume peer2 as the leader
@@ -515,7 +514,7 @@
     - call peer0_.next_ballot to make it a leader
     - call peer1_.next_ballot to make it a leader
     - call peer2_.next_ballot to make it a leader
-    - send a heartbeat with peer2_'s ballot to peer1_ to establish peer2 as a
+    - send a commit with peer2_'s ballot to peer1_ to establish peer2 as a
       leader in peer1 as well
     - call run_prepare_phase from peer0_ and expect it to become a follower
       assume peer2 as the leader
@@ -524,7 +523,7 @@
     - call peer0_.next_ballot to make it a leader
     - call peer1_.next_ballot to make it a leader
     - call peer2_.next_ballot to make it a leader
-    - send a heartbeat with peer2_'s ballot to peer1_ to establish peer2 as a
+    - send a commit with peer2_'s ballot to peer1_ to establish peer2 as a
       leader in peer1 as well
     - call run_accept_phase from peer0_ and expect it to become a follower
       assume peer2 as the leader
@@ -563,5 +562,5 @@
         instance
 
   - one_leader_elected
-    - start peer0, peer1, peer2, wait for 3x of heartbeat interval and then
+    - start peer0, peer1, peer2, wait for 3x of commit interval and then
       check that a single leader is elected.

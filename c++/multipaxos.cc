@@ -24,8 +24,8 @@ using multipaxos::ResponseType::REJECT;
 
 using multipaxos::AcceptRequest;
 using multipaxos::AcceptResponse;
-using multipaxos::HeartbeatRequest;
-using multipaxos::HeartbeatResponse;
+using multipaxos::CommitRequest;
+using multipaxos::CommitResponse;
 using multipaxos::PrepareRequest;
 using multipaxos::PrepareResponse;
 
@@ -34,15 +34,15 @@ MultiPaxos::MultiPaxos(Log* log, json const& config)
       ballot_(kMaxNumPeers),
       log_(log),
       id_(config["id"]),
-      heartbeat_interval_(config["heartbeat_interval"]),
+      commit_interval_(config["commit_interval"]),
       engine_(id_),
-      dist_(config["heartbeat_delta"],
-            heartbeat_interval_ - static_cast<long>(config["heartbeat_delta"])),
+      dist_(config["commit_delta"],
+            commit_interval_ - static_cast<long>(config["commit_delta"])),
       port_(config["peers"][id_]),
-      last_heartbeat_(0),
+      last_commit_(0),
       rpc_server_running_(false),
       thread_pool_(config["threadpool_size"]),
-      heartbeat_thread_running_(false),
+      commit_thread_running_(false),
       prepare_thread_running_(false) {
   int64_t id = 0;
   for (std::string const peer : config["peers"])
@@ -52,7 +52,7 @@ MultiPaxos::MultiPaxos(Log* log, json const& config)
 }
 
 void MultiPaxos::Start() {
-  StartHeartbeatThread();
+  StartCommitThread();
   StartPrepareThread();
   StartRPCServer();
 }
@@ -71,13 +71,6 @@ void MultiPaxos::StartRPCServer() {
   rpc_server_->Wait();
 }
 
-void MultiPaxos::StartHeartbeatThread() {
-  DLOG(INFO) << id_ << " starting heartbeat thread";
-  CHECK(!heartbeat_thread_running_);
-  heartbeat_thread_running_ = true;
-  heartbeat_thread_ = std::thread(&MultiPaxos::HeartbeatThread, this);
-}
-
 void MultiPaxos::StartPrepareThread() {
   DLOG(INFO) << id_ << " starting prepare thread";
   CHECK(!prepare_thread_running_);
@@ -85,10 +78,17 @@ void MultiPaxos::StartPrepareThread() {
   prepare_thread_ = std::thread(&MultiPaxos::PrepareThread, this);
 }
 
+void MultiPaxos::StartCommitThread() {
+  DLOG(INFO) << id_ << " starting commit thread";
+  CHECK(!commit_thread_running_);
+  commit_thread_running_ = true;
+  commit_thread_ = std::thread(&MultiPaxos::CommitThread, this);
+}
+
 void MultiPaxos::Stop() {
   StopRPCServer();
   StopPrepareThread();
-  StopHeartbeatThread();
+  StopCommitThread();
   thread_pool_.join();
 }
 
@@ -102,20 +102,20 @@ void MultiPaxos::StopRPCServer() {
   rpc_server_->Shutdown();
 }
 
-void MultiPaxos::StopHeartbeatThread() {
-  DLOG(INFO) << id_ << " stopping heartbeat thread";
-  CHECK(heartbeat_thread_running_);
-  heartbeat_thread_running_ = false;
-  cv_leader_.notify_one();
-  heartbeat_thread_.join();
-}
-
 void MultiPaxos::StopPrepareThread() {
   DLOG(INFO) << id_ << " stopping prepare thread";
   CHECK(prepare_thread_running_);
   prepare_thread_running_ = false;
   cv_follower_.notify_one();
   prepare_thread_.join();
+}
+
+void MultiPaxos::StopCommitThread() {
+  DLOG(INFO) << id_ << " stopping commit thread";
+  CHECK(commit_thread_running_);
+  commit_thread_running_ = false;
+  cv_leader_.notify_one();
+  commit_thread_.join();
 }
 
 Result MultiPaxos::Replicate(Command command, client_id_t client_id) {
@@ -131,30 +131,30 @@ Result MultiPaxos::Replicate(Command command, client_id_t client_id) {
   return Result{ResultType::kRetry, std::nullopt};
 }
 
-void MultiPaxos::HeartbeatThread() {
-  while (heartbeat_thread_running_) {
-    WaitUntilLeader();
-    auto gle = log_->GlobalLastExecuted();
-    while (heartbeat_thread_running_) {
-      auto [ballot, ready] = Ballot();
-      if (!IsLeader(ballot, id_))
-        break;
-      gle = RunCommitPhase(ballot, gle);
-      SleepForHeartbeatInterval();
-    }
-  }
-}
-
 void MultiPaxos::PrepareThread() {
   while (prepare_thread_running_) {
     WaitUntilFollower();
     while (prepare_thread_running_) {
       SleepForRandomInterval();
-      if (ReceivedHeartbeat())
+      if (ReceivedCommit())
         continue;
       auto ballot = NextBallot();
       Replay(ballot, RunPreparePhase(ballot));
       break;
+    }
+  }
+}
+
+void MultiPaxos::CommitThread() {
+  while (commit_thread_running_) {
+    WaitUntilLeader();
+    auto gle = log_->GlobalLastExecuted();
+    while (commit_thread_running_) {
+      auto [ballot, ready] = Ballot();
+      if (!IsLeader(ballot, id_))
+        break;
+      gle = RunCommitPhase(ballot, gle);
+      SleepForCommitInterval();
     }
   }
 }
@@ -261,9 +261,9 @@ Result MultiPaxos::RunAcceptPhase(int64_t ballot,
 
 int64_t MultiPaxos::RunCommitPhase(int64_t ballot,
                                    int64_t global_last_executed) {
-  auto state = std::make_shared<heartbeat_state_t>(id_, log_->LastExecuted());
+  auto state = std::make_shared<commit_state_t>(id_, log_->LastExecuted());
 
-  HeartbeatRequest request;
+  CommitRequest request;
   request.set_ballot(ballot);
   request.set_sender(id_);
   request.set_last_executed(state->min_last_executed_);
@@ -272,9 +272,9 @@ int64_t MultiPaxos::RunCommitPhase(int64_t ballot,
   for (auto& peer : rpc_peers_) {
     asio::post(thread_pool_, [this, state, &peer, request] {
       ClientContext context;
-      HeartbeatResponse response;
-      Status s = peer.stub_->Heartbeat(&context, std::move(request), &response);
-      DLOG(INFO) << id_ << " sent heartbeat to " << peer.id_;
+      CommitResponse response;
+      Status s = peer.stub_->Commit(&context, std::move(request), &response);
+      DLOG(INFO) << id_ << " sent commit to " << peer.id_;
       {
         std::scoped_lock lock(state->mu_);
         ++state->num_rpcs_;
@@ -354,13 +354,13 @@ Status MultiPaxos::Accept(ServerContext*,
   return Status::OK;
 }
 
-Status MultiPaxos::Heartbeat(ServerContext*,
-                             const HeartbeatRequest* request,
-                             HeartbeatResponse* response) {
-  DLOG(INFO) << id_ << " received heartbeat rpc from " << request->sender();
+Status MultiPaxos::Commit(ServerContext*,
+                          const CommitRequest* request,
+                          CommitResponse* response) {
+  DLOG(INFO) << id_ << " received commit rpc from " << request->sender();
   std::scoped_lock lock(mu_);
   if (request->ballot() >= ballot_) {
-    last_heartbeat_ = Now();
+    last_commit_ = Now();
     SetBallot(request->ballot());
     log_->CommitUntil(request->last_executed(), request->ballot());
     log_->TrimUntil(request->global_last_executed());

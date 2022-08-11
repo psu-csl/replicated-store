@@ -18,8 +18,8 @@ using grpc::ClientContext;
 using multipaxos::AcceptRequest;
 using multipaxos::AcceptResponse;
 using multipaxos::Command;
-using multipaxos::HeartbeatRequest;
-using multipaxos::HeartbeatResponse;
+using multipaxos::CommitRequest;
+using multipaxos::CommitResponse;
 using multipaxos::Instance;
 using multipaxos::MultiPaxosRPC;
 using multipaxos::PrepareRequest;
@@ -44,18 +44,18 @@ bool IsSomeoneElseLeader(MultiPaxos const& peer) {
   return !IsLeader(peer) && Leader(peer) < kMaxNumPeers;
 }
 
-HeartbeatResponse SendHeartbeat(MultiPaxosRPC::Stub* stub,
-                                int64_t ballot,
-                                int64_t last_executed,
-                                int64_t global_last_executed) {
+CommitResponse SendCommit(MultiPaxosRPC::Stub* stub,
+                          int64_t ballot,
+                          int64_t last_executed,
+                          int64_t global_last_executed) {
   ClientContext context;
-  HeartbeatRequest request;
-  HeartbeatResponse response;
+  CommitRequest request;
+  CommitResponse response;
 
   request.set_ballot(ballot);
   request.set_last_executed(last_executed);
   request.set_global_last_executed(global_last_executed);
-  stub->Heartbeat(&context, request, &response);
+  stub->Commit(&context, request, &response);
   return response;
 }
 
@@ -88,8 +88,8 @@ std::string MakeConfig(int64_t id) {
   CHECK(id < kNumPeers);
   auto r = R"({ "id": )" + std::to_string(id) + R"(,
               "threadpool_size": 8,
-              "heartbeat_delta": 10,
-              "heartbeat_interval": 300,
+              "commit_delta": 10,
+              "commit_interval": 300,
               "peers": [)";
 
   for (auto i = 0; i < kNumPeers; ++i) {
@@ -167,7 +167,7 @@ TEST_F(MultiPaxosTest, RequestsWithLowerBallotIgnored) {
   peers_[0]->NextBallot();
   auto stale_ballot = peers_[1]->NextBallot();
 
-  auto r1 = SendHeartbeat(stub.get(), stale_ballot, 0, 0);
+  auto r1 = SendCommit(stub.get(), stale_ballot, 0, 0);
   EXPECT_EQ(REJECT, r1.type());
   EXPECT_TRUE(IsLeader(*peers_[0]));
 
@@ -192,7 +192,7 @@ TEST_F(MultiPaxosTest, RequestsWithHigherBallotChangeLeaderToFollower) {
 
   peers_[0]->NextBallot();
   EXPECT_TRUE(IsLeader(*peers_[0]));
-  auto r1 = SendHeartbeat(stub.get(), peers_[1]->NextBallot(), 0, 0);
+  auto r1 = SendCommit(stub.get(), peers_[1]->NextBallot(), 0, 0);
   EXPECT_EQ(OK, r1.type());
   EXPECT_FALSE(IsLeader(*peers_[0]));
   EXPECT_EQ(1, Leader(*peers_[0]));
@@ -217,7 +217,7 @@ TEST_F(MultiPaxosTest, RequestsWithHigherBallotChangeLeaderToFollower) {
   t.join();
 }
 
-TEST_F(MultiPaxosTest, HeartbeatCommitsAndTrims) {
+TEST_F(MultiPaxosTest, CommitCommitsAndTrims) {
   std::thread t([this] { peers_[0]->StartRPCServer(); });
   auto stub = MakeStub(configs_[0]["peers"][0]);
 
@@ -229,7 +229,7 @@ TEST_F(MultiPaxosTest, HeartbeatCommitsAndTrims) {
   auto index3 = logs_[0]->AdvanceLastIndex();
   logs_[0]->Append(MakeInstance(ballot, index3));
 
-  auto r1 = SendHeartbeat(stub.get(), ballot, index2, 0);
+  auto r1 = SendCommit(stub.get(), ballot, index2, 0);
   EXPECT_EQ(OK, r1.type());
   EXPECT_EQ(0, r1.last_executed());
   EXPECT_TRUE(IsCommitted(*(*logs_[0])[index1]));
@@ -239,7 +239,7 @@ TEST_F(MultiPaxosTest, HeartbeatCommitsAndTrims) {
   logs_[0]->Execute(stores_[0].get());
   logs_[0]->Execute(stores_[0].get());
 
-  auto r2 = SendHeartbeat(stub.get(), ballot, index2, index2);
+  auto r2 = SendCommit(stub.get(), ballot, index2, index2);
   EXPECT_EQ(OK, r2.type());
   EXPECT_EQ(index2, r2.last_executed());
   EXPECT_EQ(nullptr, (*logs_[0])[index1]);
@@ -275,7 +275,7 @@ TEST_F(MultiPaxosTest, PrepareRespondsWithCorrectInstances) {
   EXPECT_EQ(instance2, r1.instances(1));
   EXPECT_EQ(instance3, r1.instances(2));
 
-  auto r2 = SendHeartbeat(stub.get(), ballot, index2, 0);
+  auto r2 = SendCommit(stub.get(), ballot, index2, 0);
   EXPECT_EQ(OK, r2.type());
 
   logs_[0]->Execute(stores_[0].get());
@@ -288,7 +288,7 @@ TEST_F(MultiPaxosTest, PrepareRespondsWithCorrectInstances) {
   EXPECT_TRUE(IsExecuted(r3.instances(1)));
   EXPECT_EQ(instance3, r3.instances(2));
 
-  auto r4 = SendHeartbeat(stub.get(), ballot, index2, 2);
+  auto r4 = SendCommit(stub.get(), ballot, index2, 2);
   EXPECT_EQ(OK, r4.type());
 
   auto r5 = SendPrepare(stub.get(), ballot);
@@ -324,7 +324,7 @@ TEST_F(MultiPaxosTest, AcceptAppendsToLog) {
   t.join();
 }
 
-TEST_F(MultiPaxosTest, HeartbeatResponseWithHighBallotChangesLeaderToFollower) {
+TEST_F(MultiPaxosTest, CommitResponseWithHighBallotChangesLeaderToFollower) {
   std::thread t0([this] { peers_[0]->StartRPCServer(); });
   std::thread t1([this] { peers_[1]->StartRPCServer(); });
   std::thread t2([this] { peers_[2]->StartRPCServer(); });
@@ -334,7 +334,7 @@ TEST_F(MultiPaxosTest, HeartbeatResponseWithHighBallotChangesLeaderToFollower) {
   peers_[1]->NextBallot();
   auto peer2_ballot = peers_[2]->NextBallot();
 
-  auto r = SendHeartbeat(stub1.get(), peer2_ballot, 0, 0);
+  auto r = SendCommit(stub1.get(), peer2_ballot, 0, 0);
   EXPECT_EQ(OK, r.type());
   EXPECT_FALSE(IsLeader(*peers_[1]));
   EXPECT_EQ(2, Leader(*peers_[1]));
@@ -362,7 +362,7 @@ TEST_F(MultiPaxosTest, PrepareResponseWithHighBallotChangesLeaderToFollower) {
   peers_[1]->NextBallot();
   auto peer2_ballot = peers_[2]->NextBallot();
 
-  auto r = SendHeartbeat(stub1.get(), peer2_ballot, 0, 0);
+  auto r = SendCommit(stub1.get(), peer2_ballot, 0, 0);
   EXPECT_EQ(OK, r.type());
   EXPECT_FALSE(IsLeader(*peers_[1]));
   EXPECT_EQ(2, Leader(*peers_[1]));
@@ -390,7 +390,7 @@ TEST_F(MultiPaxosTest, AcceptResponseWithHighBallotChangesLeaderToFollower) {
   peers_[1]->NextBallot();
   auto peer2_ballot = peers_[2]->NextBallot();
 
-  auto r = SendHeartbeat(stub1.get(), peer2_ballot, 0, 0);
+  auto r = SendCommit(stub1.get(), peer2_ballot, 0, 0);
   EXPECT_EQ(OK, r.type());
   EXPECT_FALSE(IsLeader(*peers_[1]));
   EXPECT_EQ(2, Leader(*peers_[1]));
@@ -479,10 +479,10 @@ TEST_F(MultiPaxosTest, OneLeaderElected) {
   std::thread t1([this] { peers_[1]->Start(); });
   std::thread t2([this] { peers_[2]->Start(); });
 
-  int heartbeat = configs_[0]["heartbeat_interval"];
-  auto heartbeat_3x = 3 * milliseconds(heartbeat);
+  int commit = configs_[0]["commit_interval"];
+  auto commit_3x = 3 * milliseconds(commit);
 
-  std::this_thread::sleep_for(heartbeat_3x);
+  std::this_thread::sleep_for(commit_3x);
 
   EXPECT_NE(nullptr, OneLeader());
 
