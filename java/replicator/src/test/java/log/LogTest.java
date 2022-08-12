@@ -5,8 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static util.TestUtil.makeInstance;
 
-import command.Command;
 import command.Command.CommandType;
 import command.KVResult;
 import java.util.ArrayList;
@@ -21,32 +21,12 @@ import kvstore.MemKVStore;
 import log.Instance.InstanceState;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import paxos.MultiPaxos;
 
 class LogTest {
 
   private MemKVStore store_;
   private Log log_;
-
-  public Instance MakeInstance(long ballot) {
-    return new Instance(ballot, log_.advanceLastIndex(), 0, InstanceState.kInProgress,
-        new Command());
-  }
-
-  public Instance MakeInstance(long ballot, long index) {
-    return new Instance(ballot, index, 0, InstanceState.kInProgress, new Command());
-  }
-
-  public Instance MakeInstance(long ballot, InstanceState state) {
-    return new Instance(ballot, log_.advanceLastIndex(), 0, state, new Command());
-  }
-
-  public Instance MakeInstance(long ballot, long index, CommandType type) {
-    return new Instance(ballot, index, 0, InstanceState.kInProgress, new Command(type, "", ""));
-  }
-
-  public Instance MakeInstance(long ballot, long index, InstanceState state, CommandType type) {
-    return new Instance(ballot, index, 0, state, new Command(type, "", ""));
-  }
 
 
   @BeforeEach
@@ -69,18 +49,18 @@ class LogTest {
   void insert() {
     HashMap<Long, Instance> log = new HashMap<>();
     long index = 1, ballot = 1;
-    assertTrue(Log.insert(log, MakeInstance(ballot, index, CommandType.Put)));
+    assertTrue(Log.insert(log, makeInstance(ballot, index, CommandType.Put)));
     assertEquals(CommandType.Put, log.get(index).getCommand().getCommandType());
-    assertFalse(Log.insert(log, MakeInstance(ballot, index, CommandType.Put)));
+    assertFalse(Log.insert(log, makeInstance(ballot, index, CommandType.Put)));
   }
 
   @Test
   void insertUpdateInProgress() {
     HashMap<Long, Instance> log = new HashMap<>();
     long index = 1, ballot = 1;
-    assertTrue(Log.insert(log, MakeInstance(ballot, index, CommandType.Put)));
+    assertTrue(Log.insert(log, makeInstance(ballot, index, CommandType.Put)));
     assertEquals(CommandType.Put, log.get(index).getCommand().getCommandType());
-    assertFalse(Log.insert(log, MakeInstance(ballot, index, CommandType.Put)));
+    assertFalse(Log.insert(log, makeInstance(ballot, index, CommandType.Put)));
   }
 
   @Test
@@ -88,9 +68,9 @@ class LogTest {
     HashMap<Long, Instance> log = new HashMap<>();
     long index = 1, ballot = 1;
     assertTrue(
-        Log.insert(log, MakeInstance(ballot, index, InstanceState.kCommitted, CommandType.Put)));
+        Log.insert(log, makeInstance(ballot, index, InstanceState.kCommitted, CommandType.Put)));
     assertFalse(
-        Log.insert(log, MakeInstance(ballot, index, InstanceState.kInProgress, CommandType.Put)));
+        Log.insert(log, makeInstance(ballot, index, InstanceState.kInProgress, CommandType.Put)));
 
   }
 
@@ -98,10 +78,10 @@ class LogTest {
   void insertStale() {
     HashMap<Long, Instance> log = new HashMap<>();
     long index = 1, ballot = 1;
-    assertTrue(Log.insert(log, MakeInstance(ballot, index, CommandType.Put)));
+    assertTrue(Log.insert(log, makeInstance(ballot, index, CommandType.Put)));
     assertEquals(CommandType.Put, log.get(index).getCommand().getCommandType());
     // 0 = ballot - 1
-    assertFalse(Log.insert(log, MakeInstance(0, index, CommandType.Del)));
+    assertFalse(Log.insert(log, makeInstance(0, index, CommandType.Del)));
     assertEquals(CommandType.Put, log.get(index).getCommand().getCommandType());
   }
 
@@ -109,8 +89,8 @@ class LogTest {
   void insertCase2Committed() {
     HashMap<Long, Instance> log = new HashMap<>();
     long index = 1;
-    var inst1 = MakeInstance(0, index, InstanceState.kCommitted, CommandType.Put);
-    var inst2 = MakeInstance(0, index, InstanceState.kInProgress, CommandType.Del);
+    var inst1 = makeInstance(0, index, InstanceState.kCommitted, CommandType.Put);
+    var inst2 = makeInstance(0, index, InstanceState.kInProgress, CommandType.Del);
     Log.insert(log, inst1);
     var thrown = assertThrows(AssertionError.class, () -> Log.insert(log, inst2));
     assertEquals("Insert case2", thrown.getMessage());
@@ -120,8 +100,8 @@ class LogTest {
   void insertCase2Executed() {
     HashMap<Long, Instance> log = new HashMap<>();
     long index = 1;
-    var inst1 = MakeInstance(0, index, InstanceState.kExecuted, CommandType.Put);
-    var inst2 = MakeInstance(0, index, InstanceState.kInProgress, CommandType.Del);
+    var inst1 = makeInstance(0, index, InstanceState.kExecuted, CommandType.Put);
+    var inst2 = makeInstance(0, index, InstanceState.kInProgress, CommandType.Del);
     Log.insert(log, inst1);
     var thrown = assertThrows(AssertionError.class, () -> Log.insert(log, inst2));
     assertEquals("Insert case2", thrown.getMessage());
@@ -131,8 +111,8 @@ class LogTest {
   void insertCase3() {
     HashMap<Long, Instance> log = new HashMap<>();
     long index = 1;
-    var inst1 = MakeInstance(0, index, InstanceState.kInProgress, CommandType.Put);
-    var inst2 = MakeInstance(0, index, InstanceState.kInProgress, CommandType.Del);
+    var inst1 = makeInstance(0, index, InstanceState.kInProgress, CommandType.Put);
+    var inst2 = makeInstance(0, index, InstanceState.kInProgress, CommandType.Del);
     Log.insert(log, inst1);
     var thrown = assertThrows(AssertionError.class, () -> Log.insert(log, inst2));
     assertEquals("Insert case3", thrown.getMessage());
@@ -140,8 +120,8 @@ class LogTest {
 
   @Test
   void append() {
-    log_.append(MakeInstance(0));
-    log_.append(MakeInstance(0));
+    log_.append(makeInstance(0, log_.advanceLastIndex()));
+    log_.append(makeInstance(0, log_.advanceLastIndex()));
     assertEquals(1, log_.get(1L).getIndex());
     assertEquals(2, log_.get(2L).getIndex());
   }
@@ -149,7 +129,7 @@ class LogTest {
   @Test
   void appendWithGap() {
     long index = 42;
-    log_.append(MakeInstance(0, index));
+    log_.append(makeInstance(0, index));
     assertEquals(index, log_.get(index).getIndex());
     assertEquals(index + 1, log_.advanceLastIndex());
   }
@@ -157,32 +137,32 @@ class LogTest {
   @Test
   void appendFillGaps() {
     long index = 42;
-    log_.append(MakeInstance(0, index));
-    log_.append(MakeInstance(0, index - 10));
+    log_.append(makeInstance(0, index));
+    log_.append(makeInstance(0, index - 10));
     assertEquals(index + 1, log_.advanceLastIndex());
   }
 
   @Test
   void appendHighBallotOverride() {
     long index = 1, lo_ballot = 0, hi_ballot = 1;
-    log_.append(MakeInstance(lo_ballot, index, CommandType.Put));
-    log_.append(MakeInstance(hi_ballot, index, CommandType.Del));
+    log_.append(makeInstance(lo_ballot, index, CommandType.Put));
+    log_.append(makeInstance(hi_ballot, index, CommandType.Del));
     assertEquals(CommandType.Del, log_.get(index).getCommand().getCommandType());
   }
 
   @Test
   void appendLowBallotNoEffect() {
     long index = 1, lo_ballot = 0, hi_ballot = 1;
-    log_.append(MakeInstance(hi_ballot, index, CommandType.Put));
-    log_.append(MakeInstance(lo_ballot, index, CommandType.Del));
+    log_.append(makeInstance(hi_ballot, index, CommandType.Put));
+    log_.append(makeInstance(lo_ballot, index, CommandType.Del));
     assertEquals(CommandType.Put, log_.get(index).getCommand().getCommandType());
   }
 
   @Test
   void commit() {
     long index1 = 1, index2 = 2;
-    log_.append(MakeInstance(0, index1));
-    log_.append(MakeInstance(0, index2));
+    log_.append(makeInstance(0, index1));
+    log_.append(makeInstance(0, index2));
 
     assertTrue(log_.get(index1).isInProgress());
     assertTrue(log_.get(index2).isInProgress());
@@ -207,7 +187,7 @@ class LogTest {
     ExecutorService service = Executors.newFixedThreadPool(1);
     var f = service.submit(() -> log_.commit(index));
     Thread.yield();
-    log_.append(MakeInstance(0));
+    log_.append(makeInstance(0, log_.advanceLastIndex()));
     try {
       assertNull(f.get());
     } catch (InterruptedException | ExecutionException e) {
@@ -227,7 +207,7 @@ class LogTest {
       log_.execute(store_);
     });
 
-    log_.append(MakeInstance(0, index));
+    log_.append(makeInstance(0, index));
     log_.commit(index);
 
     try {
@@ -249,9 +229,9 @@ class LogTest {
     });
 
     long index1 = 1, index2 = 2, index3 = 3;
-    log_.append(MakeInstance(0, index1));
-    log_.append(MakeInstance(0, index2));
-    log_.append(MakeInstance(0, index3));
+    log_.append(makeInstance(0, index1));
+    log_.append(makeInstance(0, index2));
+    log_.append(makeInstance(0, index3));
 
     log_.commit(index3);
     log_.commit(index2);
@@ -273,9 +253,9 @@ class LogTest {
     long ballot = 0, index;
 
     for (index = 1; index < 10; index++) {
-      log_.append(MakeInstance(ballot, index));
+      log_.append(makeInstance(ballot, index));
     }
-    log_.append(MakeInstance(ballot, index));
+    log_.append(makeInstance(ballot, index));
     log_.commitUntil(index - 1, ballot);
 
     for (long i = 1; i < index; i++) {
@@ -289,7 +269,7 @@ class LogTest {
   void commitUntilHigherBallot() {
     long ballot = 0, index;
     for (index = 1; index < 10; index++) {
-      log_.append(MakeInstance(ballot, index));
+      log_.append(makeInstance(ballot, index));
     }
     log_.commitUntil(index - 1, ballot + 1);
 
@@ -304,7 +284,7 @@ class LogTest {
   void commitUntilCase2() {
     long ballot = 5, index;
     for (index = 1; index < 10; index++) {
-      log_.append(MakeInstance(ballot, index));
+      log_.append(makeInstance(ballot, index));
     }
 
     long finalIndex = index - 1;
@@ -319,7 +299,7 @@ class LogTest {
       if (index % 3 == 0) { // 3, 6, 9 are gaps
         continue;
       }
-      log_.append(MakeInstance(ballot, index));
+      log_.append(makeInstance(ballot, index));
     }
     // will only commitUntil 3(exclusively)
     log_.commitUntil(index - 1, ballot);
@@ -348,7 +328,7 @@ class LogTest {
     }
     long ballot = 0, index;
     for (index = 1; index < 11; index++) {
-      log_.append(MakeInstance(ballot, index));
+      log_.append(makeInstance(ballot, index));
     }
     index--;
     log_.commitUntil(index, ballot);
@@ -374,7 +354,7 @@ class LogTest {
     }
     long ballot = 0, index;
     for (index = 1; index < 11; index++) {
-      log_.append(MakeInstance(ballot, index));
+      log_.append(makeInstance(ballot, index));
     }
     index--;
     log_.commitUntil(index, ballot);
@@ -404,7 +384,7 @@ class LogTest {
 
     long ballot = 0, index;
     for (index = 1; index < 11; index++) {
-      log_.append(MakeInstance(ballot, index));
+      log_.append(makeInstance(ballot, index));
     }
     index--;
     log_.commitUntil(index, ballot);
@@ -425,7 +405,7 @@ class LogTest {
     assertFalse(log_.isExecutable());
 
     for (long i = 1; i < 11; i++) {
-      log_.append(MakeInstance(ballot, i));
+      log_.append(makeInstance(ballot, i));
     }
     for (long i = 1; i < 11; i++) {
       assertNull(log_.get(i));
@@ -442,7 +422,7 @@ class LogTest {
     ArrayList<Instance> expected = new ArrayList<>();
     long ballot = 0;
     for (int i = 0; i < 10; i++) {
-      expected.add(MakeInstance(ballot));
+      expected.add(makeInstance(ballot, log_.advanceLastIndex()));
       log_.append(expected.get(expected.size() - 1));
     }
     assertEquals(expected, log_.instancesSinceGlobalLastExecuted());
