@@ -177,7 +177,6 @@ class MultiPaxosTest {
     HeartbeatRequest request0 = HeartbeatRequest.newBuilder().setBallot(peer1.nextBallot()).build();
     var response = blockingStub.heartbeat(request0);
 
-    assertEquals(OK, response.getType());
     assertFalse(isLeader(peer0));
     assertEquals(1, leader(peer0));
     peer0.stopRPCServer();
@@ -198,7 +197,7 @@ class MultiPaxosTest {
 
     HeartbeatRequest request = HeartbeatRequest.newBuilder().setBallot(peer1.nextBallot()).build();
     var response = blockingStub.heartbeat(request);
-    assertEquals(REJECT, response.getType());
+
     assertTrue(isLeader(peer0));
     peer0.stopRPCServer();
     channel.shutdown();

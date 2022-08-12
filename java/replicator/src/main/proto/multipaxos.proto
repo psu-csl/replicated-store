@@ -31,9 +31,8 @@ message HeartbeatRequest {int64 ballot = 1;
   int64 global_last_executed = 3;
   int64  sender = 4;}
 
-message HeartbeatResponse {ResponseType type = 1;
-  int64 ballot = 2;
-  int64 last_executed = 3;}
+message HeartbeatResponse {
+  int64 last_executed = 1;}
 
 message PrepareRequest {int64 ballot = 1;
   int64 sender = 2;}
