@@ -225,7 +225,8 @@ class MultiPaxosTest {
     {
       HeartbeatRequest request = HeartbeatRequest.newBuilder().setBallot(ballot)
           .setLastExecuted(index2).setGlobalLastExecuted(0).build();
-      blockingStub.heartbeat(request);
+      var response = blockingStub.heartbeat(request);
+      assertEquals(0, response.getLastExecuted());
     }
     assertTrue(log0.get(index1).isCommitted());
     assertTrue(log0.get(index2).isCommitted());
@@ -236,7 +237,8 @@ class MultiPaxosTest {
     {
       HeartbeatRequest request = HeartbeatRequest.newBuilder().setBallot(ballot)
           .setLastExecuted(index2).setGlobalLastExecuted(index2).build();
-      blockingStub.heartbeat(request);
+      var response = blockingStub.heartbeat(request);
+      assertEquals(index2, response.getLastExecuted());
     }
     assertNull(log0.get(index1));
     assertNull(log0.get(index2));
