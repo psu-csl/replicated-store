@@ -264,12 +264,12 @@ func (p *Multipaxos) RunAcceptPhase(ballot int64, index int64,
 
 	if numOks > len(p.rpcPeers)/2 {
 		p.log.Commit(index)
-		return Result{Type: Ok, Leader: p.id}
+		return Result{Type: Ok, Leader: NoLeader}
 	}
 	if leader != p.id {
 		return Result{Type: SomeElseLeader, Leader: leader}
 	}
-	return Result{Type: Retry, Leader: -1}
+	return Result{Type: Retry, Leader: NoLeader}
 }
 
 func (p *Multipaxos) RunCommitPhase(ballot int64, globalLastExecuted int64) int64 {

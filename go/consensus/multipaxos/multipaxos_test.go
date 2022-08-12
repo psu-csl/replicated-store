@@ -299,7 +299,9 @@ func TestAcceptResponseWithHigherBallotChangesLeaderToFollower(t *testing.T) {
 	assert.EqualValues(t, 2, LeaderByPeer(peers[1]))
 
 	assert.True(t, IsLeaderByPeer(peers[0]))
-	peers[0].RunAcceptPhase(peer0Ballot, 1, &pb.Command{}, 0)
+	r2 := peers[0].RunAcceptPhase(peer0Ballot, 1, &pb.Command{}, 0)
+	assert.EqualValues(t, SomeElseLeader, r2.Type)
+	assert.EqualValues(t, 2, r2.Leader)
 	assert.False(t, IsLeaderByPeer(peers[0]))
 	assert.EqualValues(t, 2, LeaderByPeer(peers[0]))
 }
@@ -325,62 +327,6 @@ func TestCommitResponseWithHigherBallotChangesLeaderToFollower(t *testing.T) {
 	peers[0].RunCommitPhase(peer0Ballot, 0)
 	assert.False(t, IsLeaderByPeer(peers[0]))
 	assert.EqualValues(t, 2, LeaderByPeer(peers[0]))
-}
-
-func TestRunCommitPhase(t*testing.T) {
-	setupPeers()
-	defer tearDown()
-	peers[0].StartServer()
-	peers[1].StartServer()
-
-	ballot := peers[0].NextBallot()
-	index := logs[0].AdvanceLastIndex()
-	for i, log := range logs {
-		instance := util.MakeInstance(ballot, index)
-		log.Append(instance)
-		log.Commit(index)
-		log.Execute(stores[i])
-	}
-
-	assert.EqualValues(t, 0, peers[0].RunCommitPhase(ballot, 0))
-
-	peers[2].StartServer()
-	time.Sleep(2 * time.Second)
-
-	assert.EqualValues(t, index, peers[0].RunCommitPhase(ballot, 0))
-}
-
-func TestRunCommitPhaseWithDifferentProgress(t *testing.T) {
-	setupPeers()
-	defer tearDown()
-	for _, peer := range peers {
-		peer.StartServer()
-	}
-	time.Sleep(2*time.Second)
-
-	numInstances := 10
-	numHalfInstance := numInstances / 2
-	ballot := peers[0].NextBallot()
-	for i, log := range logs {
-		for num := 0; num < numInstances; num++ {
-			index := log.AdvanceLastIndex()
-			instance := util.MakeInstance(ballot, index)
-			log.Append(instance)
-			log.Commit(index)
-			if i != 2 || num < numHalfInstance {
-				log.Execute(stores[i])
-			}
-		}
-	}
-
-	gle1 := peers[0].RunCommitPhase(ballot, 0)
-	assert.EqualValues(t, numHalfInstance, gle1)
-
-	for index := numHalfInstance; index < numInstances; index++ {
-		logs[2].Execute(stores[2])
-	}
-	gle2 := peers[0].RunCommitPhase(ballot, gle1)
-	assert.EqualValues(t, numInstances, gle2)
 }
 
 func TestSendPreparesMajority(t *testing.T) {
@@ -454,11 +400,10 @@ func TestSendPreparesWithReplay(t *testing.T) {
 	assert.True(t, log.IsEqualInstance(expect2, logs[2].Find(index2)))
 }
 
-func TestSendAccepts(t *testing.T) {
+func TestRunAcceptPhase(t *testing.T) {
 	setupPeers()
-	defer tearDown()
 	peers[0].StartServer()
-	peers[0].Connect()
+	defer peers[0].Stop()
 
 	ballot := peers[0].NextBallot()
 	index1 := logs[0].AdvanceLastIndex()
@@ -466,28 +411,61 @@ func TestSendAccepts(t *testing.T) {
 
 	r1 := peers[0].RunAcceptPhase(ballot, index1, &pb.Command{Type: pb.CommandType_PUT}, 0)
 	assert.EqualValues(t, Retry, r1.Type)
+	assert.EqualValues(t, NoLeader, r1.Leader)
+
 	assert.True(t, log.IsInProgress(logs[0].Find(index1)))
 	assert.Nil(t, logs[1].Find(index1))
 	assert.Nil(t, logs[2].Find(index1))
 
 	peers[1].StartServer()
+	defer peers[1].Stop()
 	peers[0].Connect()
+
 	r2 := peers[0].RunAcceptPhase(ballot, index1, &pb.Command{Type: pb.CommandType_PUT}, 0)
 	assert.EqualValues(t, Ok, r2.Type)
+	assert.EqualValues(t, NoLeader, r2.Leader)
+
 	assert.True(t, log.IsCommitted(logs[0].Find(index1)))
 	assert.True(t, log.IsEqualInstance(instance1, logs[1].Find(index1)))
 	assert.Nil(t, logs[2].Find(index1))
+}
+
+func TestRunCommitPhase(t *testing.T) {
+	setupPeers()
+	defer tearDown()
+	peers[0].StartServer()
+	peers[1].StartServer()
+
+	numInstances := int64(3)
+	ballot := peers[0].NextBallot()
+
+	for index := int64(1); index <= numInstances; index++ {
+		for peerId, log := range logs {
+			if peerId == 2 && index == 3 {
+				continue
+			}
+			instance := util.MakeInstanceWithState(ballot, index,
+				pb.InstanceState_COMMITTED)
+			log.Append(instance)
+			log.Execute(stores[peerId])
+		}
+	}
+
+	gle := int64(0)
+	gle = peers[0].RunCommitPhase(ballot, gle)
+	assert.EqualValues(t, 0, gle)
 
 	peers[2].StartServer()
-	peers[0].Connect()
-	index2 := logs[0].AdvanceLastIndex()
-	instance2 := util.MakeInstanceWithType(ballot, index2, pb.CommandType_DEL)
-	r3 := peers[0].RunAcceptPhase(ballot, index2, &pb.Command{Type: pb.CommandType_DEL}, 0)
-	time.Sleep(100 * time.Millisecond)
-	assert.EqualValues(t, Ok, r3.Type)
-	assert.True(t, log.IsCommitted(logs[0].Find(index2)))
-	assert.True(t, log.IsEqualInstance(instance2, logs[1].Find(index2)))
-	assert.True(t, log.IsEqualInstance(instance2, logs[2].Find(index2)))
+	logs[2].Append(util.MakeInstance(ballot, 3))
+	time.Sleep(2 * time.Second)
+
+	gle = peers[0].RunCommitPhase(ballot, gle)
+	assert.EqualValues(t, 2, gle)
+
+	logs[2].Execute(stores[2])
+
+	gle = peers[0].RunCommitPhase(ballot, gle)
+	assert.EqualValues(t, numInstances, gle)
 }
 
 func TestReplicateRetry(t *testing.T) {
