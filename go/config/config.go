@@ -3,11 +3,11 @@ package config
 import "strconv"
 
 type Config struct {
-	Id                int64
-	Peers             []string
-	HeartbeatInterval int64
-	HeartbeatDelta    int64
-	ClientPorts       []string
+	Id             int64
+	Peers          []string
+	CommitInterval int64
+	CommitDelta    int64
+	ClientPorts    []string
 }
 
 func DefaultConfig(id int64, n int) Config {
@@ -21,11 +21,11 @@ func DefaultConfig(id int64, n int) Config {
 	}
 
 	config := Config{
-		Id:                id,
-		HeartbeatInterval: 300,
-		HeartbeatDelta:    10,
-		Peers:             peers,
-		ClientPorts:       clientPorts,
+		Id:             id,
+		CommitInterval: 300,
+		CommitDelta:    10,
+		Peers:          peers,
+		ClientPorts:    clientPorts,
 	}
 	return config
 }

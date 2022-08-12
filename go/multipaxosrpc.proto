@@ -7,7 +7,7 @@ package multipaxosrpc;
 service MultiPaxosRPC {
   rpc Accept (AcceptRequest) returns (AcceptResponse) {}
   rpc Prepare (PrepareRequest) returns (PrepareResponse) {}
-  rpc Heartbeat (HeartbeatRequest) returns (HeartbeatResponse) {}
+  rpc Commit (CommitRequest) returns (CommitResponse) {}
 }
 
 message AcceptRequest {
@@ -31,14 +31,14 @@ message PrepareResponse {
   repeated Instance logs =3;
 }
 
-message HeartbeatRequest {
+message CommitRequest {
   int64 ballot = 1;
   int64 last_executed = 2;
   int64 global_last_executed = 3;
   int64 sender = 4;
 }
 
-message HeartbeatResponse {
+message CommitResponse {
   ResponseType type = 1;
   int64 ballot = 2;
   int64 last_executed = 3;

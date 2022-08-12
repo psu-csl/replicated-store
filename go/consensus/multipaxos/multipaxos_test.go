@@ -85,7 +85,7 @@ func TestRequestsWithLowerBallotIgnored(t *testing.T) {
 	peers[0].NextBallot()
 	staleBallot := peers[1].NextBallot()
 
-	r1 := sendHeartbeat(stub, staleBallot, 0, 0)
+	r1 := sendCommit(stub, staleBallot, 0, 0)
 	assert.EqualValues(t, pb.ResponseType_REJECT, r1.GetType())
 	assert.True(t, IsLeaderByPeer(peers[0]))
 
@@ -111,7 +111,7 @@ func TestRequestsWithHigherBallotChangeLeaderToFollower(t *testing.T) {
 
 	peers[0].NextBallot()
 	assert.True(t, IsLeaderByPeer(peers[0]))
-	r1 := sendHeartbeat(stub, peers[1].NextBallot(), 0, 0)
+	r1 := sendCommit(stub, peers[1].NextBallot(), 0, 0)
 	assert.EqualValues(t, pb.ResponseType_OK, r1.GetType())
 	assert.False(t, IsLeaderByPeer(peers[0]))
 	assert.EqualValues(t, 1, LeaderByPeer(peers[0]))
@@ -135,17 +135,17 @@ func TestRequestsWithHigherBallotChangeLeaderToFollower(t *testing.T) {
 	peers[0].Stop()
 }
 
-func TestNextBallotAfterHeartbeat(t *testing.T) {
+func TestNextBallotAfterCommit(t *testing.T) {
 	setupPeers()
 	peers[0].StartServer()
 	stub := makeStub(configs[0].Peers[0])
 	ballot := peers[0].Id()
 
 	ctx := context.Background()
-	request := pb.HeartbeatRequest{
+	request := pb.CommitRequest{
 		Ballot: peers[1].NextBallot(),
 	}
-	stub.Heartbeat(ctx, &request)
+	stub.Commit(ctx, &request)
 	assert.EqualValues(t, 1, LeaderByPeer(peers[0]))
 
 	ballot += RoundIncrement
@@ -155,7 +155,7 @@ func TestNextBallotAfterHeartbeat(t *testing.T) {
 	peers[0].Stop()
 }
 
-func TestHeartbeatCommitsAndTrims(t *testing.T) {
+func TestCommitCommitsAndTrims(t *testing.T) {
 	setupOnePeer(0)
 	peers[0].StartServer()
 	stub := makeStub(configs[0].Peers[0])
@@ -168,7 +168,7 @@ func TestHeartbeatCommitsAndTrims(t *testing.T) {
 	index3 := logs[0].AdvanceLastIndex()
 	logs[0].Append(util.MakeInstance(ballot, index3))
 
-	r1 := sendHeartbeat(stub, ballot, index2, 0)
+	r1 := sendCommit(stub, ballot, index2, 0)
 	assert.EqualValues(t, pb.ResponseType_OK, r1.GetType())
 	assert.EqualValues(t, 0, r1.LastExecuted)
 	assert.True(t, log.IsCommitted(logs[0].Find(index1)))
@@ -178,7 +178,7 @@ func TestHeartbeatCommitsAndTrims(t *testing.T) {
 	logs[0].Execute(stores[0])
 	logs[0].Execute(stores[0])
 
-	r2 := sendHeartbeat(stub, ballot, index2, index2)
+	r2 := sendCommit(stub, ballot, index2, index2)
 	assert.EqualValues(t, pb.ResponseType_OK, r2.GetType())
 	assert.EqualValues(t, index2, r2.LastExecuted)
 	assert.Nil(t, logs[0].Find(index1))
@@ -211,7 +211,7 @@ func TestPrepareRespondsWithCorrectInstances(t *testing.T) {
 	assert.True(t, log.IsEqualInstance(instance2, r1.GetLogs()[1]))
 	assert.True(t, log.IsEqualInstance(instance3, r1.GetLogs()[2]))
 
-	r2 := sendHeartbeat(stub, ballot, index2, 0)
+	r2 := sendCommit(stub, ballot, index2, 0)
 	assert.EqualValues(t, pb.ResponseType_OK, r2.GetType())
 	logs[0].Execute(stores[0])
 	logs[0].Execute(stores[0])
@@ -223,7 +223,7 @@ func TestPrepareRespondsWithCorrectInstances(t *testing.T) {
 	assert.True(t, log.IsExecuted(r3.GetLogs()[1]))
 	assert.True(t, log.IsEqualInstance(instance3, r1.GetLogs()[2]))
 
-	r4 := sendHeartbeat(stub, ballot, index2, 2)
+	r4 := sendCommit(stub, ballot, index2, 2)
 	assert.EqualValues(t, pb.ResponseType_OK, r4.GetType())
 
 	r5 := sendPrepare(stub, ballot)
@@ -258,25 +258,25 @@ func TestAcceptAppendsToLog(t *testing.T) {
 	peers[0].Stop()
 }
 
-func TestHeartbeatResponseWithHighBallotChangesLeaderToFollower(t *testing.T) {
+func TestCommitResponseWithHighBallotChangesLeaderToFollower(t *testing.T) {
 	setupPeers()
 	defer tearDown()
 	for _, peer := range peers {
 		peer.StartServer()
-		peer.Connect()
 	}
+	peers[0].Connect()
 	stub1 := makeStub(configs[0].Peers[1])
 
 	peer0Ballot := peers[0].NextBallot()
 	peer2Ballot := peers[2].NextBallot()
 
-	r := sendHeartbeat(stub1, peer2Ballot, 0, 0)
+	r := sendCommit(stub1, peer2Ballot, 0, 0)
 	assert.EqualValues(t, pb.ResponseType_OK, r.GetType())
 	assert.False(t, IsLeaderByPeer(peers[1]))
 	assert.EqualValues(t, 2, LeaderByPeer(peers[1]))
 
 	assert.True(t, IsLeaderByPeer(peers[0]))
-	peers[0].SendHeartbeats(peer0Ballot, 0)
+	peers[0].RunCommitPhase(peer0Ballot, 0)
 	assert.False(t, IsLeaderByPeer(peers[0]))
 	assert.EqualValues(t, 2, LeaderByPeer(peers[0]))
 }
@@ -293,13 +293,13 @@ func TestPrepareResponseWithHighBallotChangesLeaderToFollower(t *testing.T) {
 	peer0Ballot := peers[0].NextBallot()
 	peer2Ballot := peers[2].NextBallot()
 
-	r := sendHeartbeat(stub1, peer2Ballot, 0, 0)
+	r := sendCommit(stub1, peer2Ballot, 0, 0)
 	assert.EqualValues(t, pb.ResponseType_OK, r.GetType())
 	assert.False(t, IsLeaderByPeer(peers[1]))
 	assert.EqualValues(t, 2, LeaderByPeer(peers[1]))
 
 	assert.True(t, IsLeaderByPeer(peers[0]))
-	peers[0].SendPrepares(peer0Ballot)
+	peers[0].RunPreparePhase(peer0Ballot)
 	assert.False(t, IsLeaderByPeer(peers[0]))
 	assert.EqualValues(t, 2, LeaderByPeer(peers[0]))
 }
@@ -316,18 +316,18 @@ func TestAcceptResponseWithHighBallotChangesLeaderToFollower(t *testing.T) {
 	peer0Ballot := peers[0].NextBallot()
 	peer2Ballot := peers[2].NextBallot()
 
-	r := sendHeartbeat(stub1, peer2Ballot, 0, 0)
+	r := sendCommit(stub1, peer2Ballot, 0, 0)
 	assert.EqualValues(t, pb.ResponseType_OK, r.GetType())
 	assert.False(t, IsLeaderByPeer(peers[1]))
 	assert.EqualValues(t, 2, LeaderByPeer(peers[1]))
 
 	assert.True(t, IsLeaderByPeer(peers[0]))
-	peers[0].SendAccepts(peer0Ballot, 1, &pb.Command{}, 0)
+	peers[0].RunAcceptPhase(peer0Ballot, 1, &pb.Command{}, 0)
 	assert.False(t, IsLeaderByPeer(peers[0]))
 	assert.EqualValues(t, 2, LeaderByPeer(peers[0]))
 }
 
-func TestSendHeartbeats(t *testing.T) {
+func TestRunCommitPhase(t*testing.T) {
 	setupPeers()
 	defer tearDown()
 	peers[0].StartServer()
@@ -342,15 +342,15 @@ func TestSendHeartbeats(t *testing.T) {
 		log.Execute(stores[i])
 	}
 
-	assert.EqualValues(t, 0, peers[0].SendHeartbeats(ballot, 0))
+	assert.EqualValues(t, 0, peers[0].RunCommitPhase(ballot, 0))
 
 	peers[2].StartServer()
 	time.Sleep(2 * time.Second)
 
-	assert.EqualValues(t, index, peers[0].SendHeartbeats(ballot, 0))
+	assert.EqualValues(t, index, peers[0].RunCommitPhase(ballot, 0))
 }
 
-func TestSendHeartbeatsWithDifferentProgress(t *testing.T) {
+func TestRunCommitPhaseWithDifferentProgress(t *testing.T) {
 	setupPeers()
 	defer tearDown()
 	for _, peer := range peers {
@@ -373,13 +373,13 @@ func TestSendHeartbeatsWithDifferentProgress(t *testing.T) {
 		}
 	}
 
-	gle1 := peers[0].SendHeartbeats(ballot, 0)
+	gle1 := peers[0].RunCommitPhase(ballot, 0)
 	assert.EqualValues(t, numHalfInstance, gle1)
 
 	for index := numHalfInstance; index < numInstances; index++ {
 		logs[2].Execute(stores[2])
 	}
-	gle2 := peers[0].SendHeartbeats(ballot, gle1)
+	gle2 := peers[0].RunCommitPhase(ballot, gle1)
 	assert.EqualValues(t, numInstances, gle2)
 }
 
@@ -398,13 +398,13 @@ func TestSendPreparesMajority(t *testing.T) {
 		log.Commit(index)
 		log.Execute(stores[i])
 	}
-	assert.Nil(t, peers[0].SendPrepares(ballot))
+	assert.Nil(t, peers[0].RunPreparePhase(ballot))
 
 	peers[1].StartServer()
 	defer peers[1].Stop()
 	time.Sleep(2 * time.Second)
 
-	logMap := peers[0].SendPrepares(ballot)
+	logMap := peers[0].RunPreparePhase(ballot)
 	assert.Equal(t, len(expect), len(logMap))
 	for index, instance := range expect {
 		assert.True(t, log.IsEqualInstance(instance, logMap[index]))
@@ -431,7 +431,7 @@ func TestSendPreparesWithReplay(t *testing.T) {
 	logs[2].Append(util.MakeInstance(ballot2, index2))
 
 	leaderBallot := peers[0].NextBallot()
-	logMap := peers[0].SendPrepares(leaderBallot)
+	logMap := peers[0].RunPreparePhase(leaderBallot)
 	assert.EqualValues(t, 2, len(logMap))
 	assert.True(t, log.IsEqualInstance(instance1, logMap[index1]))
 	assert.True(t, log.IsEqualInstance(instance2, logMap[index2]))
@@ -464,7 +464,7 @@ func TestSendAccepts(t *testing.T) {
 	index1 := logs[0].AdvanceLastIndex()
 	instance1 := util.MakeInstanceWithType(ballot, index1, pb.CommandType_PUT)
 
-	r1 := peers[0].SendAccepts(ballot, index1, &pb.Command{Type: pb.CommandType_PUT}, 0)
+	r1 := peers[0].RunAcceptPhase(ballot, index1, &pb.Command{Type: pb.CommandType_PUT}, 0)
 	assert.EqualValues(t, Retry, r1.Type)
 	assert.True(t, log.IsInProgress(logs[0].Find(index1)))
 	assert.Nil(t, logs[1].Find(index1))
@@ -472,7 +472,7 @@ func TestSendAccepts(t *testing.T) {
 
 	peers[1].StartServer()
 	peers[0].Connect()
-	r2 := peers[0].SendAccepts(ballot, index1, &pb.Command{Type: pb.CommandType_PUT}, 0)
+	r2 := peers[0].RunAcceptPhase(ballot, index1, &pb.Command{Type: pb.CommandType_PUT}, 0)
 	assert.EqualValues(t, Ok, r2.Type)
 	assert.True(t, log.IsCommitted(logs[0].Find(index1)))
 	assert.True(t, log.IsEqualInstance(instance1, logs[1].Find(index1)))
@@ -482,7 +482,7 @@ func TestSendAccepts(t *testing.T) {
 	peers[0].Connect()
 	index2 := logs[0].AdvanceLastIndex()
 	instance2 := util.MakeInstanceWithType(ballot, index2, pb.CommandType_DEL)
-	r3 := peers[0].SendAccepts(ballot, index2, &pb.Command{Type: pb.CommandType_DEL}, 0)
+	r3 := peers[0].RunAcceptPhase(ballot, index2, &pb.Command{Type: pb.CommandType_DEL}, 0)
 	time.Sleep(100 * time.Millisecond)
 	assert.EqualValues(t, Ok, r3.Type)
 	assert.True(t, log.IsCommitted(logs[0].Find(index2)))
@@ -512,7 +512,7 @@ func TestReplicateSomeOneElseLeader(t *testing.T) {
 	stub := makeStub(configs[0].Peers[0])
 
 	ballot := peers[1].NextBallot()
-	r1 := sendHeartbeat(stub, ballot, 0, 0)
+	r1 := sendCommit(stub, ballot, 0, 0)
 	assert.EqualValues(t, pb.ResponseType_OK, r1.GetType())
 	assert.EqualValues(t, 1, LeaderByPeer(peers[0]))
 
@@ -582,15 +582,15 @@ func IsSomeoneElseLeaderByPeer(peer *Multipaxos) bool {
 	return !IsLeaderByPeer(peer) && LeaderByPeer(peer) < MaxNumPeers
 }
 
-func sendHeartbeat(stub pb.MultiPaxosRPCClient, ballot int64,
-	lastExecuted int64, globalLastExecuted int64) *pb.HeartbeatResponse {
+func sendCommit(stub pb.MultiPaxosRPCClient, ballot int64,
+	lastExecuted int64, globalLastExecuted int64) *pb.CommitResponse {
 	ctx := context.Background()
-	request := pb.HeartbeatRequest{
+	request := pb.CommitRequest{
 		Ballot:             ballot,
 		LastExecuted:       lastExecuted,
 		GlobalLastExecuted: globalLastExecuted,
 	}
-	response, err := stub.Heartbeat(ctx, &request)
+	response, err := stub.Commit(ctx, &request)
 	if err != nil {
 		return nil
 	}

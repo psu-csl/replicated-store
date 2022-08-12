@@ -16,50 +16,50 @@ import (
 )
 
 const (
-	IdBits = 0xff
-	RoundIncrement = IdBits + 1
-	MaxNumPeers int64 = 0xf
-	NoLeader int64 = -1
-	RPCTimeout  = 300
+	IdBits               = 0xff
+	RoundIncrement       = IdBits + 1
+	MaxNumPeers    int64 = 0xf
+	NoLeader       int64 = -1
+	RPCTimeout           = 300
 )
 
 type Multipaxos struct {
-	running           int32
-	isReady           int32
-	ballot            int64
-	log               *consensusLog.Log
-	id                int64
-	heartbeatInterval int64
-	heartbeatDelta    int64
-	ports             string
-	lastHeartbeat     int64
-	rpcPeers          []pb.MultiPaxosRPCClient
-	server            *grpc.Server
-	rpcServerRunning  bool
+	running            int32
+	isReady            int32
+	ballot             int64
+	log                *consensusLog.Log
+	id                 int64
+	CommitInterval     int64
+	CommitDelta        int64
+	ports              string
+	lastCommit         int64
+	rpcPeers           []pb.MultiPaxosRPCClient
+	server             *grpc.Server
+	rpcServerRunning   bool
 	rpcServerRunningCv *sync.Cond
 	mu                 sync.Mutex
 	cvLeader           *sync.Cond
 	cvFollower         *sync.Cond
 
-	addrs              []string
+	addrs []string
 	pb.UnimplementedMultiPaxosRPCServer
 }
 
 func NewMultipaxos(config config.Config, log *consensusLog.Log) *Multipaxos {
 	paxos := Multipaxos{
-		running:           0,
-		isReady:           0,
-		ballot:            MaxNumPeers,
-		log:               log,
-		id:                config.Id,
-		heartbeatInterval: config.HeartbeatInterval,
-		heartbeatDelta:    config.HeartbeatDelta,
-		ports:             config.Peers[config.Id],
-		lastHeartbeat:     0,
-		rpcPeers:          make([]pb.MultiPaxosRPCClient, len(config.Peers)),
-		rpcServerRunning:  false,
-		server:            nil,
-		addrs: config.Peers,
+		running:          0,
+		isReady:          0,
+		ballot:           MaxNumPeers,
+		log:              log,
+		id:               config.Id,
+		CommitInterval:   config.CommitInterval,
+		CommitDelta:      config.CommitDelta,
+		ports:            config.Peers[config.Id],
+		lastCommit:       0,
+		rpcPeers:         make([]pb.MultiPaxosRPCClient, len(config.Peers)),
+		rpcServerRunning: false,
+		server:           nil,
+		addrs:            config.Peers,
 	}
 	paxos.rpcServerRunningCv = sync.NewCond(&paxos.mu)
 	paxos.cvFollower = sync.NewCond(&paxos.mu)
@@ -99,8 +99,8 @@ func (p *Multipaxos) Stop() {
 func (p *Multipaxos) Replicate(command *pb.Command, clientId int64) Result {
 	ballot, isReady := p.Ballot()
 	if IsLeader(ballot, p.id) {
-		if isReady == 1{
-			return p.SendAccepts(ballot, p.log.AdvanceLastIndex(), command,
+		if isReady == 1 {
+			return p.RunAcceptPhase(ballot, p.log.AdvanceLastIndex(), command,
 				clientId)
 		}
 		return Result{Type: Retry, Leader: -1}
@@ -111,7 +111,26 @@ func (p *Multipaxos) Replicate(command *pb.Command, clientId int64) Result {
 	return Result{Type: Retry, Leader: -1}
 }
 
-func (p *Multipaxos) HeartbeatThread() {
+func (p *Multipaxos) PrepareThread() {
+	for p.running == 1 {
+		p.waitUntilFollower()
+		for p.running == 1 {
+			sleepTime := p.CommitInterval + p.CommitDelta +
+				rand.Int63n(p.CommitInterval-p.CommitDelta)
+			time.Sleep(time.Duration(sleepTime))
+			if time.Now().UnixNano()/1e6-p.lastCommit < p.CommitInterval {
+				continue
+			}
+
+			ballot := p.NextBallot()
+			replayLog := p.RunPreparePhase(ballot)
+			p.Replay(ballot, replayLog)
+			break
+		}
+	}
+}
+
+func (p *Multipaxos) CommitThread() {
 	for p.running == 1 {
 		p.waitUntilLeader()
 
@@ -122,95 +141,17 @@ func (p *Multipaxos) HeartbeatThread() {
 				break
 			}
 
-			gle = p.SendHeartbeats(ballot, gle)
-			time.Sleep(time.Duration(p.heartbeatInterval))
+			gle = p.RunCommitPhase(ballot, gle)
+			time.Sleep(time.Duration(p.CommitInterval))
 		}
 	}
 }
 
-func (p *Multipaxos) PrepareThread() {
-	for p.running == 1 {
-		p.waitUntilFollower()
-		for p.running == 1 {
-			sleepTime := p.heartbeatInterval + p.heartbeatDelta +
-				rand.Int63n(p.heartbeatInterval-p.heartbeatDelta)
-			time.Sleep(time.Duration(sleepTime))
-			if time.Now().UnixNano()/1e6-p.lastHeartbeat < p.heartbeatInterval {
-				continue
-			}
-
-			ballot := p.NextBallot()
-			replayLog := p.SendPrepares(ballot)
-			p.Replay(ballot, replayLog)
-			break
-		}
-	}
-}
-
-func (p *Multipaxos) SendHeartbeats(ballot int64, globalLastExecuted int64) int64 {
-	var (
-		numRpcs         = 0
-		numOks          = 0
-		leader          = p.id
-		minLastExecuted = p.log.LastExecuted()
-		mu              sync.Mutex
-	)
-	cv := sync.NewCond(&mu)
-	request := pb.HeartbeatRequest{
-		Ballot:             ballot,
-		LastExecuted:       minLastExecuted,
-		GlobalLastExecuted: globalLastExecuted,
-		Sender:             p.id,
-	}
-
-	for i, peer := range p.rpcPeers {
-		go func(i int, peer pb.MultiPaxosRPCClient) {
-			//ctx, cancel := context.WithTimeout(context.Background(),
-			//	RPCTimeout*time.Millisecond)
-			//defer cancel()
-			ctx := context.Background()
-
-			response, err := peer.Heartbeat(ctx, &request)
-			mu.Lock()
-			defer mu.Unlock()
-			defer cv.Signal()
-
-			numRpcs += 1
-			if err != nil {
-				return
-			}
-			if response.GetType() == pb.ResponseType_OK {
-				numOks += 1
-				if response.GetLastExecuted() < minLastExecuted {
-					minLastExecuted = response.GetLastExecuted()
-				}
-			} else {
-				p.mu.Lock()
-				if response.GetBallot() > p.ballot {
-					p.setBallot(response.GetBallot())
-					leader = Leader(p.ballot)
-				}
-				p.mu.Unlock()
-			}
-		}(i, peer)
-	}
-
-	mu.Lock()
-	defer mu.Unlock()
-	for leader == p.id && numRpcs != len(p.rpcPeers) {
-		cv.Wait()
-	}
-	if numOks == len(p.rpcPeers) {
-		return minLastExecuted
-	}
-	return globalLastExecuted
-}
-
-func (p *Multipaxos) SendPrepares(ballot int64) map[int64]*pb.Instance {
+func (p *Multipaxos) RunPreparePhase(ballot int64) map[int64]*pb.Instance {
 	var (
 		numRpcs = 0
 		numOks  = 0
-		leader = p.id
+		leader  = p.id
 		mu      sync.Mutex
 	)
 	cv := sync.NewCond(&mu)
@@ -255,23 +196,23 @@ func (p *Multipaxos) SendPrepares(ballot int64) map[int64]*pb.Instance {
 
 	mu.Lock()
 	defer mu.Unlock()
-	for leader == p.id && numOks <= len(p.rpcPeers) / 2 &&
+	for leader == p.id && numOks <= len(p.rpcPeers)/2 &&
 		numRpcs != len(p.rpcPeers) {
 		cv.Wait()
 	}
 
-	if numOks > len(p.rpcPeers) / 2 {
+	if numOks > len(p.rpcPeers)/2 {
 		return logMap
 	}
 	return nil
 }
 
-func (p *Multipaxos) SendAccepts(ballot int64, index int64,
+func (p *Multipaxos) RunAcceptPhase(ballot int64, index int64,
 	command *pb.Command, clientId int64) Result {
 	var (
 		numRpcs = 0
 		numOks  = 0
-		leader = p.id
+		leader  = p.id
 		mu      sync.Mutex
 	)
 	cv := sync.NewCond(&mu)
@@ -316,12 +257,12 @@ func (p *Multipaxos) SendAccepts(ballot int64, index int64,
 
 	mu.Lock()
 	defer mu.Unlock()
-	for leader == p.id && numOks <= len(p.rpcPeers) / 2 &&
+	for leader == p.id && numOks <= len(p.rpcPeers)/2 &&
 		numRpcs != len(p.rpcPeers) {
 		cv.Wait()
 	}
 
-	if numOks > len(p.rpcPeers) / 2 {
+	if numOks > len(p.rpcPeers)/2 {
 		p.log.Commit(index)
 		return Result{Type: Ok, Leader: p.id}
 	}
@@ -331,13 +272,73 @@ func (p *Multipaxos) SendAccepts(ballot int64, index int64,
 	return Result{Type: Retry, Leader: -1}
 }
 
+func (p *Multipaxos) RunCommitPhase(ballot int64, globalLastExecuted int64) int64 {
+	var (
+		numRpcs         = 0
+		numOks          = 0
+		leader          = p.id
+		minLastExecuted = p.log.LastExecuted()
+		mu              sync.Mutex
+	)
+	cv := sync.NewCond(&mu)
+	request := pb.CommitRequest{
+		Ballot:             ballot,
+		LastExecuted:       minLastExecuted,
+		GlobalLastExecuted: globalLastExecuted,
+		Sender:             p.id,
+	}
+
+	for i, peer := range p.rpcPeers {
+		go func(i int, peer pb.MultiPaxosRPCClient) {
+			//ctx, cancel := context.WithTimeout(context.Background(),
+			//	RPCTimeout*time.Millisecond)
+			//defer cancel()
+			ctx := context.Background()
+
+			response, err := peer.Commit(ctx, &request)
+			mu.Lock()
+			defer mu.Unlock()
+			defer cv.Signal()
+
+			numRpcs += 1
+			if err != nil {
+				return
+			}
+			if response.GetType() == pb.ResponseType_OK {
+				numOks += 1
+				if response.GetLastExecuted() < minLastExecuted {
+					minLastExecuted = response.GetLastExecuted()
+				}
+			} else {
+				p.mu.Lock()
+				if response.GetBallot() > p.ballot {
+					p.setBallot(response.GetBallot())
+					leader = Leader(p.ballot)
+				}
+				p.mu.Unlock()
+			}
+		}(i, peer)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	for leader == p.id && numRpcs != len(p.rpcPeers) {
+		cv.Wait()
+	}
+	if numOks == len(p.rpcPeers) {
+		return minLastExecuted
+	}
+	return globalLastExecuted
+}
+
+
 func (p *Multipaxos) Replay(ballot int64, replayLog map[int64]*pb.Instance) {
 	if replayLog == nil {
 		return
 	}
 
 	for index, instance := range replayLog {
-		result := p.SendAccepts(ballot, index, instance.GetCommand(),
+		result := p.RunAcceptPhase(ballot, index, instance.GetCommand(),
 			instance.GetClientId())
 		if result.Type == SomeElseLeader {
 			return
@@ -346,26 +347,6 @@ func (p *Multipaxos) Replay(ballot int64, replayLog map[int64]*pb.Instance) {
 		}
 	}
 	atomic.StoreInt32(&p.isReady, 1)
-}
-
-func (p *Multipaxos) Heartbeat(ctx context.Context,
-	request *pb.HeartbeatRequest) (*pb.HeartbeatResponse, error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	response := &pb.HeartbeatResponse{}
-	if request.GetBallot() >= p.ballot {
-		atomic.StoreInt64(&p.lastHeartbeat, time.Now().UnixNano() / 1e6)
-		p.setBallot(request.GetBallot())
-		p.log.CommitUntil(request.GetLastExecuted(), request.GetBallot())
-		p.log.TrimUntil(request.GetGlobalLastExecuted())
-		response.LastExecuted = p.log.LastExecuted()
-		response.Type = pb.ResponseType_OK
-	} else {
-		response.Ballot = p.ballot
-		response.Type = pb.ResponseType_REJECT
-	}
-	return response, nil
 }
 
 func (p *Multipaxos) Prepare(ctx context.Context,
@@ -383,7 +364,7 @@ func (p *Multipaxos) Prepare(ctx context.Context,
 		return &pb.PrepareResponse{
 			Type:   pb.ResponseType_OK,
 			Ballot: -1,
-			Logs:  grpcLogs,
+			Logs:   grpcLogs,
 		}, nil
 	}
 	return &pb.PrepareResponse{
@@ -415,6 +396,26 @@ func (p *Multipaxos) Accept(ctx context.Context,
 		Ballot: p.ballot}, nil
 }
 
+func (p *Multipaxos) Commit(ctx context.Context,
+	request *pb.CommitRequest) (*pb.CommitResponse, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	response := &pb.CommitResponse{}
+	if request.GetBallot() >= p.ballot {
+		atomic.StoreInt64(&p.lastCommit, time.Now().UnixNano()/1e6)
+		p.setBallot(request.GetBallot())
+		p.log.CommitUntil(request.GetLastExecuted(), request.GetBallot())
+		p.log.TrimUntil(request.GetGlobalLastExecuted())
+		response.LastExecuted = p.log.LastExecuted()
+		response.Type = pb.ResponseType_OK
+	} else {
+		response.Ballot = p.ballot
+		response.Type = pb.ResponseType_REJECT
+	}
+	return response, nil
+}
+
 // Helper functions
 func (p *Multipaxos) NextBallot() int64 {
 	p.mu.Lock()
@@ -430,10 +431,10 @@ func (p *Multipaxos) NextBallot() int64 {
 	return p.ballot
 }
 
-func(p *Multipaxos) setBallot(ballot int64) {
+func (p *Multipaxos) setBallot(ballot int64) {
 	oldId := p.ballot & IdBits
 	newId := p.ballot & IdBits
-	if (oldId == p.id  || oldId == MaxNumPeers) && oldId != newId {
+	if (oldId == p.id || oldId == MaxNumPeers) && oldId != newId {
 		p.cvFollower.Signal()
 	}
 	p.ballot = ballot
@@ -443,7 +444,7 @@ func (p *Multipaxos) Id() int64 {
 	return p.id
 }
 
-func (p *Multipaxos) Ballot() (int64, int32){
+func (p *Multipaxos) Ballot() (int64, int32) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -485,7 +486,7 @@ func (p *Multipaxos) StartServer() {
 
 func (p *Multipaxos) StartThreads() {
 	go p.PrepareThread()
-	go p.HeartbeatThread()
+	go p.CommitThread()
 }
 
 func (p *Multipaxos) Connect() {
