@@ -21,10 +21,11 @@ import multipaxos.HeartbeatResponse;
 import multipaxos.MultiPaxosRPCGrpc;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
 
-@TestMethodOrder(MethodOrderer.MethodName.class)
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class MultiPaxosTest {
 
   protected Log log0, log1, log2;
@@ -79,6 +80,7 @@ class MultiPaxosTest {
 
 
   @Test
+  @Order(0)
   void constructor() {
     assertEquals(kMaxNumPeers, leader(peer0));
     assertFalse(isLeader(peer0));
@@ -86,6 +88,7 @@ class MultiPaxosTest {
   }
 
   @Test
+  @Order(1)
   void nextBallot() {
 
     int ballot = 2;
@@ -101,29 +104,7 @@ class MultiPaxosTest {
   }
 
   @Test
-  void heartbeatHandlerSameBallot() {
-    ExecutorService executor = Executors.newSingleThreadExecutor();
-    executor.submit(() -> peer0.start());
-    log0.append(makeInstance(17, 1, InstanceState.kExecuted, CommandType.Put));
-    log0.append(makeInstance(17, 2, InstanceState.kInProgress, CommandType.Get));
-    log0.setLastExecuted(1);
-
-    ManagedChannel channel = ManagedChannelBuilder.forAddress("localhost", config0.getPort())
-        .usePlaintext().build();
-    var blockingStub = MultiPaxosRPCGrpc.newBlockingStub(channel);
-
-    HeartbeatRequest request = HeartbeatRequest.newBuilder().setBallot(17).setLastExecuted(2)
-        .setGlobalLastExecuted(1).build();
-    HeartbeatResponse response = blockingStub.heartbeat(request);
-
-    assertEquals(1, response.getLastExecuted());
-    assertEquals(log0.get(2L).getState(), InstanceState.kCommitted);
-    assertNull(log0.get(1L));
-    peer0.stop();
-    channel.shutdown();
-  }
-
-  @Test
+  @Order(2)
   void heartbeatHandlerHigherBallot() {
     ExecutorService executor = Executors.newSingleThreadExecutor();
     executor.submit(() -> {
@@ -157,9 +138,54 @@ class MultiPaxosTest {
   }
 
   @Test
-  void heartbeatIgnoreStaleRPC() {
+  @Order(3)
+  void heartbeatHandlerSameBallot() {
     ExecutorService executor = Executors.newSingleThreadExecutor();
     executor.submit(() -> peer0.start());
+    log0.append(makeInstance(17, 1, InstanceState.kExecuted, CommandType.Put));
+    log0.append(makeInstance(17, 2, InstanceState.kInProgress, CommandType.Get));
+    log0.setLastExecuted(1);
+
+    ManagedChannel channel = ManagedChannelBuilder.forAddress("localhost", config0.getPort())
+        .usePlaintext().build();
+    var blockingStub = MultiPaxosRPCGrpc.newBlockingStub(channel);
+
+    HeartbeatRequest request = HeartbeatRequest.newBuilder().setBallot(17).setLastExecuted(2)
+        .setGlobalLastExecuted(1).build();
+    HeartbeatResponse response = blockingStub.heartbeat(request);
+
+    assertEquals(1, response.getLastExecuted());
+    assertEquals(log0.get(2L).getState(), InstanceState.kCommitted);
+    assertNull(log0.get(1L));
+    peer0.stop();
+    channel.shutdown();
+  }
+
+
+  @Test
+  @Order(4)
+  void heartbeatChangesLeaderToFollower() {
+    ExecutorService executor = Executors.newSingleThreadExecutor();
+    executor.submit(() -> peer0.startRPCServer());
+    ManagedChannel channel = ManagedChannelBuilder.forAddress("localhost", config0.getPort())
+        .usePlaintext().build();
+    var blockingStub = MultiPaxosRPCGrpc.newBlockingStub(channel);
+
+    peer0.nextBallot();
+    HeartbeatRequest request0 = HeartbeatRequest.newBuilder().setBallot(peer1.nextBallot()).build();
+    blockingStub.heartbeat(request0);
+
+    assertFalse(isLeader(peer0));
+    assertEquals(1, leader(peer0));
+    peer0.stopRPCServer();
+    channel.shutdown();
+  }
+
+  @Test
+  @Order(5)
+  void heartbeatIgnoreStaleRPC() {
+    ExecutorService executor = Executors.newSingleThreadExecutor();
+    executor.submit(() -> peer0.startRPCServer());
     ManagedChannel channel = ManagedChannelBuilder.forAddress("localhost", config0.getPort())
         .usePlaintext().build();
     var blockingStub = MultiPaxosRPCGrpc.newBlockingStub(channel);
@@ -171,26 +197,9 @@ class MultiPaxosTest {
     blockingStub.heartbeat(request);
 
     assertTrue(isLeader(peer0));
-    peer0.stop();
+    peer0.stopRPCServer();
     channel.shutdown();
   }
 
-  @Test
-  void heartbeatChangesLeaderToFollower() {
-    ExecutorService executor = Executors.newSingleThreadExecutor();
-    executor.submit(() -> peer0.start());
-    ManagedChannel channel = ManagedChannelBuilder.forAddress("localhost", config0.getPort())
-        .usePlaintext().build();
-    var blockingStub = MultiPaxosRPCGrpc.newBlockingStub(channel);
-
-    peer0.nextBallot();
-    HeartbeatRequest request0 = HeartbeatRequest.newBuilder().setBallot(peer1.nextBallot()).build();
-    blockingStub.heartbeat(request0);
-
-    assertFalse(isLeader(peer0));
-    assertEquals(1, leader(peer0));
-    peer0.stop();
-    channel.shutdown();
-  }
 
 }
