@@ -6,15 +6,15 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static paxos.MultiPaxos.kMaxNumPeers;
+import static util.TestUtil.makeInstance;
 
-import command.Command;
 import command.Command.CommandType;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 import java.util.Arrays;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import log.Instance;
+import kvstore.MemKVStore;
 import log.Instance.InstanceState;
 import log.Log;
 import multipaxos.HeartbeatRequest;
@@ -26,12 +26,14 @@ import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
 
+
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class MultiPaxosTest {
 
   protected Log log0, log1, log2;
   protected MultiPaxos peer0, peer1, peer2;
   protected Configuration config0, config1, config2;
+  protected MemKVStore store;
 
   public static long leader(MultiPaxos peer) {
     var r = peer.ballot();
@@ -45,10 +47,6 @@ class MultiPaxosTest {
 
   public static boolean isSomeoneElseLeader(MultiPaxos peer) {
     return !isLeader(peer) && leader(peer) < kMaxNumPeers;
-  }
-
-  public Instance makeInstance(long ballot, long index, InstanceState state, CommandType type) {
-    return new Instance(ballot, index, 0, state, new Command(type, "", ""));
   }
 
   public Configuration makeConfig(long id, int port) {
@@ -77,6 +75,8 @@ class MultiPaxosTest {
     peer0 = new MultiPaxos(log0, config0);
     peer1 = new MultiPaxos(log1, config1);
     peer2 = new MultiPaxos(log2, config2);
+
+    store = new MemKVStore();
   }
 
 
@@ -202,5 +202,48 @@ class MultiPaxosTest {
     channel.shutdown();
   }
 
+  @Test
+  @Order(6)
+  void heartbeatCommitsAndTrims() {
+    ExecutorService executor = Executors.newSingleThreadExecutor();
+    executor.submit(() -> peer0.startRPCServer());
+    ManagedChannel channel = ManagedChannelBuilder.forAddress("localhost", config0.getPort())
+        .usePlaintext().build();
+    var blockingStub = MultiPaxosRPCGrpc.newBlockingStub(channel);
+
+    var ballot = peer0.nextBallot();
+
+    var index1 = log0.advanceLastIndex();
+    log0.append(makeInstance(ballot, index1));
+
+    var index2 = log0.advanceLastIndex();
+    log0.append(makeInstance(ballot, index2));
+
+    var index3 = log0.advanceLastIndex();
+    log0.append(makeInstance(ballot, index3));
+
+    {
+      HeartbeatRequest request = HeartbeatRequest.newBuilder().setBallot(ballot)
+          .setLastExecuted(index2).setGlobalLastExecuted(0).build();
+      blockingStub.heartbeat(request);
+    }
+    assertTrue(log0.get(index1).isCommitted());
+    assertTrue(log0.get(index2).isCommitted());
+    assertTrue(log0.get(index3).isInProgress());
+
+    log0.execute(store);
+    log0.execute(store);
+    {
+      HeartbeatRequest request = HeartbeatRequest.newBuilder().setBallot(ballot)
+          .setLastExecuted(index2).setGlobalLastExecuted(index2).build();
+      blockingStub.heartbeat(request);
+    }
+    assertNull(log0.get(index1));
+    assertNull(log0.get(index2));
+    assertTrue(log0.get(index3).isInProgress());
+
+    peer0.stopRPCServer();
+    channel.shutdown();
+  }
 
 }

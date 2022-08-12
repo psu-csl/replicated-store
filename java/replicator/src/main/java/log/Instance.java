@@ -30,7 +30,7 @@ public class Instance {
     return state == InstanceState.kInProgress;
   }
 
-  public boolean isCommited() {
+  public boolean isCommitted() {
     return state == InstanceState.kCommitted;
   }
 
@@ -38,7 +38,7 @@ public class Instance {
     return state == InstanceState.kExecuted;
   }
 
-  public void setCommited() {
+  public void setCommitted() {
     state = InstanceState.kCommitted;
   }
 

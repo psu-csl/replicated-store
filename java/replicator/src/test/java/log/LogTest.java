@@ -170,13 +170,13 @@ class LogTest {
     log_.commit(index2);
 
     assertTrue(log_.get(index1).isInProgress());
-    assertTrue(log_.get(index2).isCommited());
+    assertTrue(log_.get(index2).isCommitted());
     assertFalse(log_.isExecutable());
 
     log_.commit(index1);
 
-    assertTrue(log_.get(index1).isCommited());
-    assertTrue(log_.get(index2).isCommited());
+    assertTrue(log_.get(index1).isCommitted());
+    assertTrue(log_.get(index2).isCommitted());
     assertTrue(log_.isExecutable());
   }
 
@@ -192,7 +192,7 @@ class LogTest {
     } catch (InterruptedException | ExecutionException e) {
       throw new RuntimeException(e);
     }
-    assertTrue(log_.get(index).isCommited());
+    assertTrue(log_.get(index).isCommitted());
   }
 
 
@@ -258,9 +258,9 @@ class LogTest {
     log_.commitUntil(index - 1, ballot);
 
     for (long i = 1; i < index; i++) {
-      assertTrue(log_.get(i).isCommited());
+      assertTrue(log_.get(i).isCommitted());
     }
-    assertFalse(log_.get(index).isCommited());
+    assertFalse(log_.get(index).isCommitted());
     assertTrue(log_.isExecutable());
   }
 
@@ -273,7 +273,7 @@ class LogTest {
     log_.commitUntil(index - 1, ballot + 1);
 
     for (long i = 1; i < index; i++) {
-      assertFalse(log_.get(i).isCommited());
+      assertFalse(log_.get(i).isCommitted());
     }
 
     assertFalse(log_.isExecutable());
@@ -307,13 +307,13 @@ class LogTest {
       if (i % 3 == 0) {
         break;
       }
-      assertTrue(log_.get(i).isCommited());
+      assertTrue(log_.get(i).isCommitted());
     }
     for (; i < index; i++) {
       if (i % 3 == 0) {
         continue;
       }
-      assertFalse(log_.get(i).isCommited());
+      assertFalse(log_.get(i).isCommitted());
     }
     assertTrue(log_.isExecutable());
   }

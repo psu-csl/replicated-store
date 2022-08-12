@@ -36,7 +36,7 @@ public class Log {
       log.put(i, instance);
       return true;
     }
-    if (it.isCommited() || it.isExecuted()) {
+    if (it.isCommitted() || it.isExecuted()) {
       assert (it.getCommand().equals(instance.getCommand())) : "Insert case2";
       return false;
     }
@@ -121,7 +121,7 @@ public class Log {
         it = log.get(index);
       }
       if (it.isInProgress()) {
-        it.setCommited();
+        it.setCommitted();
       }
       if (isExecutable()) {
         cvExecutable.signal();
@@ -167,7 +167,7 @@ public class Log {
         }
         assert (ballot >= inst.getBallot()) : "CommitUntil case 2";
         if (inst.getBallot() == ballot) {
-          inst.setCommited();
+          inst.setCommitted();
         }
       }
       if (isExecutable()) {
