@@ -592,6 +592,17 @@
       - call run_commit_phase with global_last_executed = 2 expect 3 as the
         response
 
+  - replay
+    - check that after replay peers have identical logs.
+      - prepare a log with a committed entry with put command at index1,
+        executed entry with get command at index2, and in in-progress entry with
+        del command at index3
+      - start peer0 and peer1 rpc servers
+      - call peer0.replay with the log and new ballot and check that peer0
+        contains committed entries at index1, index2, and index3 with put, get,
+        and del commands, respectively; and peer1 contains the same commands
+        in-inprogress state
+
   - one_leader_elected
     - start peer0, peer1, peer2, wait for 3x of commit interval and then
       check that a single leader is elected.

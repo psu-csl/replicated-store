@@ -554,6 +554,57 @@ TEST_F(MultiPaxosTest, RunCommitPhase) {
   t2.join();
 }
 
+TEST_F(MultiPaxosTest, Replay) {
+  std::thread t0([this] { peers_[0]->StartRPCServer(); });
+  std::thread t1([this] { peers_[1]->StartRPCServer(); });
+
+  auto ballot = peers_[0]->NextBallot();
+
+  auto index1 = 1;
+  auto i1 = MakeInstance(ballot, index1, COMMITTED, PUT);
+  auto index2 = 2;
+  auto i2 = MakeInstance(ballot, index2, EXECUTED, GET);
+  auto index3 = 3;
+  auto i3 = MakeInstance(ballot, index3, INPROGRESS, DEL);
+  log_map_t log{{index1, i1}, {index2, i2}, {index3, i3}};
+
+  EXPECT_EQ(nullptr, (*logs_[0])[index1]);
+  EXPECT_EQ(nullptr, (*logs_[0])[index2]);
+  EXPECT_EQ(nullptr, (*logs_[0])[index3]);
+
+  EXPECT_EQ(nullptr, (*logs_[1])[index1]);
+  EXPECT_EQ(nullptr, (*logs_[1])[index2]);
+  EXPECT_EQ(nullptr, (*logs_[1])[index3]);
+
+  auto new_ballot = peers_[0]->NextBallot();
+  peers_[0]->Replay(new_ballot, log);
+
+  i1.set_ballot(new_ballot);
+  i2.set_ballot(new_ballot);
+  i3.set_ballot(new_ballot);
+
+  i1.set_state(COMMITTED);
+  i2.set_state(COMMITTED);
+  i3.set_state(COMMITTED);
+
+  EXPECT_EQ(i1, *(*logs_[0])[index1]);
+  EXPECT_EQ(i2, *(*logs_[0])[index2]);
+  EXPECT_EQ(i3, *(*logs_[0])[index3]);
+
+  i1.set_state(INPROGRESS);
+  i2.set_state(INPROGRESS);
+  i3.set_state(INPROGRESS);
+
+  EXPECT_EQ(i1, *(*logs_[1])[index1]);
+  EXPECT_EQ(i2, *(*logs_[1])[index2]);
+  EXPECT_EQ(i3, *(*logs_[1])[index3]);
+
+  peers_[0]->StopRPCServer();
+  peers_[1]->StopRPCServer();
+  t0.join();
+  t1.join();
+}
+
 TEST_F(MultiPaxosTest, OneLeaderElected) {
   std::thread t0([this] { peers_[0]->Start(); });
   std::thread t1([this] { peers_[1]->Start(); });
