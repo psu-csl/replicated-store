@@ -258,30 +258,7 @@ func TestAcceptAppendsToLog(t *testing.T) {
 	peers[0].Stop()
 }
 
-func TestCommitResponseWithHighBallotChangesLeaderToFollower(t *testing.T) {
-	setupPeers()
-	defer tearDown()
-	for _, peer := range peers {
-		peer.StartServer()
-	}
-	peers[0].Connect()
-	stub1 := makeStub(configs[0].Peers[1])
-
-	peer0Ballot := peers[0].NextBallot()
-	peer2Ballot := peers[2].NextBallot()
-
-	r := sendCommit(stub1, peer2Ballot, 0, 0)
-	assert.EqualValues(t, pb.ResponseType_OK, r.GetType())
-	assert.False(t, IsLeaderByPeer(peers[1]))
-	assert.EqualValues(t, 2, LeaderByPeer(peers[1]))
-
-	assert.True(t, IsLeaderByPeer(peers[0]))
-	peers[0].RunCommitPhase(peer0Ballot, 0)
-	assert.False(t, IsLeaderByPeer(peers[0]))
-	assert.EqualValues(t, 2, LeaderByPeer(peers[0]))
-}
-
-func TestPrepareResponseWithHighBallotChangesLeaderToFollower(t *testing.T) {
+func TestPrepareResponseWithHigherBallotChangesLeaderToFollower(t *testing.T) {
 	setupPeers()
 	defer tearDown()
 	for _, peer := range peers {
@@ -304,7 +281,7 @@ func TestPrepareResponseWithHighBallotChangesLeaderToFollower(t *testing.T) {
 	assert.EqualValues(t, 2, LeaderByPeer(peers[0]))
 }
 
-func TestAcceptResponseWithHighBallotChangesLeaderToFollower(t *testing.T) {
+func TestAcceptResponseWithHigherBallotChangesLeaderToFollower(t *testing.T) {
 	setupPeers()
 	defer tearDown()
 	for _, peer := range peers {
@@ -323,6 +300,29 @@ func TestAcceptResponseWithHighBallotChangesLeaderToFollower(t *testing.T) {
 
 	assert.True(t, IsLeaderByPeer(peers[0]))
 	peers[0].RunAcceptPhase(peer0Ballot, 1, &pb.Command{}, 0)
+	assert.False(t, IsLeaderByPeer(peers[0]))
+	assert.EqualValues(t, 2, LeaderByPeer(peers[0]))
+}
+
+func TestCommitResponseWithHigherBallotChangesLeaderToFollower(t *testing.T) {
+	setupPeers()
+	defer tearDown()
+	for _, peer := range peers {
+		peer.StartServer()
+	}
+	peers[0].Connect()
+	stub1 := makeStub(configs[0].Peers[1])
+
+	peer0Ballot := peers[0].NextBallot()
+	peer2Ballot := peers[2].NextBallot()
+
+	r := sendCommit(stub1, peer2Ballot, 0, 0)
+	assert.EqualValues(t, pb.ResponseType_OK, r.GetType())
+	assert.False(t, IsLeaderByPeer(peers[1]))
+	assert.EqualValues(t, 2, LeaderByPeer(peers[1]))
+
+	assert.True(t, IsLeaderByPeer(peers[0]))
+	peers[0].RunCommitPhase(peer0Ballot, 0)
 	assert.False(t, IsLeaderByPeer(peers[0]))
 	assert.EqualValues(t, 2, LeaderByPeer(peers[0]))
 }
