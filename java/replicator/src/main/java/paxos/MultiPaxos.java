@@ -496,16 +496,19 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     logger.info(id + " received heartbeat rpc from " + heartbeatRequest.getSender());
     mu.lock();
     try {
+      var response = HeartbeatResponse.newBuilder();
       if (heartbeatRequest.getBallot() >= ballot) {
         lastHeartbeat = Now();
         setBallot(heartbeatRequest.getBallot());
         log_.commitUntil(heartbeatRequest.getLastExecuted(), heartbeatRequest.getBallot());
         log_.trimUntil(heartbeatRequest.getGlobalLastExecuted());
-
+        response.setLastExecuted(log_.getLastExecuted());
+        response.setType(ResponseType.OK);
+      } else {
+        response.setLastExecuted(this.ballot);
+        response.setType(ResponseType.REJECT);
       }
-      HeartbeatResponse response = HeartbeatResponse.newBuilder()
-          .setLastExecuted((int) log_.getLastExecuted()).build();
-      responseObserver.onNext(response);
+      responseObserver.onNext(response.build());
       responseObserver.onCompleted();
     } finally {
       mu.unlock();
