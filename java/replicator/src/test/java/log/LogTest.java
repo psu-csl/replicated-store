@@ -21,7 +21,6 @@ import kvstore.MemKVStore;
 import log.Instance.InstanceState;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import paxos.MultiPaxos;
 
 class LogTest {
 

@@ -656,6 +656,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
       }
     }
     if (state.numOks > rpcPeers.size() / 2) {
+      log_.commit(index);
       state.mu.unlock();
       return new Result(MultiPaxosResultType.kOk, null);
     }
