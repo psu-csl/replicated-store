@@ -411,92 +411,47 @@ func TestSendPreparesMajority(t *testing.T) {
 	}
 }
 
-func TestSendPreapresWithReplay(t *testing.T) {
-	setupPeers()
-	defer tearDown()
-	for _, peer := range peers {
-		peer.StartServer()
-	}
-	peers[2].Connect()
-
-	ballot0 := peers[0].NextBallot()
-	index1 := logs[0].AdvanceLastIndex()
-	instance1 := util.MakeInstance(ballot0, index1)
-	logs[0].Append(instance1)
-	logs[1].Append(instance1)
-	logs[0].Commit(index1)
-
-	ballot1 := peers[1].NextBallot()
-	logs[1].AdvanceLastIndex()
-	index2 := logs[1].AdvanceLastIndex()
-	instance2 := util.MakeInstance(ballot1, index2)
-	logs[0].Append(instance2)
-	logs[1].Append(instance2)
-	logs[2].Append(instance2)
-
-	ballot2 := peers[2].NextBallot()
-	logMap := peers[2].SendPrepares(ballot2)
-	assert.EqualValues(t, 2, len(logMap))
-
-	peers[2].Replay(ballot2, logMap)
-
-	instance1.Ballot = ballot2
-	assert.True(t, log.IsCommitted(logs[0].Find(index1)))
-	assert.True(t, log.IsCommitted(logs[2].Find(index1)))
-	assert.True(t, log.IsEqualInstance(instance1, logs[1].Find(index1)))
-
-	instance2.Ballot = ballot2
-	assert.True(t, log.IsCommitted(logs[2].Find(index2)))
-	assert.True(t, log.IsEqualInstance(instance2, logs[0].Find(index2)))
-	assert.True(t, log.IsEqualInstance(instance2, logs[1].Find(index2)))
-}
-
-func TestSendPreparesWithMerge(t *testing.T) {
+func TestSendPreparesWithReplay(t *testing.T) {
 	setupPeers()
 	defer tearDown()
 	peers[0].StartServer()
 	peers[1].StartServer()
 	peers[0].Connect()
 
-	//Instances in log_0
 	ballot0 := peers[0].NextBallot()
 	index1 := logs[0].AdvanceLastIndex()
-	index2 := logs[0].AdvanceLastIndex()
-	peer0I2 := util.MakeInstance(ballot0, index2)
-	logs[0].Append(peer0I2)
+	instance1 := util.MakeInstanceWithState(ballot0, index1, pb.InstanceState_COMMITTED)
+	logs[0].Append(instance1)
 
-	//Instance in log_1
-	ballot1 := peers[1].NextBallot()
-	peer1I1 := util.MakeInstance(ballot1, logs[1].AdvanceLastIndex())
-	peer1I2 := util.MakeInstance(ballot1, logs[1].AdvanceLastIndex())
-	logs[1].Append(peer1I1)
-	logs[1].Commit(index1)
-	logs[1].Append(peer1I2)
+	ballot2 := peers[2].NextBallot()
+	logs[2].Append(util.MakeInstance(ballot2, logs[2].AdvanceLastIndex()))
+	index2 := logs[2].AdvanceLastIndex()
+	instance2 := util.MakeInstance(ballot2, index2)
+	logs[1].Append(instance2)
+	logs[2].Append(util.MakeInstance(ballot2, index2))
 
 	leaderBallot := peers[0].NextBallot()
 	logMap := peers[0].SendPrepares(leaderBallot)
 	assert.EqualValues(t, 2, len(logMap))
-	assert.EqualValues(t, ballot1, logMap[index1].GetBallot())
-	assert.True(t, log.IsCommitted(logMap[index1]))
-	assert.EqualValues(t, ballot1, logMap[index2].GetBallot())
-	assert.True(t, log.IsInProgress(logMap[index2]))
+	assert.True(t, log.IsEqualInstance(instance1, logMap[index1]))
+	assert.True(t, log.IsEqualInstance(instance2, logMap[index2]))
 
 	peers[2].StartServer()
-	peers[0].Connect()
+	time.Sleep(2 * time.Second)
 
-	// Instances in log_2
-	ballot2 := peers[2].NextBallot()
-	peer2I1 := util.MakeInstance(ballot2, logs[2].AdvanceLastIndex())
-	peer2I2 := util.MakeInstance(ballot1, logs[2].AdvanceLastIndex())
-	logs[2].Append(peer2I1)
-	logs[2].Append(peer2I2)
+	peers[0].Replay(leaderBallot, logMap)
+	time.Sleep(100 * time.Millisecond)
 
-	logMap = peers[0].SendPrepares(leaderBallot)
-	assert.EqualValues(t, 2, len(logMap))
-	assert.EqualValues(t, ballot1, logMap[index1].GetBallot())
-	assert.True(t, log.IsCommitted(logMap[index1]))
-	assert.EqualValues(t, ballot1, logMap[index2].GetBallot())
-	assert.True(t, log.IsInProgress(logMap[index2]))
+	expect1 := util.MakeInstance(leaderBallot, index1)
+	assert.True(t, log.IsCommitted(logs[0].Find(index1)))
+	assert.EqualValues(t, ballot0, logs[0].Find(index1).GetBallot())
+	assert.True(t, log.IsEqualInstance(expect1, logs[2].Find(index1)))
+	assert.True(t, log.IsEqualInstance(expect1, logs[1].Find(index1)))
+
+	expect2 := util.MakeInstance(leaderBallot, index2)
+	assert.True(t, log.IsCommitted(logs[0].Find(index2)))
+	assert.True(t, log.IsEqualInstance(expect2, logs[1].Find(index2)))
+	assert.True(t, log.IsEqualInstance(expect2, logs[2].Find(index2)))
 }
 
 func TestSendAccepts(t *testing.T) {
