@@ -24,7 +24,12 @@ using multipaxos::Instance;
 using multipaxos::MultiPaxosRPC;
 using multipaxos::PrepareRequest;
 using multipaxos::PrepareResponse;
+using multipaxos::CommandType::DEL;
+using multipaxos::CommandType::GET;
+using multipaxos::CommandType::PUT;
 using multipaxos::InstanceState::COMMITTED;
+using multipaxos::InstanceState::EXECUTED;
+using multipaxos::InstanceState::INPROGRESS;
 using multipaxos::ResponseType::OK;
 using multipaxos::ResponseType::REJECT;
 
@@ -413,12 +418,52 @@ TEST_F(MultiPaxosTest, CommitResponseWithHigherBallotChangesLeaderToFollower) {
 TEST_F(MultiPaxosTest, RunPreparePhase) {
   std::thread t0([this] { peers_[0]->StartRPCServer(); });
 
-  auto ballot = peers_[0]->NextBallot();
-  auto index = logs_[0]->AdvanceLastIndex();
-  auto instance = MakeInstance(ballot, index);
+  auto peer0_ballot = peers_[0]->NextBallot();
+  auto peer1_ballot = peers_[1]->NextBallot();
 
-  logs_[0]->Append(instance);
-  logs_[1]->Append(instance);
+  log_map_t expected_log;
+
+  auto index1 = 1;
+  auto i1 = MakeInstance(peer0_ballot, index1, PUT);
+
+  logs_[0]->Append(i1);
+  logs_[1]->Append(i1);
+  expected_log[index1] = i1;
+
+  auto index2 = 2;
+  auto i2 = MakeInstance(peer0_ballot, index2);
+
+  logs_[1]->Append(i2);
+  expected_log[index2] = i2;
+
+  auto index3 = 3;
+  auto peer0_i3 = MakeInstance(peer0_ballot, index3, COMMITTED, DEL);
+  auto peer1_i3 = MakeInstance(peer1_ballot, index3, INPROGRESS, DEL);
+
+  logs_[0]->Append(peer0_i3);
+  logs_[1]->Append(peer1_i3);
+  expected_log[index3] = peer0_i3;
+
+  auto index4 = 4;
+  auto peer0_i4 = MakeInstance(peer0_ballot, index4, EXECUTED, DEL);
+  auto peer1_i4 = MakeInstance(peer1_ballot, index4, INPROGRESS, DEL);
+
+  logs_[0]->Append(peer0_i4);
+  logs_[1]->Append(peer1_i4);
+  expected_log[index4] = peer0_i4;
+
+  auto index5 = 5;
+  peer0_ballot = peers_[0]->NextBallot();
+  peer1_ballot = peers_[1]->NextBallot();
+
+  auto peer0_i5 = MakeInstance(peer0_ballot, index5, INPROGRESS, GET);
+  auto peer1_i5 = MakeInstance(peer1_ballot, index5, INPROGRESS, PUT);
+
+  logs_[0]->Append(peer0_i5);
+  logs_[1]->Append(peer1_i5);
+  expected_log[index5] = peer1_i5;
+
+  auto ballot = peers_[0]->NextBallot();
 
   EXPECT_EQ(std::nullopt, peers_[0]->RunPreparePhase(ballot));
 
@@ -426,7 +471,6 @@ TEST_F(MultiPaxosTest, RunPreparePhase) {
 
   std::this_thread::sleep_for(seconds(2));
 
-  log_map_t expected_log{{index, instance}};
   EXPECT_EQ(expected_log, *peers_[0]->RunPreparePhase(ballot));
 
   peers_[0]->StopRPCServer();

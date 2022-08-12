@@ -532,14 +532,32 @@
 
   - run_prepare_phase
     - check that run_prepare_phase returns null when it hasn't received
-      responses from quorum, and it returns a proper log when it has heard from
-      the quorum.
-      - append to peer0, peer1 logs an instance at index 1
+      responses from quorum, and it returns a properly merged log when it has
+      heard from the quorum. to this end, we prepare a logs in peers that covers
+      all valid scenarios and check that the final log produced from prepare
+      phase is the correct one.
+      - index1: peer0 and peer1 have the same instance, which should also appear
+        in the returned log at index1
+      - index2: peer0 has nothing, and peer 1 has an instance, which should
+        appear in the returned log at index2
+      - index3: peer0 has a committed instance and peer1 has the same command
+        but with a higher ballot; the result depends on who responds first to
+        prepare command: if peer0 responds first, then the committed instance
+        will be inserted to the merged log first and peer1's instance with a
+        higher ballot will be ignored; otherwise, peer1's instance will be
+        inserted to the merged log first and peer0's instance will be ignored;
+        eventually, we will have the same command at index3 but the ballot
+        number may differ
+      - index4: is the same as index3 except peer0 has an executed instance,
+        instead of committed instance
+      - index5: peer0 has instance with ballot n and peer1 has instance with
+        ballot m, where n < m and all instances in in-progress state; the merged
+        log will have peer1's instance in the log
       - start peer0 rpc server
       - call run_prepare_phase and expect null as the response
       - start peer1 rpc server
-      - call run_prepare_phase and expect a response with a log containing the
-        instance
+      - call run_prepare_phase and expect a response with a merged log as
+        described above
 
   - run_accept_phase
     - check that run_accept_phase returns retry when it hasn't heard back from
