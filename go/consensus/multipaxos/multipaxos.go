@@ -376,11 +376,9 @@ func (p *Multipaxos) Prepare(ctx context.Context,
 	if request.GetBallot() >= p.ballot {
 		p.setBallot(request.GetBallot())
 		logSlice := p.log.InstancesSinceGlobalLastExecuted()
-		grpcLogs := make([]*pb.Instance, 0)
+		grpcLogs := make([]*pb.Instance, 0, len(logSlice))
 		for _, instance := range logSlice {
-			if instance != nil {
-				grpcLogs = append(grpcLogs, instance)
-			}
+			grpcLogs = append(grpcLogs, instance)
 		}
 		return &pb.PrepareResponse{
 			Type:   pb.ResponseType_OK,

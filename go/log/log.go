@@ -195,7 +195,9 @@ func (l *Log) InstancesSinceGlobalLastExecuted() []*pb.Instance {
 	instances := make([]*pb.Instance, 0, len(l.log))
 	for index := l.globalLastExecuted + 1; index <= l.lastIndex; index++ {
 		instance := proto.Clone(l.log[index]).(*pb.Instance)
-		instances = append(instances, instance)
+		if instance != nil {
+			instances = append(instances, instance)
+		}
 	}
 	return instances
 }
