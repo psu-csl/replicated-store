@@ -1,5 +1,7 @@
 package paxos;
 
+import static multipaxos.ResponseType.OK;
+import static multipaxos.ResponseType.REJECT;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -173,8 +175,9 @@ class MultiPaxosTest {
 
     peer0.nextBallot();
     HeartbeatRequest request0 = HeartbeatRequest.newBuilder().setBallot(peer1.nextBallot()).build();
-    blockingStub.heartbeat(request0);
+    var response = blockingStub.heartbeat(request0);
 
+    assertEquals(OK, response.getType());
     assertFalse(isLeader(peer0));
     assertEquals(1, leader(peer0));
     peer0.stopRPCServer();
@@ -194,8 +197,8 @@ class MultiPaxosTest {
     peer0.nextBallot();
 
     HeartbeatRequest request = HeartbeatRequest.newBuilder().setBallot(peer1.nextBallot()).build();
-    blockingStub.heartbeat(request);
-
+    var response = blockingStub.heartbeat(request);
+    assertEquals(REJECT, response.getType());
     assertTrue(isLeader(peer0));
     peer0.stopRPCServer();
     channel.shutdown();
