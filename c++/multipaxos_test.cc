@@ -217,6 +217,39 @@ TEST_F(MultiPaxosTest, RequestsWithHigherBallotChangeLeaderToFollower) {
   t.join();
 }
 
+TEST_F(MultiPaxosTest, CommitCommitsAndTrims) {
+  std::thread t([this] { peers_[0]->StartRPCServer(); });
+  auto stub = MakeStub(configs_[0]["peers"][0]);
+
+  auto ballot = peers_[0]->NextBallot();
+  auto index1 = logs_[0]->AdvanceLastIndex();
+  logs_[0]->Append(MakeInstance(ballot, index1));
+  auto index2 = logs_[0]->AdvanceLastIndex();
+  logs_[0]->Append(MakeInstance(ballot, index2));
+  auto index3 = logs_[0]->AdvanceLastIndex();
+  logs_[0]->Append(MakeInstance(ballot, index3));
+
+  auto r1 = SendCommit(stub.get(), ballot, index2, 0);
+  EXPECT_EQ(OK, r1.type());
+  EXPECT_EQ(0, r1.last_executed());
+  EXPECT_TRUE(IsCommitted(*(*logs_[0])[index1]));
+  EXPECT_TRUE(IsCommitted(*(*logs_[0])[index2]));
+  EXPECT_TRUE(IsInProgress(*(*logs_[0])[index3]));
+
+  logs_[0]->Execute(stores_[0].get());
+  logs_[0]->Execute(stores_[0].get());
+
+  auto r2 = SendCommit(stub.get(), ballot, index2, index2);
+  EXPECT_EQ(OK, r2.type());
+  EXPECT_EQ(index2, r2.last_executed());
+  EXPECT_EQ(nullptr, (*logs_[0])[index1]);
+  EXPECT_EQ(nullptr, (*logs_[0])[index2]);
+  EXPECT_TRUE(IsInProgress(*(*logs_[0])[index3]));
+
+  peers_[0]->StopRPCServer();
+  t.join();
+}
+
 TEST_F(MultiPaxosTest, PrepareRespondsWithCorrectInstances) {
   std::thread t([this] { peers_[0]->StartRPCServer(); });
   auto stub = MakeStub(configs_[0]["peers"][0]);
@@ -253,7 +286,7 @@ TEST_F(MultiPaxosTest, PrepareRespondsWithCorrectInstances) {
   EXPECT_EQ(3, r3.instances_size());
   EXPECT_TRUE(IsExecuted(r3.instances(0)));
   EXPECT_TRUE(IsExecuted(r3.instances(1)));
-  EXPECT_EQ(instance3, r3.instances(2));
+  EXPECT_TRUE(IsInProgress(r3.instances(2)));
 
   auto r4 = SendCommit(stub.get(), ballot, index2, 2);
   EXPECT_EQ(OK, r4.type());
@@ -291,40 +324,7 @@ TEST_F(MultiPaxosTest, AcceptAppendsToLog) {
   t.join();
 }
 
-TEST_F(MultiPaxosTest, CommitCommitsAndTrims) {
-  std::thread t([this] { peers_[0]->StartRPCServer(); });
-  auto stub = MakeStub(configs_[0]["peers"][0]);
-
-  auto ballot = peers_[0]->NextBallot();
-  auto index1 = logs_[0]->AdvanceLastIndex();
-  logs_[0]->Append(MakeInstance(ballot, index1));
-  auto index2 = logs_[0]->AdvanceLastIndex();
-  logs_[0]->Append(MakeInstance(ballot, index2));
-  auto index3 = logs_[0]->AdvanceLastIndex();
-  logs_[0]->Append(MakeInstance(ballot, index3));
-
-  auto r1 = SendCommit(stub.get(), ballot, index2, 0);
-  EXPECT_EQ(OK, r1.type());
-  EXPECT_EQ(0, r1.last_executed());
-  EXPECT_TRUE(IsCommitted(*(*logs_[0])[index1]));
-  EXPECT_TRUE(IsCommitted(*(*logs_[0])[index2]));
-  EXPECT_TRUE(IsInProgress(*(*logs_[0])[index3]));
-
-  logs_[0]->Execute(stores_[0].get());
-  logs_[0]->Execute(stores_[0].get());
-
-  auto r2 = SendCommit(stub.get(), ballot, index2, index2);
-  EXPECT_EQ(OK, r2.type());
-  EXPECT_EQ(index2, r2.last_executed());
-  EXPECT_EQ(nullptr, (*logs_[0])[index1]);
-  EXPECT_EQ(nullptr, (*logs_[0])[index2]);
-  EXPECT_TRUE(IsInProgress(*(*logs_[0])[index3]));
-
-  peers_[0]->StopRPCServer();
-  t.join();
-}
-
-TEST_F(MultiPaxosTest, PrepareResponseWithHighBallotChangesLeaderToFollower) {
+TEST_F(MultiPaxosTest, PrepareResponseWithHigherBallotChangesLeaderToFollower) {
   std::thread t0([this] { peers_[0]->StartRPCServer(); });
   std::thread t1([this] { peers_[1]->StartRPCServer(); });
   std::thread t2([this] { peers_[2]->StartRPCServer(); });
@@ -352,7 +352,7 @@ TEST_F(MultiPaxosTest, PrepareResponseWithHighBallotChangesLeaderToFollower) {
   t2.join();
 }
 
-TEST_F(MultiPaxosTest, AcceptResponseWithHighBallotChangesLeaderToFollower) {
+TEST_F(MultiPaxosTest, AcceptResponseWithHigherBallotChangesLeaderToFollower) {
   std::thread t0([this] { peers_[0]->StartRPCServer(); });
   std::thread t1([this] { peers_[1]->StartRPCServer(); });
   std::thread t2([this] { peers_[2]->StartRPCServer(); });
@@ -362,15 +362,15 @@ TEST_F(MultiPaxosTest, AcceptResponseWithHighBallotChangesLeaderToFollower) {
   peers_[1]->NextBallot();
   auto peer2_ballot = peers_[2]->NextBallot();
 
-  auto commit_result = SendCommit(stub1.get(), peer2_ballot, 0, 0);
-  EXPECT_EQ(OK, commit_result.type());
+  auto cr = SendCommit(stub1.get(), peer2_ballot, 0, 0);
+  EXPECT_EQ(OK, cr.type());
   EXPECT_FALSE(IsLeader(*peers_[1]));
   EXPECT_EQ(2, Leader(*peers_[1]));
 
   EXPECT_TRUE(IsLeader(*peers_[0]));
-  auto accept_result = peers_[0]->RunAcceptPhase(peer0_ballot, 1, Command(), 0);
-  EXPECT_EQ(ResultType::kSomeoneElseLeader, accept_result.type_);
-  EXPECT_EQ(2, *accept_result.leader_);
+  auto ar = peers_[0]->RunAcceptPhase(peer0_ballot, 1, Command(), 0);
+  EXPECT_EQ(ResultType::kSomeoneElseLeader, ar.type_);
+  EXPECT_EQ(2, *ar.leader_);
   EXPECT_FALSE(IsLeader(*peers_[0]));
   EXPECT_EQ(2, Leader(*peers_[0]));
 
@@ -382,7 +382,7 @@ TEST_F(MultiPaxosTest, AcceptResponseWithHighBallotChangesLeaderToFollower) {
   t2.join();
 }
 
-TEST_F(MultiPaxosTest, CommitResponseWithHighBallotChangesLeaderToFollower) {
+TEST_F(MultiPaxosTest, CommitResponseWithHigherBallotChangesLeaderToFollower) {
   std::thread t0([this] { peers_[0]->StartRPCServer(); });
   std::thread t1([this] { peers_[1]->StartRPCServer(); });
   std::thread t2([this] { peers_[2]->StartRPCServer(); });
@@ -419,7 +419,6 @@ TEST_F(MultiPaxosTest, RunPreparePhase) {
 
   logs_[0]->Append(instance);
   logs_[1]->Append(instance);
-  logs_[2]->Append(instance);
 
   EXPECT_EQ(std::nullopt, peers_[0]->RunPreparePhase(ballot));
 
@@ -485,7 +484,8 @@ TEST_F(MultiPaxosTest, RunCommitPhase) {
     }
   }
 
-  auto gle = peers_[0]->RunCommitPhase(ballot, 0);
+  auto gle = 0;
+  gle = peers_[0]->RunCommitPhase(ballot, gle);
   EXPECT_EQ(0, gle);
 
   std::thread t2([this] { peers_[2]->StartRPCServer(); });
