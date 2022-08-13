@@ -1,7 +1,8 @@
 #+title: TODO
 
 * TODO
-
+** Rust
+   - consider using scoped threads https://doc.rust-lang.org/stable/std/thread/fn.scope.html
 ** Java
 *** avoid class duplication
     - currently we have both proto generated and custom implementations for
