@@ -41,12 +41,6 @@ Replicant::Replicant(json const& config)
   DLOG(INFO) << "replicant " << id_ << " accepting at " << ip << ":" << port;
 }
 
-Replicant::~Replicant() {
-  tp_.join();
-  for (auto& t : clients_)
-    t.join();
-}
-
 void Replicant::Start() {
   executor_thread_ = std::thread(&Replicant::ExecutorThread, this);
   for (;;) {
@@ -56,6 +50,12 @@ void Replicant::Start() {
     acceptor_.accept(it->second);
     clients_.emplace_back(&Replicant::HandleClient, this, client_id);
   }
+}
+
+void Replicant::Stop() {
+  tp_.join();
+  for (auto& t : clients_)
+    t.join();
 }
 
 void Replicant::HandleClient(int64_t client_id) {

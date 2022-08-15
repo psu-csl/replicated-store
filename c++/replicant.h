@@ -13,8 +13,8 @@
 class Replicant {
  public:
   Replicant(const nlohmann::json& config);
-  ~Replicant();
   void Start();
+  void Stop();
 
  private:
   void HandleClient(int64_t client_id);
