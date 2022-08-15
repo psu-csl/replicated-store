@@ -613,10 +613,10 @@ TEST_F(MultiPaxosTest, Replicate) {
   std::thread t1([this] { peers_[1]->Start(); });
   std::thread t2([this] { peers_[2]->Start(); });
 
-  int commit = configs_[0]["commit_interval"];
-  auto commit_3x = 3 * milliseconds(commit);
+  int commit_interval = configs_[0]["commit_interval"];
+  auto commit_interval_3x = 3 * milliseconds(commit_interval);
 
-  std::this_thread::sleep_for(commit_3x);
+  std::this_thread::sleep_for(commit_interval_3x);
 
   auto leader = OneLeader();
   EXPECT_NE(std::nullopt, leader);
