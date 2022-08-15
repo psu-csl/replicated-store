@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"sync"
 	"testing"
 	"time"
 )
@@ -516,8 +517,119 @@ func TestOneLeaderElected(t *testing.T) {
 	setupServer()
 	defer tearDown()
 
-	time.Sleep(1000 * time.Millisecond)
+	time.Sleep(time.Duration(3 * configs[0].CommitInterval) * time.Millisecond)
 	assert.True(t, oneLeader())
+}
+
+func TestProposeCommand(t *testing.T) {
+	setupServer()
+	defer tearDown()
+
+	time.Sleep(time.Duration(3 * configs[0].CommitInterval) * time.Millisecond)
+	for !oneLeader() {
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	results := make([]Result, 0, len(peers))
+	for _, peer := range peers {
+		results = append(results, peer.Replicate(&pb.Command{}, 0))
+	}
+
+	numOk := 0
+	numSomeoneElseLeader := 0
+	for _, r := range results {
+		if r.Type == Ok {
+			numOk++
+		} else if r.Type == SomeElseLeader {
+			numSomeoneElseLeader++
+		}
+	}
+	assert.EqualValues(t, 1, numOk)
+	assert.EqualValues(t, SomeElseLeader, numSomeoneElseLeader)
+
+	for _, log := range logs {
+		assert.EqualValues(t, 2, log.AdvanceLastIndex())
+	}
+}
+
+func TestTrimAfterExecution(t *testing.T) {
+	setupServer()
+	defer tearDown()
+
+	time.Sleep(time.Duration(3 * configs[0].CommitInterval) * time.Millisecond)
+	for !oneLeader() {
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	leaderId := int64(0)
+	numCmds := 10
+	result := peers[0].Replicate(&pb.Command{}, 0)
+	if result.Type == SomeElseLeader {
+		leaderId = result.Leader
+	}
+
+	for i := 0; i < numCmds; i++ {
+		result = peers[leaderId].Replicate(&pb.Command{}, 0)
+		assert.EqualValues(t, Ok, result.Type)
+	}
+
+	gle := logs[leaderId].AdvanceLastIndex() - 1
+	var wg sync.WaitGroup
+	for i, l := range logs {
+		wg.Add(1)
+		go func(log *log.Log) {
+			for index := int64(0); index < gle; index++ {
+				log.Execute(stores[i])
+			}
+			wg.Done()
+		}(l)
+	}
+	wg.Wait()
+
+	time.Sleep(time.Duration(3 * configs[0].CommitInterval) * time.Millisecond)
+
+	for _, log := range logs {
+		assert.EqualValues(t, gle, log.GlobalLastExecuted())
+	}
+}
+
+func TestProposeWithFailPeer(t *testing.T) {
+	setupPeers()
+	peers[0].StartServer()
+	peers[1].StartServer()
+	peers[0].Connect()
+
+	ballot0 := peers[0].NextBallot()
+	peers[0].RunPreparePhase(ballot0)
+
+	cmd1 := &pb.Command{Type: pb.CommandType_PUT}
+	peers[0].Replicate(cmd1, 0)
+	assert.EqualValues(t, pb.CommandType_PUT, logs[0].Find(1).GetCommand().GetType())
+	assert.EqualValues(t, pb.CommandType_PUT, logs[1].Find(1).GetCommand().
+		GetType())
+
+	peers[0].Stop()
+	peers[2].StartServer()
+	time.Sleep(2 * time.Second)
+
+	ballot2 := peers[2].NextBallot()
+	logMap := peers[2].RunPreparePhase(ballot2)
+	peers[2].Replay(ballot2, logMap)
+	r1 := peers[2].Replicate(&pb.Command{Type: pb.CommandType_DEL}, 2)
+	for r1.Type == Retry {
+		r1 = peers[2].Replicate(&pb.Command{Type: pb.CommandType_DEL}, 2)
+	}
+	assert.EqualValues(t, Ok, r1.Type)
+	assert.EqualValues(t, 2, logs[0].AdvanceLastIndex())
+	assert.EqualValues(t, 3, logs[1].AdvanceLastIndex())
+	assert.EqualValues(t, 3, logs[2].AdvanceLastIndex())
+
+	assert.EqualValues(t, pb.CommandType_DEL, logs[1].Find(2).GetCommand().
+		GetType())
+	assert.EqualValues(t, pb.CommandType_PUT, logs[2].Find(1).GetCommand().
+		GetType())
+	assert.EqualValues(t, pb.CommandType_DEL, logs[2].Find(2).GetCommand().
+		GetType())
 }
 
 func makeStub(target string) pb.MultiPaxosRPCClient {
