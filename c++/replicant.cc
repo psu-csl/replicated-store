@@ -53,6 +53,7 @@ void Replicant::Start() {
 }
 
 void Replicant::Stop() {
+  executor_thread_.join();
   tp_.join();
   for (auto& t : clients_)
     t.join();
