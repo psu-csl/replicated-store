@@ -525,17 +525,31 @@ func TestRunCommitPhase(t *testing.T) {
 	assert.EqualValues(t, numInstances, gle)
 }
 
-func TestReplicateRetry(t *testing.T) {
+func TestReplicate(t *testing.T) {
 	setupPeers()
+	defer tearDown()
+	peers[0].Start()
 
 	r1 := peers[0].Replicate(&pb.Command{}, 0)
 	assert.Equal(t, Retry, r1.Type)
 	assert.Equal(t, NoLeader, r1.Leader)
 
-	peers[0].NextBallot()
-	r2 := peers[0].Replicate(&pb.Command{}, 0)
-	assert.Equal(t, Retry, r2.Type)
-	assert.Equal(t, NoLeader, r2.Leader)
+	peers[1].Start()
+	peers[2].Start()
+
+	commit3x := 3 * configs[0].CommitInterval
+	time.Sleep(time.Duration(commit3x) * time.Millisecond)
+
+	leader := oneLeader()
+	assert.NotEqualValues(t, NoLeader, leader)
+
+	r2 := peers[leader].Replicate(&pb.Command{}, 0)
+	assert.Equal(t, Ok, r2.Type)
+
+	nonLeader := (leader + 1) % NumPeers
+	r3 := peers[nonLeader].Replicate(&pb.Command{}, 0)
+	assert.EqualValues(t, SomeElseLeader, r3.Type)
+	assert.EqualValues(t, leader, r3.Leader)
 }
 
 func TestReplicateSomeOneElseLeader(t *testing.T) {
@@ -556,33 +570,12 @@ func TestReplicateSomeOneElseLeader(t *testing.T) {
 	assert.EqualValues(t, 1, r2.Leader)
 }
 
-func TestReplicateReady(t *testing.T) {
-	setupPeers()
-	defer tearDown()
-
-	peers[1].StartServer()
-	peers[2].StartServer()
-	peers[0].Start()
-	time.Sleep(1000 * time.Millisecond)
-	result := peers[0].Replicate(&pb.Command{Type: pb.CommandType_PUT}, 0)
-	assert.Equal(t, Ok, result.Type)
-	assert.Equal(t, int64(0), result.Leader)
-}
-
-func TestOneLeaderElected(t *testing.T) {
-	setupServer()
-	defer tearDown()
-
-	time.Sleep(time.Duration(3 * configs[0].CommitInterval) * time.Millisecond)
-	assert.True(t, oneLeader())
-}
-
 func TestProposeCommand(t *testing.T) {
 	setupServer()
 	defer tearDown()
 
 	time.Sleep(time.Duration(3 * configs[0].CommitInterval) * time.Millisecond)
-	for !oneLeader() {
+	for oneLeader() != NoLeader {
 		time.Sleep(100 * time.Millisecond)
 	}
 
@@ -613,7 +606,7 @@ func TestTrimAfterExecution(t *testing.T) {
 	defer tearDown()
 
 	time.Sleep(time.Duration(3 * configs[0].CommitInterval) * time.Millisecond)
-	for !oneLeader() {
+	for oneLeader() != NoLeader {
 		time.Sleep(100 * time.Millisecond)
 	}
 
@@ -698,20 +691,20 @@ func makeStub(target string) pb.MultiPaxosRPCClient {
 	return stub
 }
 
-func oneLeader() bool {
-	if IsLeaderByPeer(peers[0]) {
-		return !IsLeaderByPeer(peers[1]) && !IsLeaderByPeer(peers[2]) &&
-			LeaderByPeer(peers[1]) == 0 && LeaderByPeer(peers[2]) == 0
+func oneLeader() int64 {
+	leader := LeaderByPeer(peers[0])
+	numLeader := 0
+	for _, peer := range peers {
+		if IsLeaderByPeer(peer) {
+			numLeader++
+			if numLeader > 1 || peer.Id() != leader {
+				return NoLeader
+			}
+		} else if LeaderByPeer(peer) != leader {
+			return NoLeader
+		}
 	}
-	if IsLeaderByPeer(peers[1]) {
-		return !IsLeaderByPeer(peers[0]) && !IsLeaderByPeer(peers[2]) &&
-			LeaderByPeer(peers[0]) == 1 && LeaderByPeer(peers[2]) == 1
-	}
-	if IsLeaderByPeer(peers[2]) {
-		return !IsLeaderByPeer(peers[0]) && !IsLeaderByPeer(peers[1]) &&
-			LeaderByPeer(peers[0]) == 2 && LeaderByPeer(peers[1]) == 2
-	}
-	return false
+	return leader
 }
 
 func LeaderByPeer(peer *Multipaxos) int64 {
