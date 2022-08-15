@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static paxos.MultiPaxos.kMaxNumPeers;
+import static paxos.MultiPaxos.makeProtoInstance;
 import static util.TestUtil.makeInstance;
 
 import command.Command.CommandType;
@@ -17,8 +18,11 @@ import java.util.Arrays;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import kvstore.MemKVStore;
+import log.Instance;
 import log.Instance.InstanceState;
 import log.Log;
+import multipaxos.AcceptRequest;
+import multipaxos.AcceptResponse;
 import multipaxos.HeartbeatRequest;
 import multipaxos.HeartbeatResponse;
 import multipaxos.MultiPaxosRPCGrpc;
@@ -40,6 +44,7 @@ class MultiPaxosTest {
   protected Configuration config0, config1, config2;
   protected MemKVStore store;
 
+
   public static MultiPaxosRPCGrpc.MultiPaxosRPCBlockingStub makeStub(String target, int port) {
     ManagedChannel channel = ManagedChannelBuilder.forAddress(target, port)
         .usePlaintext().build();
@@ -59,6 +64,10 @@ class MultiPaxosTest {
     return stub.prepare(request);
   }
 
+  public static AcceptResponse sendAccept(MultiPaxosRPCBlockingStub stub, Instance inst) {
+    AcceptRequest request = AcceptRequest.newBuilder().setInstance(makeProtoInstance(inst)).build();
+    return stub.accept(request);
+  }
 
   public static long leader(MultiPaxos peer) {
     var r = peer.ballot();
@@ -161,6 +170,7 @@ class MultiPaxosTest {
 
     peer0.stop();
     channel.shutdown();
+    executor.shutdown();
   }
 
   @Test
@@ -185,6 +195,7 @@ class MultiPaxosTest {
     assertNull(log0.get(1L));
     peer0.stop();
     channel.shutdown();
+    executor.shutdown();
   }
 
 
@@ -201,6 +212,7 @@ class MultiPaxosTest {
     assertFalse(isLeader(peer0));
     assertEquals(1, leader(peer0));
     peer0.stopRPCServer();
+    executor.shutdown();
   }
 
   @Test
@@ -217,6 +229,7 @@ class MultiPaxosTest {
     sendHeartbeat(stub, peer1.nextBallot(), 0, 0);
     assertTrue(isLeader(peer0));
     peer0.stopRPCServer();
+    executor.shutdown();
   }
 
   @Test
@@ -255,6 +268,7 @@ class MultiPaxosTest {
     assertTrue(log0.get(index3).isInProgress());
 
     peer0.stopRPCServer();
+    executor.shutdown();
   }
 
 
@@ -263,7 +277,7 @@ class MultiPaxosTest {
   void prepareRespondsWithCorrectInstances() {
     ExecutorService executor = Executors.newSingleThreadExecutor();
     executor.submit(() -> peer0.startRPCServer());
- 
+
     var stub = makeStub("localhost", config0.getPort());
     var ballot = peer0.nextBallot();
     var index1 = log0.advanceLastIndex();
@@ -305,5 +319,38 @@ class MultiPaxosTest {
     assertEquals(instance3, MultiPaxos.makeInstance(r3.getInstances(0)));
 
     peer0.stopRPCServer();
+    executor.shutdown();
+  }
+
+  @Test
+  @Order(8)
+  void acceptAppendsToLog() {
+    ExecutorService executor = Executors.newSingleThreadExecutor();
+    executor.submit(() -> peer0.startRPCServer());
+
+    var ballot = peer0.nextBallot();
+
+    var index1 = log0.advanceLastIndex();
+    var instance1 = makeInstance(ballot, index1);
+
+    var index2 = log0.advanceLastIndex();
+    var instance2 = makeInstance(ballot, index2);
+
+    var stub = makeStub("localhost", config0.getPort());
+
+    var r1 = sendAccept(stub, instance1);
+
+    assertEquals(OK, r1.getType());
+    assertEquals(instance1, log0.get(index1));
+    assertNull(log0.get(index2));
+
+    var r2 = sendAccept(stub, instance2);
+
+    assertEquals(OK, r2.getType());
+    assertEquals(instance1, log0.get(index1));
+    assertEquals(instance2, log0.get(index2));
+
+    peer0.stopRPCServer();
+    executor.shutdown();
   }
 }
