@@ -330,75 +330,131 @@ func TestCommitResponseWithHigherBallotChangesLeaderToFollower(t *testing.T) {
 	assert.EqualValues(t, 2, LeaderByPeer(peers[0]))
 }
 
-func TestSendPreparesMajority(t *testing.T) {
+func TestRunPreparePhase(t *testing.T) {
 	setupPeers()
 	peers[0].StartServer()
 	defer peers[0].Stop()
 
-	expect := make(map[int64]*pb.Instance)
+	const (
+		index1 int64 = iota + 1
+		index2
+		index3
+		index4
+		index5
+	)
+
+	ballot0 := peers[0].NextBallot()
+	ballot1 := peers[1].NextBallot()
+
+	expectedLog := make(map[int64]*pb.Instance)
+
+	logs[0].Append(util.MakeInstanceWithType(ballot0, index1,
+		pb.CommandType_PUT))
+	logs[1].Append(util.MakeInstanceWithType(ballot0, index1,
+		pb.CommandType_PUT))
+	expectedLog[index1] = util.MakeInstanceWithType(ballot0, index1,
+		pb.CommandType_PUT)
+
+	logs[1].Append(util.MakeInstance(ballot0, index2))
+	expectedLog[index2] = util.MakeInstance(ballot0, index2)
+
+	logs[0].Append(util.MakeInstanceWithAll(ballot0, index3,
+		pb.InstanceState_COMMITTED, pb.CommandType_DEL))
+	logs[1].Append(util.MakeInstanceWithAll(ballot1, index3,
+		pb.InstanceState_INPROGRESS, pb.CommandType_DEL))
+	expectedLog[index3] = util.MakeInstanceWithAll(ballot0, index3,
+		pb.InstanceState_COMMITTED, pb.CommandType_DEL)
+
+	logs[0].Append(util.MakeInstanceWithAll(ballot0, index4,
+		pb.InstanceState_EXECUTED, pb.CommandType_DEL))
+	logs[1].Append(util.MakeInstanceWithAll(ballot1, index4,
+		pb.InstanceState_INPROGRESS, pb.CommandType_DEL))
+	expectedLog[index4] = util.MakeInstanceWithAll(ballot0, index4,
+		pb.InstanceState_EXECUTED, pb.CommandType_DEL)
+
+	ballot0 = peers[0].NextBallot()
+	ballot1 = peers[1].NextBallot()
+
+	logs[0].Append(util.MakeInstanceWithAll(ballot0, index5,
+		pb.InstanceState_INPROGRESS, pb.CommandType_GET))
+	logs[1].Append(util.MakeInstanceWithAll(ballot1, index5,
+		pb.InstanceState_INPROGRESS, pb.CommandType_PUT))
+	expectedLog[index5] = util.MakeInstanceWithAll(ballot1, index5,
+		pb.InstanceState_INPROGRESS, pb.CommandType_PUT)
+
 	ballot := peers[0].NextBallot()
-	index := logs[0].AdvanceLastIndex()
-	for i, log := range logs {
-		instance := util.MakeInstance(ballot, index)
-		expect[index] = instance
-		log.Append(instance)
-		log.Commit(index)
-		log.Execute(stores[i])
-	}
 	assert.Nil(t, peers[0].RunPreparePhase(ballot))
 
 	peers[1].StartServer()
 	defer peers[1].Stop()
-	time.Sleep(2 * time.Second)
+	peers[0].Connect()
 
 	logMap := peers[0].RunPreparePhase(ballot)
-	assert.Equal(t, len(expect), len(logMap))
-	for index, instance := range expect {
-		assert.True(t, log.IsEqualInstance(instance, logMap[index]))
+	for index, instance := range logMap {
+		if index == 3 || index == 4 {
+			assert.True(t, log.IsEqualCommand(expectedLog[index].GetCommand(
+				), instance.GetCommand()))
+		} else {
+			assert.True(t, log.IsEqualInstance(expectedLog[index], instance),
+				"index: %v", index)
+		}
 	}
 }
 
-func TestSendPreparesWithReplay(t *testing.T) {
+func TestReplay(t *testing.T) {
 	setupPeers()
-	defer tearDown()
 	peers[0].StartServer()
 	peers[1].StartServer()
+	defer peers[0].Stop()
+	defer peers[1].Stop()
 	peers[0].Connect()
 
-	ballot0 := peers[0].NextBallot()
-	index1 := logs[0].AdvanceLastIndex()
-	instance1 := util.MakeInstanceWithState(ballot0, index1, pb.InstanceState_COMMITTED)
-	logs[0].Append(instance1)
+	const (
+		index1 int64 = iota + 1
+		index2
+		index3
+	)
 
-	ballot2 := peers[2].NextBallot()
-	logs[2].Append(util.MakeInstance(ballot2, logs[2].AdvanceLastIndex()))
-	index2 := logs[2].AdvanceLastIndex()
-	instance2 := util.MakeInstance(ballot2, index2)
-	logs[1].Append(instance2)
-	logs[2].Append(util.MakeInstance(ballot2, index2))
+	ballot := peers[0].NextBallot()
+	replayLog := map[int64]*pb.Instance {
+		index1: util.MakeInstanceWithAll(ballot, index1,
+			pb.InstanceState_COMMITTED, pb.CommandType_PUT),
+		index2: util.MakeInstanceWithAll(ballot, index2,
+			pb.InstanceState_EXECUTED, pb.CommandType_GET),
+		index3: util.MakeInstanceWithAll(ballot, index3,
+			pb.InstanceState_INPROGRESS, pb.CommandType_DEL),
+	}
 
-	leaderBallot := peers[0].NextBallot()
-	logMap := peers[0].RunPreparePhase(leaderBallot)
-	assert.EqualValues(t, 2, len(logMap))
-	assert.True(t, log.IsEqualInstance(instance1, logMap[index1]))
-	assert.True(t, log.IsEqualInstance(instance2, logMap[index2]))
+	assert.Nil(t, logs[0].Find(index1))
+	assert.Nil(t, logs[0].Find(index2))
+	assert.Nil(t, logs[0].Find(index3))
 
-	peers[2].StartServer()
-	time.Sleep(2 * time.Second)
+	assert.Nil(t, logs[1].Find(index1))
+	assert.Nil(t, logs[1].Find(index2))
+	assert.Nil(t, logs[1].Find(index3))
 
-	peers[0].Replay(leaderBallot, logMap)
-	time.Sleep(100 * time.Millisecond)
+	newBallot := peers[0].NextBallot()
+	peers[0].Replay(newBallot, replayLog)
 
-	expect1 := util.MakeInstance(leaderBallot, index1)
-	assert.True(t, log.IsCommitted(logs[0].Find(index1)))
-	assert.EqualValues(t, ballot0, logs[0].Find(index1).GetBallot())
-	assert.True(t, log.IsEqualInstance(expect1, logs[2].Find(index1)))
-	assert.True(t, log.IsEqualInstance(expect1, logs[1].Find(index1)))
+	assert.True(t, log.IsEqualInstance(util.MakeInstanceWithAll(newBallot,
+		index1, pb.InstanceState_COMMITTED, pb.CommandType_PUT),
+		logs[0].Find(index1)))
+	assert.True(t, log.IsEqualInstance(util.MakeInstanceWithAll(newBallot,
+		index2, pb.InstanceState_COMMITTED, pb.CommandType_GET),
+		logs[0].Find(index2)))
+	assert.True(t, log.IsEqualInstance(util.MakeInstanceWithAll(newBallot,
+		index3, pb.InstanceState_COMMITTED, pb.CommandType_DEL),
+		logs[0].Find(index3)))
 
-	expect2 := util.MakeInstance(leaderBallot, index2)
-	assert.True(t, log.IsCommitted(logs[0].Find(index2)))
-	assert.True(t, log.IsEqualInstance(expect2, logs[1].Find(index2)))
-	assert.True(t, log.IsEqualInstance(expect2, logs[2].Find(index2)))
+	assert.True(t, log.IsEqualInstance(util.MakeInstanceWithAll(newBallot,
+		index1, pb.InstanceState_INPROGRESS, pb.CommandType_PUT),
+		logs[1].Find(index1)))
+	assert.True(t, log.IsEqualInstance(util.MakeInstanceWithAll(newBallot,
+		index2, pb.InstanceState_INPROGRESS, pb.CommandType_GET),
+		logs[1].Find(index2)))
+	assert.True(t, log.IsEqualInstance(util.MakeInstanceWithAll(newBallot,
+		index3, pb.InstanceState_INPROGRESS, pb.CommandType_DEL),
+		logs[1].Find(index3)))
 }
 
 func TestRunAcceptPhase(t *testing.T) {
