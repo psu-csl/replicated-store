@@ -119,7 +119,7 @@ std::string Replicant::ReadLine(tcp::socket* cli) {
 }
 
 void Replicant::Replicate(multipaxos::Command command, int64_t client_id) {
-  auto r = mp_.Replicate(command, client_id);
+  auto r = mp_.Replicate(std::move(command), client_id);
   if (r.type_ == ResultType::kOk)
     return;
 
