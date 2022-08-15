@@ -122,18 +122,18 @@ class MultiPaxosTest : public testing::Test {
     }
   }
 
-  MultiPaxos* OneLeader() const {
+  std::optional<int> OneLeader() const {
     auto leader = Leader(*peers_[0]);
     auto num_leaders = 0;
     for (auto const& p : peers_)
       if (IsLeader(*p)) {
         ++num_leaders;
         if (num_leaders > 1 || p->Id() != leader)
-          return nullptr;
+          return std::nullopt;
       } else if (Leader(*p) != leader) {
-        return nullptr;
+        return std::nullopt;
       }
-    return peers_[leader].get();
+    return leader;
   }
 
  protected:
@@ -603,8 +603,13 @@ TEST_F(MultiPaxosTest, Replay) {
   t1.join();
 }
 
-TEST_F(MultiPaxosTest, OneLeaderElected) {
+TEST_F(MultiPaxosTest, Replicate) {
   std::thread t0([this] { peers_[0]->Start(); });
+
+  auto result = peers_[0]->Replicate(Command(), 0);
+  EXPECT_EQ(ResultType::kRetry, result.type_);
+  EXPECT_EQ(std::nullopt, result.leader_);
+
   std::thread t1([this] { peers_[1]->Start(); });
   std::thread t2([this] { peers_[2]->Start(); });
 
@@ -613,7 +618,18 @@ TEST_F(MultiPaxosTest, OneLeaderElected) {
 
   std::this_thread::sleep_for(commit_3x);
 
-  EXPECT_NE(nullptr, OneLeader());
+  auto leader = OneLeader();
+  EXPECT_NE(std::nullopt, leader);
+
+  result = peers_[*leader]->Replicate(Command(), 0);
+  EXPECT_EQ(ResultType::kOk, result.type_);
+  EXPECT_EQ(std::nullopt, result.leader_);
+
+  auto nonleader = (*leader + 1) % kNumPeers;
+
+  result = peers_[nonleader]->Replicate(Command(), 0);
+  EXPECT_EQ(ResultType::kSomeoneElseLeader, result.type_);
+  EXPECT_EQ(leader, *result.leader_);
 
   peers_[0]->Stop();
   peers_[1]->Stop();

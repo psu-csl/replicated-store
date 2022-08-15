@@ -603,6 +603,18 @@
         and del commands, respectively; and peer1 contains the same commands
         in-inprogress state
 
+  - replicate
+    - check that replicate works correctly
+      - start peer0's servers
+      - call peer0.replicate and expect a retry response
+      - start peer1 and peer2's servers
+      - wait for 3 * commit_interval
+      - confirm the leader has emerged and call it leader
+      - call leader.replicate and expect ok
+      - find a peer that is not a leader and call it nonleader
+      - call nonleader.replicate and expect someone_else_leader response with
+        leader
+
   - one_leader_elected
     - start peer0, peer1, peer2, wait for 3x of commit interval and then
       check that a single leader is elected.
