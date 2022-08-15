@@ -210,7 +210,7 @@ class MultiPaxosTest {
 
   @Test
   @Order(4)
-  void RPCSWithHigherBallotChangeLeaderToFollower() {
+  void requestsWithHigherBallotChangeLeaderToFollower() {
     ExecutorService executor = Executors.newSingleThreadExecutor();
     executor.submit(() -> peers.get(0).startRPCServer());
 
@@ -245,7 +245,7 @@ class MultiPaxosTest {
 
   @Test
   @Order(5)
-  void RPCsWithLowerBallotIgnored() {
+  void requestsWithLowerBallotIgnored() {
     ExecutorService executor = Executors.newSingleThreadExecutor();
     executor.submit(() -> peers.get(0).startRPCServer());
 

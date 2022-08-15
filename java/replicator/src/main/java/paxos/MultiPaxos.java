@@ -434,18 +434,17 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
         if (!isLeader(ballot, this.id)) {
           break;
         }
-        gle = sendHeartbeats(gle);
+        gle = sendHeartbeats(ballot, gle);
         sleepForHeartbeatInterval();
       }
     }
   }
 
-  public Long sendHeartbeats(long globalLastExecuted) {
+  public Long sendHeartbeats(long ballot, long globalLastExecuted) {
     var state = new HeartbeatState(this.id, log_.getLastExecuted());
     HeartbeatRequest.Builder request = HeartbeatRequest.newBuilder();
-    mu.lock();
+
     request.setBallot(ballot);
-    mu.unlock();
     request.setSender(this.id);
     request.setLastExecuted(state.minLastExecuted);
     request.setGlobalLastExecuted(globalLastExecuted);
