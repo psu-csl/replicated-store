@@ -93,7 +93,6 @@ std::string MakeConfig(int64_t id) {
   CHECK(id < kNumPeers);
   auto r = R"({ "id": )" + std::to_string(id) + R"(,
               "threadpool_size": 8,
-              "commit_delta": 10,
               "commit_interval": 300,
               "peers": [)";
 

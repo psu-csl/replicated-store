@@ -1,6 +1,5 @@
 {
     "threadpool_size": 8,
-    "commit_delta": 10,
     "commit_interval": 3000,
     "peers": ["127.0.0.1:2000",
               "127.0.0.1:3000",
