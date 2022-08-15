@@ -42,6 +42,7 @@ Replicant::Replicant(json const& config)
 }
 
 void Replicant::Start() {
+  mp_.Start();
   executor_thread_ = std::thread(&Replicant::ExecutorThread, this);
   for (;;) {
     auto client_id = NextClientId();
@@ -53,10 +54,11 @@ void Replicant::Start() {
 }
 
 void Replicant::Stop() {
-  executor_thread_.join();
   tp_.join();
   for (auto& t : clients_)
     t.join();
+  executor_thread_.join();
+  mp_.Stop();
 }
 
 void Replicant::HandleClient(int64_t client_id) {
