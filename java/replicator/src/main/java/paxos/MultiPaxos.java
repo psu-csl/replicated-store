@@ -108,6 +108,7 @@ class PrepareState {
 class HeartbeatState {
 
   public long numRpcs;
+  public long numOks;
   public long minLastExecuted;
   public long leader;
   public ReentrantLock mu;
@@ -116,6 +117,7 @@ class HeartbeatState {
   public HeartbeatState(long leader, long minLastExecuted) {
     this.numRpcs = 0;
     this.leader = leader;
+    this.numOks = 0;
     this.minLastExecuted = minLastExecuted;
     this.mu = new ReentrantLock();
     this.cv = mu.newCondition();
@@ -455,8 +457,19 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
         state.mu.lock();
         ++state.numRpcs;
         if (response.isInitialized()) {
-          if (response.getLastExecuted() < state.minLastExecuted) {
-            state.minLastExecuted = response.getLastExecuted();
+          if (response.getType() == ResponseType.OK) {
+            ++state.numOks;
+
+            if (response.getLastExecuted() < state.minLastExecuted) {
+              state.minLastExecuted = response.getLastExecuted();
+            }
+          } else {
+            mu.lock();
+            if (response.getBallot() >= this.ballot) {
+              setBallot(response.getBallot());
+              state.leader = leader(this.ballot);
+            }
+            mu.unlock();
           }
         }
         state.mu.unlock();
@@ -471,7 +484,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
         e.printStackTrace();
       }
     }
-    if (state.numRpcs == rpcPeers.size()) {
+    if (state.numOks == rpcPeers.size()) {
       state.mu.unlock();
       return state.minLastExecuted;
     }
@@ -493,6 +506,10 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
         log_.commitUntil(heartbeatRequest.getLastExecuted(), heartbeatRequest.getBallot());
         log_.trimUntil(heartbeatRequest.getGlobalLastExecuted());
         response.setLastExecuted(log_.getLastExecuted());
+        response.setType(ResponseType.OK);
+      } else {
+        response.setBallot(this.ballot);
+        response.setType(ResponseType.REJECT);
       }
       response.setLastExecuted(log_.getLastExecuted());
       responseObserver.onNext(response.build());
