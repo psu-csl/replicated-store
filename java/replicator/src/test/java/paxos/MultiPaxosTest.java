@@ -1,9 +1,11 @@
 package paxos;
 
 
+import static multipaxos.ResponseType.OK;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static paxos.MultiPaxos.kMaxNumPeers;
 import static util.TestUtil.makeInstance;
@@ -20,6 +22,7 @@ import log.Log;
 import multipaxos.HeartbeatRequest;
 import multipaxos.HeartbeatResponse;
 import multipaxos.MultiPaxosRPCGrpc;
+import multipaxos.PrepareRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
@@ -248,4 +251,72 @@ class MultiPaxosTest {
     channel.shutdown();
   }
 
+
+  @Test
+  @Order(7)
+  void prepareRespondsWithCorrectInstances() {
+    ExecutorService executor = Executors.newSingleThreadExecutor();
+    executor.submit(() -> peer0.startRPCServer());
+    ManagedChannel channel = ManagedChannelBuilder.forAddress("localhost", config0.getPort())
+        .usePlaintext().build();
+    var blockingStub = MultiPaxosRPCGrpc.newBlockingStub(channel);
+
+    var ballot = peer0.nextBallot();
+    var index1 = log0.advanceLastIndex();
+    var instance1 = makeInstance(ballot, index1);
+    log0.append(instance1);
+
+    var index2 = log0.advanceLastIndex();
+    var instance2 = makeInstance(ballot, index2);
+    log0.append(instance2);
+
+    var index3 = log0.advanceLastIndex();
+    var instance3 = makeInstance(ballot, index3);
+    log0.append(instance3);
+    {
+      PrepareRequest request = PrepareRequest.newBuilder().setBallot(ballot).build();
+      var response = blockingStub.prepare(request);
+
+      assertEquals(OK, response.getType());
+      assertEquals(3, response.getInstancesCount());
+      //assertSame(instance1, response.getInstances(0));
+      assertEquals(instance1, MultiPaxos.makeInstance(response.getInstances(0)));
+      assertEquals(instance2, MultiPaxos.makeInstance(response.getInstances(1)));
+      assertEquals(instance3, MultiPaxos.makeInstance(response.getInstances(2)));
+    }
+    {
+      HeartbeatRequest request = HeartbeatRequest.newBuilder().setBallot(ballot)
+          .setLastExecuted(index2).setGlobalLastExecuted(0).build();
+      var response = blockingStub.heartbeat(request);
+    }
+    log0.execute(store);
+    log0.execute(store);
+    {
+      PrepareRequest request = PrepareRequest.newBuilder().setBallot(ballot).build();
+      var response = blockingStub.prepare(request);
+
+      assertEquals(OK, response.getType());
+      assertEquals(3, response.getInstancesCount());
+      assertSame(response.getInstances(0).getState(), multipaxos.InstanceState.EXECUTED);
+      assertSame(response.getInstances(1).getState(), multipaxos.InstanceState.EXECUTED);
+      assertEquals(instance3, MultiPaxos.makeInstance(response.getInstances(2)));
+    }
+    {
+      HeartbeatRequest request = HeartbeatRequest.newBuilder().setBallot(ballot)
+          .setLastExecuted(index2).setGlobalLastExecuted(2).build();
+      var response = blockingStub.heartbeat(request);
+    }
+    {
+      PrepareRequest request = PrepareRequest.newBuilder().setBallot(ballot).build();
+      var response = blockingStub.prepare(request);
+
+      assertEquals(OK, response.getType());
+      assertEquals(1, response.getInstancesCount());
+      assertEquals(instance3, MultiPaxos.makeInstance(response.getInstances(0)));
+    }
+
+    peer0.stopRPCServer();
+    channel.shutdown();
+
+  }
 }
