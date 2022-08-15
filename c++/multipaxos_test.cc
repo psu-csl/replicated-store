@@ -164,7 +164,7 @@ TEST_F(MultiPaxosTest, NextBallot) {
 }
 
 TEST_F(MultiPaxosTest, RequestsWithLowerBallotIgnored) {
-  std::thread t([this] { peers_[0]->StartRPCServer(); });
+  peers_[0]->StartRPCServer();
   auto stub = MakeStub(configs_[0]["peers"][0]);
 
   peers_[0]->NextBallot();
@@ -187,11 +187,10 @@ TEST_F(MultiPaxosTest, RequestsWithLowerBallotIgnored) {
   EXPECT_TRUE(IsLeader(*peers_[0]));
 
   peers_[0]->StopRPCServer();
-  t.join();
 }
 
 TEST_F(MultiPaxosTest, RequestsWithHigherBallotChangeLeaderToFollower) {
-  std::thread t([this] { peers_[0]->StartRPCServer(); });
+  peers_[0]->StartRPCServer();
   auto stub = MakeStub(configs_[0]["peers"][0]);
 
   peers_[0]->NextBallot();
@@ -218,11 +217,10 @@ TEST_F(MultiPaxosTest, RequestsWithHigherBallotChangeLeaderToFollower) {
   EXPECT_EQ(1, Leader(*peers_[0]));
 
   peers_[0]->StopRPCServer();
-  t.join();
 }
 
 TEST_F(MultiPaxosTest, CommitCommitsAndTrims) {
-  std::thread t([this] { peers_[0]->StartRPCServer(); });
+  peers_[0]->StartRPCServer();
   auto stub = MakeStub(configs_[0]["peers"][0]);
 
   auto ballot = peers_[0]->NextBallot();
@@ -251,11 +249,10 @@ TEST_F(MultiPaxosTest, CommitCommitsAndTrims) {
   EXPECT_TRUE(IsInProgress(*(*logs_[0])[index3]));
 
   peers_[0]->StopRPCServer();
-  t.join();
 }
 
 TEST_F(MultiPaxosTest, PrepareRespondsWithCorrectInstances) {
-  std::thread t([this] { peers_[0]->StartRPCServer(); });
+  peers_[0]->StartRPCServer();
   auto stub = MakeStub(configs_[0]["peers"][0]);
 
   auto ballot = peers_[0]->NextBallot();
@@ -301,11 +298,10 @@ TEST_F(MultiPaxosTest, PrepareRespondsWithCorrectInstances) {
   EXPECT_EQ(instance3, r5.instances(0));
 
   peers_[0]->StopRPCServer();
-  t.join();
 }
 
 TEST_F(MultiPaxosTest, AcceptAppendsToLog) {
-  std::thread t([this] { peers_[0]->StartRPCServer(); });
+  peers_[0]->StartRPCServer();
   auto stub = MakeStub(configs_[0]["peers"][0]);
 
   auto ballot = peers_[0]->NextBallot();
@@ -325,13 +321,12 @@ TEST_F(MultiPaxosTest, AcceptAppendsToLog) {
   EXPECT_EQ(instance2, *(*logs_[0])[index2]);
 
   peers_[0]->StopRPCServer();
-  t.join();
 }
 
 TEST_F(MultiPaxosTest, PrepareResponseWithHigherBallotChangesLeaderToFollower) {
-  std::thread t0([this] { peers_[0]->StartRPCServer(); });
-  std::thread t1([this] { peers_[1]->StartRPCServer(); });
-  std::thread t2([this] { peers_[2]->StartRPCServer(); });
+  peers_[0]->StartRPCServer();
+  peers_[1]->StartRPCServer();
+  peers_[2]->StartRPCServer();
   auto stub1 = MakeStub(configs_[0]["peers"][1]);
 
   auto peer0_ballot = peers_[0]->NextBallot();
@@ -351,15 +346,12 @@ TEST_F(MultiPaxosTest, PrepareResponseWithHigherBallotChangesLeaderToFollower) {
   peers_[0]->StopRPCServer();
   peers_[1]->StopRPCServer();
   peers_[2]->StopRPCServer();
-  t0.join();
-  t1.join();
-  t2.join();
 }
 
 TEST_F(MultiPaxosTest, AcceptResponseWithHigherBallotChangesLeaderToFollower) {
-  std::thread t0([this] { peers_[0]->StartRPCServer(); });
-  std::thread t1([this] { peers_[1]->StartRPCServer(); });
-  std::thread t2([this] { peers_[2]->StartRPCServer(); });
+  peers_[0]->StartRPCServer();
+  peers_[1]->StartRPCServer();
+  peers_[2]->StartRPCServer();
   auto stub1 = MakeStub(configs_[0]["peers"][1]);
 
   auto peer0_ballot = peers_[0]->NextBallot();
@@ -381,15 +373,12 @@ TEST_F(MultiPaxosTest, AcceptResponseWithHigherBallotChangesLeaderToFollower) {
   peers_[0]->StopRPCServer();
   peers_[1]->StopRPCServer();
   peers_[2]->StopRPCServer();
-  t0.join();
-  t1.join();
-  t2.join();
 }
 
 TEST_F(MultiPaxosTest, CommitResponseWithHigherBallotChangesLeaderToFollower) {
-  std::thread t0([this] { peers_[0]->StartRPCServer(); });
-  std::thread t1([this] { peers_[1]->StartRPCServer(); });
-  std::thread t2([this] { peers_[2]->StartRPCServer(); });
+  peers_[0]->StartRPCServer();
+  peers_[1]->StartRPCServer();
+  peers_[2]->StartRPCServer();
   auto stub1 = MakeStub(configs_[0]["peers"][1]);
 
   auto peer0_ballot = peers_[0]->NextBallot();
@@ -409,13 +398,10 @@ TEST_F(MultiPaxosTest, CommitResponseWithHigherBallotChangesLeaderToFollower) {
   peers_[0]->StopRPCServer();
   peers_[1]->StopRPCServer();
   peers_[2]->StopRPCServer();
-  t0.join();
-  t1.join();
-  t2.join();
 }
 
 TEST_F(MultiPaxosTest, RunPreparePhase) {
-  std::thread t0([this] { peers_[0]->StartRPCServer(); });
+  peers_[0]->StartRPCServer();
 
   auto peer0_ballot = peers_[0]->NextBallot();
   auto peer1_ballot = peers_[1]->NextBallot();
@@ -459,7 +445,7 @@ TEST_F(MultiPaxosTest, RunPreparePhase) {
 
   EXPECT_EQ(std::nullopt, peers_[0]->RunPreparePhase(ballot));
 
-  std::thread t1([this] { peers_[1]->StartRPCServer(); });
+  peers_[1]->StartRPCServer();
 
   std::this_thread::sleep_for(seconds(2));
 
@@ -473,12 +459,10 @@ TEST_F(MultiPaxosTest, RunPreparePhase) {
 
   peers_[0]->StopRPCServer();
   peers_[1]->StopRPCServer();
-  t0.join();
-  t1.join();
 }
 
 TEST_F(MultiPaxosTest, RunAcceptPhase) {
-  std::thread t0([this] { peers_[0]->StartRPCServer(); });
+  peers_[0]->StartRPCServer();
 
   auto ballot = peers_[0]->NextBallot();
   auto index = logs_[0]->AdvanceLastIndex();
@@ -492,7 +476,7 @@ TEST_F(MultiPaxosTest, RunAcceptPhase) {
   EXPECT_EQ(nullptr, (*logs_[1])[index]);
   EXPECT_EQ(nullptr, (*logs_[2])[index]);
 
-  std::thread t1([this] { peers_[1]->StartRPCServer(); });
+  peers_[1]->StartRPCServer();
 
   std::this_thread::sleep_for(seconds(2));
 
@@ -507,13 +491,11 @@ TEST_F(MultiPaxosTest, RunAcceptPhase) {
 
   peers_[0]->StopRPCServer();
   peers_[1]->StopRPCServer();
-  t0.join();
-  t1.join();
 }
 
 TEST_F(MultiPaxosTest, RunCommitPhase) {
-  std::thread t0([this] { peers_[0]->StartRPCServer(); });
-  std::thread t1([this] { peers_[1]->StartRPCServer(); });
+  peers_[0]->StartRPCServer();
+  peers_[1]->StartRPCServer();
 
   auto ballot = peers_[0]->NextBallot();
 
@@ -530,7 +512,7 @@ TEST_F(MultiPaxosTest, RunCommitPhase) {
   gle = peers_[0]->RunCommitPhase(ballot, gle);
   EXPECT_EQ(0, gle);
 
-  std::thread t2([this] { peers_[2]->StartRPCServer(); });
+  peers_[2]->StartRPCServer();
 
   logs_[2]->Append(MakeInstance(ballot, 3));
 
@@ -547,14 +529,11 @@ TEST_F(MultiPaxosTest, RunCommitPhase) {
   peers_[0]->StopRPCServer();
   peers_[1]->StopRPCServer();
   peers_[2]->StopRPCServer();
-  t0.join();
-  t1.join();
-  t2.join();
 }
 
 TEST_F(MultiPaxosTest, Replay) {
-  std::thread t0([this] { peers_[0]->StartRPCServer(); });
-  std::thread t1([this] { peers_[1]->StartRPCServer(); });
+  peers_[0]->StartRPCServer();
+  peers_[1]->StartRPCServer();
 
   auto ballot = peers_[0]->NextBallot();
 
@@ -599,19 +578,17 @@ TEST_F(MultiPaxosTest, Replay) {
 
   peers_[0]->StopRPCServer();
   peers_[1]->StopRPCServer();
-  t0.join();
-  t1.join();
 }
 
 TEST_F(MultiPaxosTest, Replicate) {
-  std::thread t0([this] { peers_[0]->Start(); });
+  peers_[0]->Start();
 
   auto result = peers_[0]->Replicate(Command(), 0);
   EXPECT_EQ(ResultType::kRetry, result.type_);
   EXPECT_EQ(std::nullopt, result.leader_);
 
-  std::thread t1([this] { peers_[1]->Start(); });
-  std::thread t2([this] { peers_[2]->Start(); });
+  peers_[1]->Start();
+  peers_[2]->Start();
 
   int commit_interval = configs_[0]["commit_interval"];
   auto commit_interval_3x = 3 * milliseconds(commit_interval);
@@ -634,7 +611,4 @@ TEST_F(MultiPaxosTest, Replicate) {
   peers_[0]->Stop();
   peers_[1]->Stop();
   peers_[2]->Stop();
-  t0.join();
-  t1.join();
-  t2.join();
 }

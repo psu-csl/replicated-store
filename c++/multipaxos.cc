@@ -41,8 +41,8 @@ MultiPaxos::MultiPaxos(Log* log, json const& config)
       dist_(0, commit_interval_),
       port_(config["peers"][id_]),
       last_commit_(0),
-      rpc_server_running_(false),
       thread_pool_(config["threadpool_size"]),
+      rpc_server_running_(false),
       prepare_thread_running_(false),
       commit_thread_running_(false) {
   int64_t id = 0;
@@ -69,7 +69,7 @@ void MultiPaxos::StartRPCServer() {
     rpc_server_running_ = true;
     rpc_server_running_cv_.notify_one();
   }
-  rpc_server_->Wait();
+  rpc_server_thread_ = std::thread([this] { rpc_server_->Wait(); });
 }
 
 void MultiPaxos::StartPrepareThread() {
@@ -101,6 +101,7 @@ void MultiPaxos::StopRPCServer() {
   }
   DLOG(INFO) << id_ << " stopping rpc server at " << port_;
   rpc_server_->Shutdown();
+  rpc_server_thread_.join();
 }
 
 void MultiPaxos::StopPrepareThread() {

@@ -175,14 +175,16 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
   std::string port_;
   std::atomic<long> last_commit_;
   std::vector<rpc_peer_t> rpc_peers_;
-  rpc_server_t rpc_server_;
-  bool rpc_server_running_;
-  std::condition_variable rpc_server_running_cv_;
   mutable std::mutex mu_;
   asio::thread_pool thread_pool_;
 
   std::condition_variable cv_leader_;
   std::condition_variable cv_follower_;
+
+  rpc_server_t rpc_server_;
+  bool rpc_server_running_;
+  std::condition_variable rpc_server_running_cv_;
+  std::thread rpc_server_thread_;
 
   std::atomic<bool> prepare_thread_running_;
   std::thread prepare_thread_;
