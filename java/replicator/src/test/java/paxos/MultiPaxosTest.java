@@ -2,6 +2,7 @@ package paxos;
 
 
 import static multipaxos.ResponseType.OK;
+import static multipaxos.ResponseType.REJECT;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -201,23 +202,40 @@ class MultiPaxosTest {
 
   @Test
   @Order(4)
-  void heartbeatChangesLeaderToFollower() {
+  void RPCSWithHigherBallotChangeLeaderToFollower() {
     ExecutorService executor = Executors.newSingleThreadExecutor();
     executor.submit(() -> peer0.startRPCServer());
 
     var stub = makeStub("localhost", config0.getPort());
     peer0.nextBallot();
+    assertTrue(isLeader(peer0));
 
     sendHeartbeat(stub, peer1.nextBallot(), 0, 0);
     assertFalse(isLeader(peer0));
     assertEquals(1, leader(peer0));
+
+    peer0.nextBallot();
+    assertTrue(isLeader(peer0));
+    var r1 = sendPrepare(stub, peer1.nextBallot());
+    assertFalse(isLeader(peer0));
+    assertEquals(1, leader(peer0));
+
+    peer0.nextBallot();
+    assertTrue(isLeader(peer0));
+    var index = log0.advanceLastIndex();
+    var instance = makeInstance(peer1.nextBallot(), index);
+    var r2 = sendAccept(stub, instance);
+    assertEquals(OK, r2.getType());
+    assertFalse(isLeader(peer0));
+    assertEquals(1, leader(peer0));
+    
     peer0.stopRPCServer();
     executor.shutdown();
   }
 
   @Test
   @Order(5)
-  void heartbeatIgnoreStaleRPC() {
+  void RPCsWithLowerBallotIgnored() {
     ExecutorService executor = Executors.newSingleThreadExecutor();
     executor.submit(() -> peer0.startRPCServer());
 
@@ -226,8 +244,22 @@ class MultiPaxosTest {
     peer0.nextBallot();
     peer0.nextBallot();
 
-    sendHeartbeat(stub, peer1.nextBallot(), 0, 0);
+    var staleBallot = peer1.nextBallot();
+
+    sendHeartbeat(stub, staleBallot, 0, 0);
     assertTrue(isLeader(peer0));
+
+    var r1 = sendPrepare(stub, staleBallot);
+    assertEquals(REJECT, r1.getType());
+    assertTrue(isLeader(peer0));
+
+    var index = log0.advanceLastIndex();
+    var instance = makeInstance(staleBallot, index);
+    var r2 = sendAccept(stub, instance);
+    assertEquals(REJECT, r2.getType());
+    assertTrue(isLeader(peer0));
+    assertNull(log0.get(index));
+
     peer0.stopRPCServer();
     executor.shutdown();
   }
