@@ -1,5 +1,7 @@
 package log;
 
+import static paxos.MultiPaxos.makeInstance;
+
 import command.Command;
 
 public class Instance {
@@ -90,6 +92,21 @@ public class Instance {
   public String toString() {
     return "ballot : " + ballot + " index : " + index + " clientId : " + clientId + " state : "
         + state + "\n";
+  }
+
+  @Override
+  public boolean equals(Object o) {
+    if (o == null) {
+      return false;
+    }
+    if (o.getClass() != this.getClass()) {
+      return false;
+    }
+    final Instance inst = (Instance) o;
+    return this.ballot == inst.getBallot() && this.command.equals(inst.getCommand())
+        && this.state == inst.getState() && this.index == inst.getIndex()
+        && this.clientId == inst.getClientId();
+
   }
 
   public enum InstanceState {

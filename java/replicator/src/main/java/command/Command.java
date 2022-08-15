@@ -7,6 +7,9 @@ public class Command {
   private String value;
 
   public Command() {
+    this.type = CommandType.Get;
+    this.key = "";
+    this.value = "";
   }
 
   public Command(CommandType type, String key, String value) {
@@ -41,6 +44,7 @@ public class Command {
 
   @Override
   public boolean equals(Object o) {
+    
     if (o == this) {
       return true;
     }

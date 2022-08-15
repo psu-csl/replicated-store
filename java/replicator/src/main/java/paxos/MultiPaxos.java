@@ -560,6 +560,10 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
         setBallot(request.getBallot());
 
         for (var i : log_.instancesSinceGlobalLastExecuted()) {
+          if (i == null) {
+            logger.info("null instance of log: " + i);
+            continue;
+          }
           responseBuilder.addInstances(makeProtoInstance(i));
         }
         responseBuilder = responseBuilder.setType(ResponseType.OK);
