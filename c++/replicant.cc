@@ -48,7 +48,8 @@ void Replicant::Start() {
     auto client_id = NextClientId();
     auto socket = CreateSocket(client_id);
     acceptor_.accept(*socket);
-    client_threads_.emplace_back(&Replicant::HandleClient, this, client_id);
+    client_threads_.emplace_back(&Replicant::HandleClient, this, client_id,
+                                 socket);
   }
 }
 
@@ -60,14 +61,12 @@ void Replicant::Stop() {
   mp_.Stop();
 }
 
-void Replicant::HandleClient(int64_t client_id) {
-  auto socket = FindSocket(client_id);
-  CHECK(socket);
+void Replicant::HandleClient(int64_t client_id, tcp::socket* socket) {
   for (;;) {
     auto command = ReadCommand(socket);
     if (command)
-      asio::post(tp_, [this, command = std::move(*command), client_id] {
-        Replicate(std::move(command), client_id);
+      asio::post(tp_, [this, command = std::move(*command), client_id, socket] {
+        Replicate(std::move(command), client_id, socket);
       });
     else
       break;
@@ -120,13 +119,12 @@ std::string Replicant::ReadLine(tcp::socket* cli) {
   return line;
 }
 
-void Replicant::Replicate(multipaxos::Command command, int64_t client_id) {
+void Replicant::Replicate(multipaxos::Command command,
+                          int64_t client_id,
+                          tcp::socket* socket) {
   auto r = mp_.Replicate(std::move(command), client_id);
   if (r.type_ == ResultType::kOk)
     return;
-
-  auto socket = FindSocket(client_id);
-  CHECK(socket);
 
   asio::error_code ec;
   if (r.type_ == ResultType::kRetry) {
