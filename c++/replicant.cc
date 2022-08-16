@@ -49,13 +49,13 @@ void Replicant::Start() {
     auto [it, ok] = client_sockets_.insert({client_id, tcp::socket(io_)});
     CHECK(ok);
     acceptor_.accept(it->second);
-    clients_.emplace_back(&Replicant::HandleClient, this, client_id);
+    client_threads_.emplace_back(&Replicant::HandleClient, this, client_id);
   }
 }
 
 void Replicant::Stop() {
   tp_.join();
-  for (auto& t : clients_)
+  for (auto& t : client_threads_)
     t.join();
   executor_thread_.join();
   mp_.Stop();

@@ -40,7 +40,7 @@ class Replicant {
   asio::io_context io_;
   asio::ip::tcp::acceptor acceptor_;
   asio::thread_pool tp_;
-  std::vector<std::thread> clients_;
+  std::vector<std::thread> client_threads_;
   std::thread executor_thread_;
 };
 
