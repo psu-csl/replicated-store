@@ -124,8 +124,8 @@ Result MultiPaxos::Replicate(Command command, client_id_t client_id) {
   auto [ballot, ready] = Ballot();
   if (IsLeader(ballot, id_)) {
     if (ready)
-      return RunAcceptPhase(ballot, log_->AdvanceLastIndex(), command,
-                            client_id);
+      return RunAcceptPhase(ballot, log_->AdvanceLastIndex(),
+                            std::move(command), client_id);
     return Result{ResultType::kRetry, std::nullopt};
   }
   if (IsSomeoneElseLeader(ballot, id_))
