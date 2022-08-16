@@ -81,7 +81,7 @@ void Replicant::ExecutorThread() {
     auto [client_id, result] = log_.Execute(kv_store_.get());
     auto it = client_sockets_.find(client_id);
     if (it == client_sockets_.end())
-      return;
+      continue;
     asio::error_code ec;
     if (!result.ok_)
       asio::write(it->second, asio::buffer("failed"), ec);
