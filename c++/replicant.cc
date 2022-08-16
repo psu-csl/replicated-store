@@ -46,9 +46,8 @@ void Replicant::Start() {
   executor_thread_ = std::thread(&Replicant::ExecutorThread, this);
   for (;;) {
     auto client_id = NextClientId();
-    auto [it, ok] = client_sockets_.insert({client_id, tcp::socket(io_)});
-    CHECK(ok);
-    acceptor_.accept(it->second);
+    auto socket = CreateSocket(client_id);
+    acceptor_.accept(*socket);
     client_threads_.emplace_back(&Replicant::HandleClient, this, client_id);
   }
 }
@@ -62,10 +61,10 @@ void Replicant::Stop() {
 }
 
 void Replicant::HandleClient(int64_t client_id) {
-  auto it = client_sockets_.find(client_id);
-  CHECK(it != client_sockets_.end());
+  auto socket = FindSocket(client_id);
+  CHECK(socket);
   for (;;) {
-    auto command = ReadCommand(&it->second);
+    auto command = ReadCommand(socket);
     if (command)
       asio::post(tp_, [this, command = std::move(*command), client_id] {
         Replicate(std::move(command), client_id);
@@ -79,13 +78,13 @@ void Replicant::ExecutorThread() {
   DLOG(INFO) << "replicant " << id_ << " starting executor thread";
   for (;;) {
     auto [client_id, result] = log_.Execute(kv_store_.get());
-    auto it = client_sockets_.find(client_id);
-    if (it == client_sockets_.end())
+    auto socket = FindSocket(client_id);
+    if (!socket)
       continue;
     asio::error_code ec;
     if (!result.ok_)
-      asio::write(it->second, asio::buffer("failed"), ec);
-    asio::write(it->second, asio::buffer(*result.value_), ec);
+      asio::write(*socket, asio::buffer("failed"), ec);
+    asio::write(*socket, asio::buffer(*result.value_), ec);
   }
 }
 
@@ -126,15 +125,17 @@ void Replicant::Replicate(multipaxos::Command command, int64_t client_id) {
   if (r.type_ == ResultType::kOk)
     return;
 
-  auto it = client_sockets_.find(client_id);
-  CHECK(it != client_sockets_.end());
+  auto socket = FindSocket(client_id);
+  CHECK(socket);
 
+  asio::error_code ec;
   if (r.type_ == ResultType::kRetry) {
-    // write to socket (it->second) a retry message
+    asio::write(*socket, asio::buffer("retry"), ec);
   } else {
     CHECK(r.type_ == ResultType::kSomeoneElseLeader);
-    // write to socket (it->second) leader's id
-    it->second.close();
-    client_sockets_.erase(it);
+    // TODO: write the leader's id
+    asio::write(*socket, asio::buffer("the leader is ..."), ec);
+    socket->close();
+    RemoveSocket(client_id);
   }
 }
