@@ -82,7 +82,10 @@ void Replicant::ExecutorThread() {
     auto it = client_sockets_.find(client_id);
     if (it == client_sockets_.end())
       return;
-    // write result to the client socket (it->second)
+    asio::error_code ec;
+    if (!result.ok_)
+      asio::write(it->second, asio::buffer("failed"), ec);
+    asio::write(it->second, asio::buffer(*result.value_), ec);
   }
 }
 
