@@ -18,4 +18,6 @@ multipaxos::Instance MakeInstance(int64_t ballot,
                                   multipaxos::InstanceState state,
                                   multipaxos::CommandType type);
 
+std::string MakeConfig(int64_t id, int64_t num_peers);
+
 #endif

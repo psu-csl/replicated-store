@@ -27,6 +27,7 @@ cc_library(
     hdrs = ["test_util.h"],
     deps = [
         ":multipaxos_cc_proto",
+        "@com_github_google_glog//:glog",
     ],
 )
 

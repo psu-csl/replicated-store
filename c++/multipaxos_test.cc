@@ -89,28 +89,11 @@ std::unique_ptr<MultiPaxosRPC::Stub> MakeStub(std::string const& target) {
       grpc::CreateChannel(target, grpc::InsecureChannelCredentials()));
 }
 
-std::string MakeConfig(int64_t id) {
-  CHECK(id < kNumPeers);
-  auto r = R"({ "id": )" + std::to_string(id) + R"(,
-              "threadpool_size": 8,
-              "commit_interval": 300,
-              "peers": [)";
-
-  for (auto i = 0; i < kNumPeers; ++i) {
-    r += R"("127.0.0.1:1)" + std::to_string(i) + R"(000")";
-    if (i + 1 < kNumPeers)
-      r += R"(,)";
-  }
-  r += R"(]})";
-
-  return r;
-}
-
 class MultiPaxosTest : public testing::Test {
  public:
   MultiPaxosTest() {
     for (auto id = 0; id < kNumPeers; ++id) {
-      auto config = json::parse(MakeConfig(id));
+      auto config = json::parse(MakeConfig(id, kNumPeers));
       auto log = std::make_unique<Log>();
       auto peer = std::make_unique<MultiPaxos>(log.get(), config);
       auto store = std::make_unique<MemKVStore>();
