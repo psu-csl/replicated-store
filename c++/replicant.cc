@@ -1,8 +1,6 @@
 #include <glog/logging.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
-#include <unistd.h>
 #include <asio.hpp>
+#include <condition_variable>
 #include <cstring>
 #include <iostream>
 #include <memory>
@@ -47,17 +45,22 @@ void Replicant::Start() {
   for (;;) {
     auto client_id = NextClientId();
     auto socket = CreateSocket(client_id);
-    acceptor_.accept(*socket);
+    asio::error_code ec;
+    acceptor_.accept(*socket, ec);
+    if (ec)
+      break;
     client_threads_.emplace_back(&Replicant::HandleClient, this, client_id,
                                  socket);
   }
 }
 
 void Replicant::Stop() {
-  tp_.join();
   for (auto& t : client_threads_)
     t.join();
+  tp_.join();
+  log_.Stop();
   executor_thread_.join();
+  acceptor_.close();
   mp_.Stop();
 }
 
@@ -78,7 +81,10 @@ void Replicant::HandleClient(int64_t client_id, tcp::socket* socket) {
 void Replicant::ExecutorThread() {
   DLOG(INFO) << "replicant " << id_ << " starting executor thread";
   for (;;) {
-    auto [client_id, result] = log_.Execute(kv_store_.get());
+    auto r = log_.Execute(kv_store_.get());
+    if (!r)
+      break;
+    auto [client_id, result] = *r;
     auto socket = FindSocket(client_id);
     if (!socket)
       continue;

@@ -107,3 +107,17 @@ cc_test(
         "@com_google_googletest//:gtest_main",
     ],
 )
+
+cc_test(
+    name = "replicant_test",
+    size = "small",
+    srcs = ["replicant.cc", "replicant_test.cc"],
+    deps = [
+        ":replicant",
+        ":multipaxos",
+        ":test_util",
+        ":log",
+        "@com_github_grpc_grpc//:grpc++",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
