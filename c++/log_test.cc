@@ -373,3 +373,13 @@ TEST_F(LogTest, InstancesSinceGlobalLastExecuted) {
   expected.erase(expected.begin(), expected.begin() + index);
   EXPECT_EQ(expected, log_.InstancesSinceGlobalLastExecuted());
 }
+
+TEST_F(LogTest, CallingStopUnblocksExecutor) {
+  std::thread execute_thread([this] {
+    auto r = log_.Execute(&store_);
+    EXPECT_EQ(std::nullopt, r);
+  });
+  std::this_thread::yield();
+  log_.Stop();
+  execute_thread.join();
+}
