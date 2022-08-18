@@ -71,6 +71,8 @@ void Replicant::HandleClient(int64_t client_id, tcp::socket* socket) {
     else
       break;
   }
+  socket->close();
+  RemoveSocket(client_id);
 }
 
 void Replicant::ExecutorThread() {
@@ -133,7 +135,5 @@ void Replicant::Replicate(multipaxos::Command command,
     CHECK(r.type_ == ResultType::kSomeoneElseLeader);
     // TODO: write the leader's id
     asio::write(*socket, asio::buffer("the leader is ..."), ec);
-    socket->close();
-    RemoveSocket(client_id);
   }
 }
