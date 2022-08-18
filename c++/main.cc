@@ -9,7 +9,6 @@
 
 using nlohmann::json;
 
-DEFINE_bool(leader, false, "i am a leader");
 DEFINE_uint32(id, 0, "my id in the peers array in configuration file");
 DEFINE_string(config, "config.json", "path to the configuration file");
 
@@ -27,7 +26,6 @@ int main(int argc, char* argv[]) {
   CHECK(FLAGS_id < config["peers"].size());
 
   config["id"] = FLAGS_id;
-  config["leader"] = FLAGS_leader;
 
   Replicant replicant(config);
   replicant.Start();
