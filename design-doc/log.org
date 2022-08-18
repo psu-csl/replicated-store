@@ -4,9 +4,14 @@
   # the commit method acts as a produce method of a queue. Technically,
   # instances are inserted into the queue via the append method; however, they
   # do not become executable until they are committed by calling commit on the
-  # instance. The Log is unbounded because the instances will usually be
-  # executed quickly; therefore, wake up happens only one way: the thread that
-  # commits wakes up the executor thread to execute instances.
+  # instance. Wake up happens only one way: the thread that commits wakes up the
+  # executor thread to execute instances. Since executor thread may block on
+  # calling the execute method of log, we need to wake up the executor when we
+  # want to cleanly shut down the system. To this end, the log has a running
+  # flag and a stop method that sets the running flag to false and signals the
+  # condition variable upon which the executor is sleeping due to calling the
+  # execute method. The execute method will return a nullopt after the log is
+  # stopped and the executor method can exit upon receiving nullopt.
 
   - types/protobufs:
 
@@ -51,6 +56,8 @@
 
     - cv_commitable_: the condition variable on which the commit method sleeps
       on rare occasions and append method signals
+
+    - running_: boolean indicating whether the log is still running.
 
   - log invariants
     # given that (1) the instances in the log must be executed in order, (2)
@@ -126,6 +133,11 @@
       acquire mu_ and release on exit
       return ++last_index_
 
+    - stop()
+      acquire mu_ and release on exit
+      set running_ to false
+      signal cv_executable_
+
     - append(instance: Instance)
       # description: appends an instance to the log; called from the
       # accept_handler.
@@ -188,7 +200,7 @@
         cv_executable_.notify_one()
       mu_.unlock()
 
-    - execute(kv: KVStore) -> (client-id, result)
+    - execute(kv: KVStore) -> optional(client-id, result)
       # As described above, this method acts as a consume method of a
       # producer/consumer queue. Therefore, it sleeps until it is woken up by
       # someone calling commit (i.e. produce) method of the queue. Once woken
@@ -196,8 +208,11 @@
       # executed, increments last_executed_, and returns the result and the id
       # of the client that originated the command.
       mu_.lock()
-      while not is_executable()
+      while running_ and not is_executable()
         cv_executable_.wait()
+
+      if !running_:
+        return nullopt
 
       instance = &log_[last_executed_+1]
       result = kv.execute(instance.cmd)
@@ -292,117 +307,122 @@
     - at(index: int) -> pointer to instance
       return a constant pointer to the instance
 
-- unit tests
+  - unit tests
 
-  - constructor
-    - ensure that class members are initialized properly
+    - constructor
+      - ensure that class members are initialized properly
 
-  - insert
-    - inserting a new instance in in-progress state returns true, and inserting
-      an instance with the same ballot, command, and state at the same index, is
-      a no-op and returns false
+    - insert
+      - inserting a new instance in in-progress state returns true, and inserting
+        an instance with the same ballot, command, and state at the same index, is
+        a no-op and returns false
 
-  - insert-update-in-progress
-    - updating an in-progress instance with a higher ballot updates the instance
-      and returns false
+    - insert-update-in-progress
+      - updating an in-progress instance with a higher ballot updates the instance
+        and returns false
 
-  - insert-update-committed
-    - updating a committed instance is a no-op and returns false.
+    - insert-update-committed
+      - updating a committed instance is a no-op and returns false.
 
-  - insert-stale
-    - inserting a stale instance is a no-op returns false
+    - insert-stale
+      - inserting a stale instance is a no-op returns false
 
-  - insert-case2-committed (death test)
-    - see case 2 in the description of insert
+    - insert-case2-committed (death test)
+      - see case 2 in the description of insert
 
-  - insert-case2-executed (death test)
-    - see case 2 in the description of insert
+    - insert-case2-executed (death test)
+      - see case 2 in the description of insert
 
-  - insert-case3 (death test)
-    - see case 3 in the description of insert
+    - insert-case3 (death test)
+      - see case 3 in the description of insert
 
-  - append
-    - common case test: appended members appear in the log at correct indexes.
+    - append
+      - common case test: appended members appear in the log at correct indexes.
 
-  - append-with-gap
-    - if we leave a gap in the log by appending an instance at last_index_ + m,
-      where m > 1, then last_index_ should be updated to last_index_ + m.
+    - append-with-gap
+      - if we leave a gap in the log by appending an instance at last_index_ + m,
+        where m > 1, then last_index_ should be updated to last_index_ + m.
 
-  - append-fill-gaps
-    - if we leave a gap in the log by appending an instance at last_index_ + m,
-      where m > 1, and then append an instance at k, where last_index_ < k < m,
-      then last_index_ does not change because the append operation is filling a
-      gap and not extending the log.
+    - append-fill-gaps
+      - if we leave a gap in the log by appending an instance at last_index_ + m,
+        where m > 1, and then append an instance at k, where last_index_ < k < m,
+        then last_index_ does not change because the append operation is filling a
+        gap and not extending the log.
 
-  - append-high-ballot-override
-    - if log_[m] contains an instance with ballot = n and we append an instance
-      at log_[m] with ballot = o, where o > n, then append should overwrite the
-      instance in the log.
+    - append-high-ballot-override
+      - if log_[m] contains an instance with ballot = n and we append an instance
+        at log_[m] with ballot = o, where o > n, then append should overwrite the
+        instance in the log.
 
-  - append-low-ballot-no-effect
-    - if log_[m] contains an instance with ballot = n and we append an instance
-      at log_[m] with ballot = o, where o < n, then append should have no
-      effect.
+    - append-low-ballot-no-effect
+      - if log_[m] contains an instance with ballot = n and we append an instance
+        at log_[m] with ballot = o, where o < n, then append should have no
+        effect.
 
-  - commit
-    - committing an instance should change its state to committed; if there is a
-      gap between last_executed_ and committed instance, then the log should not
-      become executable; otherwise, it should.
+    - commit
+      - committing an instance should change its state to committed; if there is a
+        gap between last_executed_ and committed instance, then the log should not
+        become executable; otherwise, it should.
 
-  - commit-before-append
-    - committing an instance at the index that does not yet have an instance
-      because append wasn't called yet (see commit function description above
-      for when this can happen) should eventually succeed after append is
-      called.
+    - commit-before-append
+      - committing an instance at the index that does not yet have an instance
+        because append wasn't called yet (see commit function description above
+        for when this can happen) should eventually succeed after append is
+        called.
 
-  - append-commit-execute
-    - the common case of appending, committing, and executing an instance
+    - append-commit-execute
+      - the common case of appending, committing, and executing an instance
 
-  - append-commit-execute-out-of-order
-    - append three instances in order, commit them in reverse order, and ensure
-      that they are all executed.
+    - append-commit-execute-out-of-order
+      - append three instances in order, commit them in reverse order, and ensure
+        that they are all executed.
 
-  - commit-until
-    - append instances at indexes 1, 2, and 3, and call commit_until with the
-      same ballot number and leader_last_executed = 2, and ensure that instances
-      1 and 2 are committed and 3 is not, and the log is executable.
+    - commit-until
+      - append instances at indexes 1, 2, and 3, and call commit_until with the
+        same ballot number and leader_last_executed = 2, and ensure that instances
+        1 and 2 are committed and 3 is not, and the log is executable.
 
-  - commit-until-higher-ballot
-    - append instances at indexes 1, 2, and 3, and call commit_until with a
-      higher ballot number and leader_last_executed = 3, ensure that none of the
-      instances committed and the log is not executable.
+    - commit-until-higher-ballot
+      - append instances at indexes 1, 2, and 3, and call commit_until with a
+        higher ballot number and leader_last_executed = 3, ensure that none of the
+        instances committed and the log is not executable.
 
-  - commit-until-case2 (death test)
-    - see case 2 in the description of commit-until
+    - commit-until-case2 (death test)
+      - see case 2 in the description of commit-until
 
-  - commit-until-with-gap
-    - append instances at indexes 1, 3, and 4, and call commit_until with the
-      same ballot number and leader_last_executed = 4 and ensure that 1 is
-      committed and 3 and 4 aren't, and the log is executable.
+    - commit-until-with-gap
+      - append instances at indexes 1, 3, and 4, and call commit_until with the
+        same ballot number and leader_last_executed = 4 and ensure that 1 is
+        committed and 3 and 4 aren't, and the log is executable.
 
-  - append-commit-until-execute
-    - append instances at indexes 1, 2, and 3, and call commit_until with
-      leader_last_executed = 3, and ensure that all instances are executed.
+    - append-commit-until-execute
+      - append instances at indexes 1, 2, and 3, and call commit_until with
+        leader_last_executed = 3, and ensure that all instances are executed.
 
-  - append-commit-until-execute-trim-until
-    - append instances at indexes 1, 2, and 3, and call commit_until with the
-      same ballot number and leader_last_executed = 3, and then call trim_until
-      with leader_global_last_executed = 3, and ensure that all of the instances
-      removed from the log.
+    - append-commit-until-execute-trim-until
+      - append instances at indexes 1, 2, and 3, and call commit_until with the
+        same ballot number and leader_last_executed = 3, and then call trim_until
+        with leader_global_last_executed = 3, and ensure that all of the instances
+        removed from the log.
 
-  - append-at-trimmed-index
-    - append instances at indexes 1 and 2, and call commit_until with the same
-      ballot number and leader_global_last_executed = 2, and then call
-      trim_until with leader_global_last_executed = 2 to move
-      global_last_executed_ to 2. append an instance at index 1 and 2 again and
-      ensure that it has no effect, i.e. there are no instances at index 1
-      and 2.
+    - append-at-trimmed-index
+      - append instances at indexes 1 and 2, and call commit_until with the same
+        ballot number and leader_global_last_executed = 2, and then call
+        trim_until with leader_global_last_executed = 2 to move
+        global_last_executed_ to 2. append an instance at index 1 and 2 again and
+        ensure that it has no effect, i.e. there are no instances at index 1
+        and 2.
 
-  - instances-since-global-last-executed
-    - append instances at indexes 1, 2, 3; call
-      instances_since_global_last_executed and ensure that all instances are
-      returned; call commit_until with the same ballot number and
-      leader_last_executed = 2, and then call trim_until with
-      leader_global_last_executed = 2 to move global_last_executed_ to 2. call
-      instances_since_global_last_executed again, and ensure that only instance
-      3 is returned.
+    - instances-since-global-last-executed
+      - append instances at indexes 1, 2, 3; call
+        instances_since_global_last_executed and ensure that all instances are
+        returned; call commit_until with the same ballot number and
+        leader_last_executed = 2, and then call trim_until with
+        leader_global_last_executed = 2 to move global_last_executed_ to 2. call
+        instances_since_global_last_executed again, and ensure that only instance
+        3 is returned.
+
+    - calling-stop-unblock-executor
+      - call execute in the executor thread and call stop in the main thread and
+        check that nullopt is returned from execute call and the executor thread
+        can be joined.

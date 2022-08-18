@@ -78,10 +78,13 @@ void Log::Commit(int64_t index) {
     cv_executable_.notify_one();
 }
 
-std::tuple<client_id_t, KVResult> Log::Execute(KVStore* kv) {
+std::optional<log_result_t> Log::Execute(KVStore* kv) {
   std::unique_lock lock(mu_);
-  while (!IsExecutable())
+  while (running_ && !IsExecutable())
     cv_executable_.wait(lock);
+
+  if (!running_)
+    return std::nullopt;
 
   auto it = log_.find(last_executed_ + 1);
   CHECK(it != log_.end());
@@ -91,7 +94,7 @@ std::tuple<client_id_t, KVResult> Log::Execute(KVStore* kv) {
   KVResult result = kv->Execute(instance->command());
   instance->set_state(EXECUTED);
   ++last_executed_;
-  return {instance->client_id(), result};
+  return {{instance->client_id(), result}};
 }
 
 void Log::CommitUntil(int64_t leader_last_executed, int64_t ballot) {

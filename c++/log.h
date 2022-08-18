@@ -4,13 +4,14 @@
 #include <condition_variable>
 #include <cstdint>
 #include <mutex>
+#include <optional>
 #include <tuple>
 #include <unordered_map>
 #include <vector>
 
 #include "kvstore.h"
 
-using client_id_t = int64_t;
+using log_result_t = std::tuple<int64_t, KVResult>;
 using log_map_t = std::unordered_map<int64_t, multipaxos::Instance>;
 using log_vector_t = std::vector<multipaxos::Instance>;
 
@@ -47,9 +48,15 @@ class Log {
     return ++last_index_;
   }
 
+  void Stop() {
+    std::scoped_lock lock(mu_);
+    running_ = false;
+    cv_executable_.notify_one();
+  }
+
   void Append(multipaxos::Instance instance);
   void Commit(int64_t index);
-  std::tuple<client_id_t, KVResult> Execute(KVStore* kv);
+  std::optional<log_result_t> Execute(KVStore* kv);
 
   void CommitUntil(int64_t leader_last_executed, int64_t ballot);
   void TrimUntil(int64_t leader_global_last_executed);
@@ -64,6 +71,7 @@ class Log {
   multipaxos::Instance const* operator[](std::size_t i) const;
 
  private:
+  bool running_ = true;
   log_map_t log_;
   int64_t last_index_ = 0;
   int64_t last_executed_ = 0;
