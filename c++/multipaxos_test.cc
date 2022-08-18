@@ -97,7 +97,7 @@ std::string MakeConfig(int64_t id) {
               "peers": [)";
 
   for (auto i = 0; i < kNumPeers; ++i) {
-    r += R"("127.0.0.1:300)" + std::to_string(i) + R"(")";
+    r += R"("127.0.0.1:1)" + std::to_string(i) + R"(000")";
     if (i + 1 < kNumPeers)
       r += R"(,)";
   }
