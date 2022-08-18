@@ -120,7 +120,7 @@ void MultiPaxos::StopCommitThread() {
   commit_thread_.join();
 }
 
-Result MultiPaxos::Replicate(Command command, client_id_t client_id) {
+Result MultiPaxos::Replicate(Command command, int64_t client_id) {
   auto [ballot, ready] = Ballot();
   if (IsLeader(ballot, id_)) {
     if (ready)
@@ -208,7 +208,7 @@ std::optional<log_map_t> MultiPaxos::RunPreparePhase(int64_t ballot) {
 Result MultiPaxos::RunAcceptPhase(int64_t ballot,
                                   int64_t index,
                                   Command command,
-                                  client_id_t client_id) {
+                                  int64_t client_id) {
   auto state = std::make_shared<accept_state_t>(id_);
 
   Instance instance;
