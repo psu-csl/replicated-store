@@ -41,7 +41,7 @@ Replicant::Replicant(json const& config)
 
 void Replicant::Start() {
   mp_.Start();
-  executor_thread_ = std::thread(&Replicant::ExecutorThread, this);
+  StartExecutorThread();
   for (;;) {
     auto client_id = NextClientId();
     auto socket = CreateSocket(client_id);
@@ -58,8 +58,7 @@ void Replicant::Stop() {
   for (auto& t : client_threads_)
     t.join();
   tp_.join();
-  log_.Stop();
-  executor_thread_.join();
+  StopExecutorThread();
   acceptor_.close();
   mp_.Stop();
 }
@@ -78,8 +77,18 @@ void Replicant::HandleClient(int64_t client_id, tcp::socket* socket) {
   RemoveSocket(client_id);
 }
 
+void Replicant::StartExecutorThread() {
+  DLOG(INFO) << id_ << " starting executor thread";
+  executor_thread_ = std::thread(&Replicant::ExecutorThread, this);
+}
+
+void Replicant::StopExecutorThread() {
+  DLOG(INFO) << id_ << " stopping executor thread";
+  log_.Stop();
+  executor_thread_.join();
+}
+
 void Replicant::ExecutorThread() {
-  DLOG(INFO) << "replicant " << id_ << " starting executor thread";
   for (;;) {
     auto r = log_.Execute(kv_store_.get());
     if (!r)
