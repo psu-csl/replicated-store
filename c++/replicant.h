@@ -18,9 +18,6 @@ class Replicant {
 
  private:
   void HandleClient(int64_t client_id, asio::ip::tcp::socket* socket);
-  void Replicate(multipaxos::Command command,
-                 int64_t client_id,
-                 asio::ip::tcp::socket* socket);
 
   void StartExecutorThread();
   void StopExecutorThread();
@@ -68,7 +65,6 @@ class Replicant {
   std::unordered_map<int64_t, asio::ip::tcp::socket> client_sockets_;
   asio::io_context io_;
   asio::ip::tcp::acceptor acceptor_;
-  asio::thread_pool tp_;
   std::vector<std::thread> client_threads_;
   std::thread executor_thread_;
 };

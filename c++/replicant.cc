@@ -23,8 +23,7 @@ Replicant::Replicant(json const& config)
       id_(config["id"]),
       next_client_id_(id_),
       num_peers_(config["peers"].size()),
-      acceptor_(io_),
-      tp_(config["threadpool_size"]) {
+      acceptor_(io_) {
   std::string me = config["peers"][id_];
   auto pos = me.find(":") + 1;
   CHECK_NE(pos, std::string::npos);
@@ -57,7 +56,6 @@ void Replicant::Start() {
 void Replicant::Stop() {
   for (auto& t : client_threads_)
     t.join();
-  tp_.join();
   StopExecutorThread();
   acceptor_.close();
   mp_.Stop();
@@ -66,12 +64,20 @@ void Replicant::Stop() {
 void Replicant::HandleClient(int64_t client_id, tcp::socket* socket) {
   for (;;) {
     auto command = ReadCommand(socket);
-    if (command)
-      asio::post(tp_, [this, command = std::move(*command), client_id, socket] {
-        Replicate(std::move(command), client_id, socket);
-      });
-    else
+    if (command) {
+      auto r = mp_.Replicate(std::move(*command), client_id);
+      if (r.type_ == ResultType::kOk)
+        continue;
+      asio::error_code ec;
+      if (r.type_ == ResultType::kRetry) {
+        asio::write(*socket, asio::buffer("retry"), ec);
+      } else {
+        CHECK(r.type_ == ResultType::kSomeoneElseLeader);
+        asio::write(*socket, asio::buffer("the leader is..."), ec);
+      }
+    } else {
       break;
+    }
   }
   socket->close();
   RemoveSocket(client_id);
@@ -134,21 +140,4 @@ std::string Replicant::ReadLine(tcp::socket* cli) {
   if (ec.value() == 0)
     std::getline(std::istream(&request), line);
   return line;
-}
-
-void Replicant::Replicate(multipaxos::Command command,
-                          int64_t client_id,
-                          tcp::socket* socket) {
-  auto r = mp_.Replicate(std::move(command), client_id);
-  if (r.type_ == ResultType::kOk)
-    return;
-
-  asio::error_code ec;
-  if (r.type_ == ResultType::kRetry) {
-    asio::write(*socket, asio::buffer("retry"), ec);
-  } else {
-    CHECK(r.type_ == ResultType::kSomeoneElseLeader);
-    // TODO: write the leader's id
-    asio::write(*socket, asio::buffer("the leader is ..."), ec);
-  }
 }
