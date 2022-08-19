@@ -129,13 +129,15 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
   }
 
   void Start();
-  void StartRPCServer();
-  void StartPrepareThread();
-  void StartCommitThread();
-
   void Stop();
+
+  void StartRPCServer();
   void StopRPCServer();
+
+  void StartPrepareThread();
   void StopPrepareThread();
+
+  void StartCommitThread();
   void StopCommitThread();
 
   Result Replicate(multipaxos::Command command, int64_t client_id);

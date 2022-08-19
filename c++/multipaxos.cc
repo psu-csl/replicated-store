@@ -58,6 +58,13 @@ void MultiPaxos::Start() {
   StartRPCServer();
 }
 
+void MultiPaxos::Stop() {
+  StopRPCServer();
+  StopPrepareThread();
+  StopCommitThread();
+  thread_pool_.join();
+}
+
 void MultiPaxos::StartRPCServer() {
   DLOG(INFO) << id_ << " starting rpc server at " << port_;
   ServerBuilder builder;
@@ -72,27 +79,6 @@ void MultiPaxos::StartRPCServer() {
   rpc_server_thread_ = std::thread([this] { rpc_server_->Wait(); });
 }
 
-void MultiPaxos::StartPrepareThread() {
-  DLOG(INFO) << id_ << " starting prepare thread";
-  CHECK(!prepare_thread_running_);
-  prepare_thread_running_ = true;
-  prepare_thread_ = std::thread(&MultiPaxos::PrepareThread, this);
-}
-
-void MultiPaxos::StartCommitThread() {
-  DLOG(INFO) << id_ << " starting commit thread";
-  CHECK(!commit_thread_running_);
-  commit_thread_running_ = true;
-  commit_thread_ = std::thread(&MultiPaxos::CommitThread, this);
-}
-
-void MultiPaxos::Stop() {
-  StopRPCServer();
-  StopPrepareThread();
-  StopCommitThread();
-  thread_pool_.join();
-}
-
 void MultiPaxos::StopRPCServer() {
   {
     std::unique_lock lock(mu_);
@@ -104,12 +90,26 @@ void MultiPaxos::StopRPCServer() {
   rpc_server_thread_.join();
 }
 
+void MultiPaxos::StartPrepareThread() {
+  DLOG(INFO) << id_ << " starting prepare thread";
+  CHECK(!prepare_thread_running_);
+  prepare_thread_running_ = true;
+  prepare_thread_ = std::thread(&MultiPaxos::PrepareThread, this);
+}
+
 void MultiPaxos::StopPrepareThread() {
   DLOG(INFO) << id_ << " stopping prepare thread";
   CHECK(prepare_thread_running_);
   prepare_thread_running_ = false;
   cv_follower_.notify_one();
   prepare_thread_.join();
+}
+
+void MultiPaxos::StartCommitThread() {
+  DLOG(INFO) << id_ << " starting commit thread";
+  CHECK(!commit_thread_running_);
+  commit_thread_running_ = true;
+  commit_thread_ = std::thread(&MultiPaxos::CommitThread, this);
 }
 
 void MultiPaxos::StopCommitThread() {
