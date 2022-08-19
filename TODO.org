@@ -9,7 +9,8 @@
       Instance and Command; We transform from custom implementation to proto
       generated one. Refactor such that we have only proto generated classes.
 
-** C++
+*** audit all the uses of std::atomic
+    - make sure the race conditions due to not using lock do not happen
 *** avoid holding the lock for a long time in rpc handlers
 
 *** explore the overhead of locking ballot_; replace NextBallot with CAS loop,
@@ -33,6 +34,8 @@
 *** reimplement concurrency stuff using C++20 features.
 
 *** handle errors in asio calls
+
+** C++
 
 ** All
 *** reorder the code in tests/doc/code to match the protocol
