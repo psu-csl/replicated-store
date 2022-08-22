@@ -61,6 +61,17 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "client_manager",
+    srcs = ["client_manager.cc", "client.cc"],
+    hdrs = ["client_manager.h", "client.h"],
+    deps = [
+        ":multipaxos_cc_grpc",
+        ":multipaxos",
+        "@com_github_google_glog//:glog",
+    ],
+)
+
 cc_binary(
     name = "replicant",
     srcs = ["main.cc", "replicant.cc", "replicant.h"],
@@ -69,6 +80,7 @@ cc_binary(
         ":log",
         ":multipaxos_cc_grpc",
         ":multipaxos",
+        ":client_manager",
         "@com_github_google_glog//:glog",
         "@com_github_grpc_grpc//:grpc++",
     ],
@@ -113,6 +125,7 @@ cc_test(
     size = "small",
     srcs = ["replicant.cc", "replicant_test.cc"],
     deps = [
+        ":client_manager",
         ":replicant",
         ":multipaxos",
         ":test_util",
