@@ -39,7 +39,7 @@ class Replicant {
   MultiPaxos multi_paxos_;
   std::unique_ptr<KVStore> kv_store_;
   std::string ip_port_;
-  asio::io_context io_;
+  asio::io_context io_context_;
   asio::ip::tcp::acceptor acceptor_;
   ClientManager client_manager_;
   std::thread executor_thread_;
