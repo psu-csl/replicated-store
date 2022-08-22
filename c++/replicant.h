@@ -14,6 +14,11 @@
 class Replicant {
  public:
   Replicant(const nlohmann::json& config);
+  Replicant(Replicant const& replicant) = delete;
+  Replicant& operator=(Replicant const& replicant) = delete;
+  Replicant(Replicant&& replicant) = delete;
+  Replicant& operator=(Replicant&& replicant) = delete;
+
   void Start();
   void Stop();
 
