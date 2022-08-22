@@ -43,7 +43,7 @@ std::optional<Command> Parse(asio::streambuf* request) {
 void Client::HandleRequest() {
   auto self(shared_from_this());
   asio::async_read_until(
-      socket_, request_, '\n', [this, self](std::error_code ec, size_t n) {
+      socket_, request_, '\n', [this, self](std::error_code ec, size_t) {
         if (!ec) {
           auto command = Parse(&request_);
           if (command) {
@@ -71,7 +71,7 @@ void Client::WriteResponse(std::string const& response) {
 
   auto self(shared_from_this());
   asio::async_write(socket_, response_,
-                    [this, self, response](std::error_code ec, size_t n) {
+                    [this, self, response](std::error_code ec, size_t) {
                       if (ec) {
                         manager_->Stop(id_);
                       }
