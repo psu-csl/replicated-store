@@ -36,7 +36,7 @@ class Replicant {
   int64_t id_;
   int64_t num_peers_;
   Log log_;
-  MultiPaxos mp_;
+  MultiPaxos multi_paxos_;
   std::unique_ptr<KVStore> kv_store_;
   std::string ip_port_;
   asio::io_context io_;

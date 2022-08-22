@@ -15,14 +15,14 @@ using nlohmann::json;
 Replicant::Replicant(json const& config)
     : id_(config["id"]),
       num_peers_(config["peers"].size()),
-      mp_(&log_, config),
+      multi_paxos_(&log_, config),
       kv_store_(std::make_unique<MemKVStore>()),
       ip_port_(config["peers"][id_]),
       acceptor_(io_),
-      client_manager_(id_, num_peers_, &mp_) {}
+      client_manager_(id_, num_peers_, &multi_paxos_) {}
 
 void Replicant::Start() {
-  mp_.Start();
+  multi_paxos_.Start();
   StartExecutorThread();
   StartServer();
   io_.run();
@@ -31,7 +31,7 @@ void Replicant::Start() {
 void Replicant::Stop() {
   StopExecutorThread();
   StopServer();
-  mp_.Stop();
+  multi_paxos_.Stop();
 }
 
 void Replicant::StartServer() {
