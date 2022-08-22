@@ -11,7 +11,7 @@
 #include "memkvstore.h"
 #include "multipaxos.h"
 
-class Replicant {
+class Replicant : public std::enable_shared_from_this<Replicant> {
  public:
   Replicant(const nlohmann::json& config);
   Replicant(Replicant const& replicant) = delete;

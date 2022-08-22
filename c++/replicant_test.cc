@@ -18,7 +18,7 @@ class ReplicantTest : public testing::Test {
   ReplicantTest() {
     for (auto id = 0; id < kNumPeers; ++id) {
       auto config = json::parse(MakeConfig(id, kNumPeers));
-      auto replicant = std::make_unique<Replicant>(config);
+      auto replicant = std::make_shared<Replicant>(config);
 
       configs_.push_back(config);
       replicants_.push_back(std::move(replicant));
@@ -27,7 +27,7 @@ class ReplicantTest : public testing::Test {
 
  protected:
   std::vector<json> configs_;
-  std::vector<std::unique_ptr<Replicant>> replicants_;
+  std::vector<std::shared_ptr<Replicant>> replicants_;
 };
 
 TEST_F(ReplicantTest, Constructor) {
