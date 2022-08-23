@@ -21,4 +21,7 @@ public class TestUtil {
     return new Instance(ballot, index, 0, state, new Command(type, "", ""));
   }
 
+  public static Instance makeInstance(long ballot, long index, InstanceState state) {
+    return new Instance(ballot, index, 0, state, new Command());
+  }
 }
