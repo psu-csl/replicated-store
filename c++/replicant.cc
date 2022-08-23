@@ -18,7 +18,7 @@ Replicant::Replicant(json const& config)
       multi_paxos_(&log_, config),
       kv_store_(std::make_unique<MemKVStore>()),
       ip_port_(config["peers"][id_]),
-      acceptor_(io_context_),
+      acceptor_(asio::make_strand(io_context_)),
       client_manager_(id_, num_peers_, &multi_paxos_) {}
 
 void Replicant::Start() {
@@ -46,22 +46,27 @@ void Replicant::StartServer() {
   acceptor_.listen(5);
   DLOG(INFO) << id_ << " starting server at port " << port;
 
-  AcceptClient();
+  auto self(shared_from_this());
+  asio::dispatch(acceptor_.get_executor(), [this, self] { AcceptClient(); });
 }
 
 void Replicant::StopServer() {
-  acceptor_.close();
+  auto self(shared_from_this());
+  asio::post(acceptor_.get_executor(), [this, self] { acceptor_.close(); });
   client_manager_.StopAll();
 }
 
 void Replicant::AcceptClient() {
-  acceptor_.async_accept([this](std::error_code ec, tcp::socket socket) {
-    if (!acceptor_.is_open())
-      return;
-    CHECK(!ec);
-    client_manager_.Start(std::move(socket));
-    AcceptClient();
-  });
+  auto self(shared_from_this());
+  acceptor_.async_accept(asio::make_strand(io_context_),
+                         [this, self](std::error_code ec, tcp::socket socket) {
+                           if (!acceptor_.is_open())
+                             return;
+                           if (!ec) {
+                             client_manager_.Start(std::move(socket));
+                             AcceptClient();
+                           }
+                         });
 }
 
 void Replicant::StartExecutorThread() {

@@ -27,6 +27,5 @@ int main(int argc, char* argv[]) {
 
   config["id"] = FLAGS_id;
 
-  Replicant replicant(config);
-  replicant.Start();
+  std::make_shared<Replicant>(config)->Start();
 }

@@ -40,6 +40,16 @@ std::optional<Command> Parse(asio::streambuf* request) {
   return c;
 }
 
+void Client::Start() {
+  auto self(shared_from_this());
+  asio::dispatch(socket_.get_executor(), [this, self] { HandleRequest(); });
+}
+
+void Client::Stop() {
+  auto self(shared_from_this());
+  asio::dispatch(socket_.get_executor(), [this, self] { socket_.close(); });
+}
+
 void Client::HandleRequest() {
   auto self(shared_from_this());
   asio::async_read_until(

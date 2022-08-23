@@ -23,8 +23,8 @@ class Client : public std::enable_shared_from_this<Client> {
   Client(Client const&&) = delete;
   Client& operator=(Client const&&) = delete;
 
-  void Start() { HandleRequest(); }
-  void Stop() { socket_.close(); }
+  void Start();
+  void Stop();
 
   void HandleRequest();
   void WriteResponse(std::string const& response);
