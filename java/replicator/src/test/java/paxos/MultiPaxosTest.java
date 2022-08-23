@@ -99,7 +99,6 @@ class MultiPaxosTest {
     config.setPort(port);
     config.setCommitPause(300);
     config.setThreadPoolSize(8);
-    config.setCommitDelta(10);
     List<String> peers = new ArrayList<>();
     for (int i = 0; i < kNumPeers; i++) {
       peers.add("127.0.0.1:300" + i);

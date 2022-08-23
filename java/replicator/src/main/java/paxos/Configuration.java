@@ -9,7 +9,6 @@ public class Configuration {
   private long commitPause;
   private int threadPoolSize;
   private List<String> peers;
-  private int commitDelta;
 
   public long getId() {
     return id;
@@ -51,11 +50,4 @@ public class Configuration {
     this.peers = peers;
   }
 
-  public int getCommitDelta() {
-    return commitDelta;
-  }
-
-  public void setCommitDelta(int commitDelta) {
-    this.commitDelta = commitDelta;
-  }
 }

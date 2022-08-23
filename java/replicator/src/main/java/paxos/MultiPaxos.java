@@ -152,7 +152,6 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
   private final ExecutorService prepareThread;
   private final List<RpcPeer> rpcPeers;
   private final ExecutorService threadPool;
-  private final int commitDelta;
   private AtomicBoolean ready;
   private AtomicBoolean commitThreadRunning;
 
@@ -163,7 +162,6 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
   private long ballot;
 
   public MultiPaxos(Log log, Configuration config) {
-    this.commitDelta = config.getCommitDelta();
     this.id = config.getId();
     this.ballot = kMaxNumPeers;
     this.commitInterval = config.getCommitPause();
@@ -694,7 +692,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
 
   public void sleepForRandomInterval() {
     Random random = new Random();
-    var sleepTime = commitInterval + random.nextInt(commitDelta, (int) commitInterval);
+    var sleepTime = random.nextInt(0, (int) commitInterval);
     try {
       Thread.sleep(sleepTime);
     } catch (InterruptedException e) {
