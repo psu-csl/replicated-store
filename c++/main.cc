@@ -27,5 +27,11 @@ int main(int argc, char* argv[]) {
 
   config["id"] = FLAGS_id;
 
-  std::make_shared<Replicant>(config)->Start();
+  asio::io_context io_context;
+  auto replicant = std::make_shared<Replicant>(&io_context, config);
+
+  asio::signal_set signals(io_context, SIGINT, SIGTERM);
+  signals.async_wait([&](const asio::error_code&, int) { replicant->Stop(); });
+
+  replicant->Start();
 }
