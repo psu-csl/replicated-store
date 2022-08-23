@@ -27,8 +27,8 @@ import log.Instance.InstanceState;
 import log.Log;
 import multipaxos.AcceptRequest;
 import multipaxos.AcceptResponse;
-import multipaxos.HeartbeatRequest;
-import multipaxos.HeartbeatResponse;
+import multipaxos.CommitRequest;
+import multipaxos.CommitResponse;
 import multipaxos.MultiPaxosRPCGrpc;
 import multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCBlockingStub;
 import multipaxos.PrepareRequest;
@@ -57,12 +57,12 @@ class MultiPaxosTest {
     return MultiPaxosRPCGrpc.newBlockingStub(channel);
   }
 
-  public static HeartbeatResponse sendHeartbeat(MultiPaxosRPCBlockingStub stub, long ballot,
+  public static CommitResponse sendCommit(MultiPaxosRPCBlockingStub stub, long ballot,
       long lastExecuted, long globalLastExecuted) {
 
-    HeartbeatRequest request = HeartbeatRequest.newBuilder().setBallot(ballot)
+    CommitRequest request = CommitRequest.newBuilder().setBallot(ballot)
         .setLastExecuted(lastExecuted).setGlobalLastExecuted(globalLastExecuted).build();
-    return stub.heartbeat(request);
+    return stub.commit(request);
   }
 
   public static PrepareResponse sendPrepare(MultiPaxosRPCBlockingStub stub, long ballot) {
@@ -94,9 +94,9 @@ class MultiPaxosTest {
     Configuration config = new Configuration();
     config.setId(id);
     config.setPort(port);
-    config.setHeartbeatPause(300);
+    config.setCommitPause(300);
     config.setThreadPoolSize(8);
-    config.setHeartbeatDelta(10);
+    config.setCommitDelta(10);
     List<String> peers = new ArrayList<>();
     for (int i = 0; i < kNumPeers; i++) {
       peers.add("127.0.0.1:300" + i);
@@ -152,7 +152,7 @@ class MultiPaxosTest {
 
   @Test
   @Order(2)
-  void heartbeatHandlerHigherBallot() {
+  void commitHandlerHigherBallot() {
     ExecutorService executor = Executors.newSingleThreadExecutor();
     executor.submit(() -> {
       peers.get(0).start();
@@ -171,9 +171,9 @@ class MultiPaxosTest {
         .usePlaintext().build();
     var blockingStub = MultiPaxosRPCGrpc.newBlockingStub(channel);
 
-    HeartbeatRequest request = HeartbeatRequest.newBuilder().setBallot(18).setLastExecuted(3)
+    CommitRequest request = CommitRequest.newBuilder().setBallot(18).setLastExecuted(3)
         .setGlobalLastExecuted(1).build();
-    HeartbeatResponse response = blockingStub.heartbeat(request);
+    CommitResponse response = blockingStub.commit(request);
 
     assertEquals(1, response.getLastExecuted());
     assertEquals(logs.get(0).get(2L).getState(), InstanceState.kInProgress);
@@ -187,7 +187,7 @@ class MultiPaxosTest {
 
   @Test
   @Order(3)
-  void heartbeatHandlerSameBallot() {
+  void commitHandlerSameBallot() {
     ExecutorService executor = Executors.newSingleThreadExecutor();
     executor.submit(() -> peers.get(0).start());
     logs.get(0).append(makeInstance(17, 1, InstanceState.kExecuted, CommandType.Put));
@@ -198,9 +198,9 @@ class MultiPaxosTest {
         .usePlaintext().build();
     var blockingStub = MultiPaxosRPCGrpc.newBlockingStub(channel);
 
-    HeartbeatRequest request = HeartbeatRequest.newBuilder().setBallot(17).setLastExecuted(2)
+    CommitRequest request = CommitRequest.newBuilder().setBallot(17).setLastExecuted(2)
         .setGlobalLastExecuted(1).build();
-    HeartbeatResponse response = blockingStub.heartbeat(request);
+    CommitResponse response = blockingStub.commit(request);
 
     assertEquals(1, response.getLastExecuted());
     assertEquals(logs.get(0).get(2L).getState(), InstanceState.kCommitted);
@@ -221,7 +221,7 @@ class MultiPaxosTest {
     peers.get(0).nextBallot();
     assertTrue(isLeader(peers.get(0)));
 
-    var r1 = sendHeartbeat(stub, peers.get(1).nextBallot(), 0, 0);
+    var r1 = sendCommit(stub, peers.get(1).nextBallot(), 0, 0);
     assertEquals(OK, r1.getType());
     assertFalse(isLeader(peers.get(0)));
     assertEquals(1, leader(peers.get(0)));
@@ -259,7 +259,7 @@ class MultiPaxosTest {
 
     var staleBallot = peers.get(1).nextBallot();
 
-    var r1 = sendHeartbeat(stub, staleBallot, 0, 0);
+    var r1 = sendCommit(stub, staleBallot, 0, 0);
     assertEquals(REJECT, r1.getType());
     assertTrue(isLeader(peers.get(0)));
 
@@ -280,7 +280,7 @@ class MultiPaxosTest {
 
   @Test
   @Order(6)
-  void heartbeatCommitsAndTrims() {
+  void commitCommitsAndTrims() {
     ExecutorService executor = Executors.newSingleThreadExecutor();
     executor.submit(() -> peers.get(0).startRPCServer());
 
@@ -297,7 +297,7 @@ class MultiPaxosTest {
     var index3 = logs.get(0).advanceLastIndex();
     logs.get(0).append(makeInstance(ballot, index3));
 
-    var r1 = sendHeartbeat(stub, ballot, index2, 0);
+    var r1 = sendCommit(stub, ballot, index2, 0);
     assertEquals(OK, r1.getType());
     assertEquals(0, r1.getLastExecuted());
     assertTrue(logs.get(0).get(index1).isCommitted());
@@ -307,7 +307,7 @@ class MultiPaxosTest {
     logs.get(0).execute(stores.get(0));
     logs.get(0).execute(stores.get(0));
 
-    var r2 = sendHeartbeat(stub, ballot, index2, index2);
+    var r2 = sendCommit(stub, ballot, index2, index2);
     assertEquals(index2, r2.getLastExecuted());
     assertEquals(OK, r2.getType());
     assertNull(logs.get(0).get(index1));
@@ -346,7 +346,7 @@ class MultiPaxosTest {
     assertEquals(instance2, MultiPaxos.makeInstance(r1.getInstances(1)));
     assertEquals(instance3, MultiPaxos.makeInstance(r1.getInstances(2)));
 
-    var r2 = sendHeartbeat(stub, ballot, index2, 0);
+    var r2 = sendCommit(stub, ballot, index2, 0);
     assertEquals(OK, r2.getType());
 
     logs.get(0).execute(stores.get(0));
@@ -359,7 +359,7 @@ class MultiPaxosTest {
     assertSame(r3.getInstances(1).getState(), multipaxos.InstanceState.EXECUTED);
     assertEquals(instance3, MultiPaxos.makeInstance(r3.getInstances(2)));
 
-    var r4 = sendHeartbeat(stub, ballot, index2, 2);
+    var r4 = sendCommit(stub, ballot, index2, 2);
     assertEquals(OK, r4.getType());
 
     var r5 = sendPrepare(stub, ballot);
@@ -405,7 +405,7 @@ class MultiPaxosTest {
 
   @Test
   @Order(9)
-  public void heartbeatResponseWithHighBallotChangesLeaderToFollower() {
+  public void commitResponseWithHighBallotChangesLeaderToFollower() {
     ExecutorService executor = Executors.newFixedThreadPool(3);
     executor.submit(() -> peers.get(0).startRPCServer());
     executor.submit(() -> peers.get(1).startRPCServer());
@@ -417,7 +417,7 @@ class MultiPaxosTest {
     peers.get(1).nextBallot();
     var peer2Ballot = peers.get(2).nextBallot();
 
-    var r = sendHeartbeat(stub1, peer2Ballot, 0, 0);
+    var r = sendCommit(stub1, peer2Ballot, 0, 0);
     assertEquals(OK, r.getType());
     assertFalse(isLeader(peers.get(1)));
     assertEquals(2, leader(peers.get(1)));
@@ -448,7 +448,7 @@ class MultiPaxosTest {
     peers.get(1).nextBallot();
     var peer2Ballot = peers.get(2).nextBallot();
 
-    var r = sendHeartbeat(stub1, peer2Ballot, 0, 0);
+    var r = sendCommit(stub1, peer2Ballot, 0, 0);
     assertEquals(OK, r.getType());
     assertFalse(isLeader(peers.get(1)));
     assertEquals(2, leader(peers.get(1)));

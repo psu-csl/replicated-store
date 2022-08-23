@@ -26,12 +26,12 @@ message Instance {int64 ballot = 1;
   InstanceState state = 4;
   Command command = 5;}
 
-message HeartbeatRequest {int64 ballot = 1;
+message CommitRequest {int64 ballot = 1;
   int64 last_executed = 2;
   int64 global_last_executed = 3;
   int64  sender = 4;}
 
-message HeartbeatResponse {
+message CommitResponse {
   ResponseType type = 1;
   int64  ballot = 2;
   int64 last_executed = 3;}
@@ -47,6 +47,6 @@ message AcceptRequest {Instance instance = 1;
 
 message AcceptResponse {ResponseType type = 1;
   int64 ballot = 2;}
-service MultiPaxosRPC {rpc Heartbeat (HeartbeatRequest) returns (HeartbeatResponse) {}
+service MultiPaxosRPC {rpc Commit (CommitRequest) returns (CommitResponse) {}
   rpc Prepare (PrepareRequest) returns (PrepareResponse) {}
   rpc Accept(AcceptRequest) returns (AcceptResponse) {}}

@@ -6,10 +6,10 @@ public class Configuration {
 
   private long id;
   private int port;
-  private long heartbeatPause;
+  private long commitPause;
   private int threadPoolSize;
   private List<String> peers;
-  private int heartbeatDelta;
+  private int commitDelta;
 
   public long getId() {
     return id;
@@ -27,12 +27,12 @@ public class Configuration {
     this.port = port;
   }
 
-  public long getHeartbeatPause() {
-    return heartbeatPause;
+  public long getCommitPause() {
+    return commitPause;
   }
 
-  public void setHeartbeatPause(long heartbeatPause) {
-    this.heartbeatPause = heartbeatPause;
+  public void setCommitPause(long commitPause) {
+    this.commitPause = commitPause;
   }
 
   public int getThreadPoolSize() {
@@ -51,11 +51,11 @@ public class Configuration {
     this.peers = peers;
   }
 
-  public int getHeartbeatDelta() {
-    return heartbeatDelta;
+  public int getCommitDelta() {
+    return commitDelta;
   }
 
-  public void setHeartbeatDelta(int heartbeatDelta) {
-    this.heartbeatDelta = heartbeatDelta;
+  public void setCommitDelta(int commitDelta) {
+    this.commitDelta = commitDelta;
   }
 }

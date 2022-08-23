@@ -32,8 +32,8 @@ import multipaxos.AcceptRequest;
 import multipaxos.AcceptResponse;
 import multipaxos.Command;
 import multipaxos.CommandType;
-import multipaxos.HeartbeatRequest;
-import multipaxos.HeartbeatResponse;
+import multipaxos.CommitRequest;
+import multipaxos.CommitResponse;
 import multipaxos.Instance;
 import multipaxos.InstanceState;
 import multipaxos.MultiPaxosRPCGrpc;
@@ -105,7 +105,7 @@ class PrepareState {
   }
 }
 
-class HeartbeatState {
+class CommitState {
 
   public long numRpcs;
   public long numOks;
@@ -114,7 +114,7 @@ class HeartbeatState {
   public ReentrantLock mu;
   public Condition cv;
 
-  public HeartbeatState(long leader, long minLastExecuted) {
+  public CommitState(long leader, long minLastExecuted) {
     this.numRpcs = 0;
     this.leader = leader;
     this.numOks = 0;
@@ -147,39 +147,38 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
   private final Log log_;
   private final Server rpcServer;
   private final Condition rpcServerRunningCv;
-  private final long heartbeatInterval;
-  private final ExecutorService heartbeatThread;
+  private final long commitInterval;
+  private final ExecutorService commitThread;
   private final ExecutorService prepareThread;
-  private final List<Long> heartbeatResponses;
   private final List<RpcPeer> rpcPeers;
   private final ExecutorService threadPool;
-  private final int heartbeatDelta;
+  private final int commitDelta;
   private AtomicBoolean ready;
-  private AtomicBoolean heartbeatThreadRunning;
+  private AtomicBoolean commitThreadRunning;
 
   private AtomicBoolean prepareThreadRunning;
   private boolean rpcServerRunning;
-  private long lastHeartbeat;
+  private long lastCommit;
   private long id;
   private long ballot;
 
   public MultiPaxos(Log log, Configuration config) {
-    this.heartbeatDelta = config.getHeartbeatDelta();
+    this.commitDelta = config.getCommitDelta();
     this.id = config.getId();
     this.ballot = kMaxNumPeers;
-    this.heartbeatInterval = config.getHeartbeatPause();
+    this.commitInterval = config.getCommitPause();
     this.log_ = log;
 
     mu = new ReentrantLock();
     cvLeader = mu.newCondition();
     cvFollower = mu.newCondition();
-    heartbeatThread = Executors.newSingleThreadExecutor();
+    commitThread = Executors.newSingleThreadExecutor();
     prepareThread = Executors.newSingleThreadExecutor();
-    lastHeartbeat = 0;
-    heartbeatResponses = new ArrayList<>();
+    lastCommit = 0;
+
     rpcServerRunning = false;
     ready = new AtomicBoolean(false);
-    heartbeatThreadRunning = new AtomicBoolean(false);
+    commitThreadRunning = new AtomicBoolean(false);
     prepareThreadRunning = new AtomicBoolean(false);
 
     rpcServerRunningCv = mu.newCondition();
@@ -286,7 +285,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
   public void waitUntilLeader() {
     mu.lock();
     try {
-      while (heartbeatThreadRunning.get() && !isLeader(this.ballot, this.id)) {
+      while (commitThreadRunning.get() && !isLeader(this.ballot, this.id)) {
         cvLeader.await();
       }
     } catch (InterruptedException e) {
@@ -318,7 +317,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
   }
 
   public void start() {
-    startHeartbeatThread();
+    startCommitThread();
     startPrepareThread();
     startRPCServer();
   }
@@ -339,11 +338,11 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     blockUntilShutDown();
   }
 
-  public void startHeartbeatThread() {
-    logger.info(id + " starting heartbeat thread");
-    assert (!heartbeatThreadRunning.get());
-    heartbeatThreadRunning.set(true);
-    heartbeatThread.submit(this::heartbeatThread);
+  public void startCommitThread() {
+    logger.info(id + " starting commit thread");
+    assert (!commitThreadRunning.get());
+    commitThreadRunning.set(true);
+    commitThread.submit(this::commitThread);
   }
 
   public void startPrepareThread() {
@@ -366,7 +365,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
   public void stop() {
     stopRPCServer();
     stopPrepareThread();
-    stopHeartbeatThread();
+    stopCommitThread();
 
     threadPool.shutdown();
     try {
@@ -393,17 +392,17 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     }
   }
 
-  public void stopHeartbeatThread() {
-    logger.info(id + " stopping heartbeat thread");
-    assert (heartbeatThreadRunning.get());
-    heartbeatThreadRunning.set(false);
+  public void stopCommitThread() {
+    logger.info(id + " stopping commit thread");
+    assert (commitThreadRunning.get());
+    commitThreadRunning.set(false);
     mu.lock();
     cvLeader.signal();
     mu.unlock();
-    // joint heartbeat thread here
-    heartbeatThread.shutdown();
+    // joint commit thread here
+    commitThread.shutdown();
     try {
-      heartbeatThread.awaitTermination(1000, TimeUnit.MILLISECONDS);
+      commitThread.awaitTermination(1000, TimeUnit.MILLISECONDS);
     } catch (InterruptedException e) {
       e.printStackTrace();
     }
@@ -424,25 +423,25 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     }
   }
 
-  public void heartbeatThread() {
-    while (heartbeatThreadRunning.get()) {
+  public void commitThread() {
+    while (commitThreadRunning.get()) {
       waitUntilLeader();
       var gle = log_.getGlobalLastExecuted();
-      while (heartbeatThreadRunning.get()) {
+      while (commitThreadRunning.get()) {
         var res = ballot();
         var ballot = res.ballot;
         if (!isLeader(ballot, this.id)) {
           break;
         }
         gle = runCommitPhase(ballot, gle);
-        sleepForHeartbeatInterval();
+        sleepForCommitInterval();
       }
     }
   }
 
   public Long runCommitPhase(long ballot, long globalLastExecuted) {
-    var state = new HeartbeatState(this.id, log_.getLastExecuted());
-    HeartbeatRequest.Builder request = HeartbeatRequest.newBuilder();
+    var state = new CommitState(this.id, log_.getLastExecuted());
+    CommitRequest.Builder request = CommitRequest.newBuilder();
 
     request.setBallot(ballot);
     request.setSender(this.id);
@@ -451,8 +450,8 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     for (var peer : rpcPeers) {
       threadPool.submit(() -> {
 
-        var response = MultiPaxosRPCGrpc.newBlockingStub(peer.stub).heartbeat(request.build());
-        logger.info(id + " sent heartbeat to " + peer.id);
+        var response = MultiPaxosRPCGrpc.newBlockingStub(peer.stub).commit(request.build());
+        logger.info(id + " sent commit to " + peer.id);
         state.mu.lock();
         ++state.numRpcs;
         if (response.isInitialized()) {
@@ -492,18 +491,17 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
   }
 
 
-  @Override
-  public void heartbeat(HeartbeatRequest heartbeatRequest,
-      StreamObserver<HeartbeatResponse> responseObserver) {
-    logger.info(id + " received heartbeat rpc from " + heartbeatRequest.getSender());
+  public void commit(CommitRequest commitRequest,
+      StreamObserver<CommitResponse> responseObserver) {
+    logger.info(id + " received commit rpc from " + commitRequest.getSender());
     mu.lock();
     try {
-      var response = HeartbeatResponse.newBuilder();
-      if (heartbeatRequest.getBallot() >= ballot) {
-        lastHeartbeat = Now();
-        setBallot(heartbeatRequest.getBallot());
-        log_.commitUntil(heartbeatRequest.getLastExecuted(), heartbeatRequest.getBallot());
-        log_.trimUntil(heartbeatRequest.getGlobalLastExecuted());
+      var response = CommitResponse.newBuilder();
+      if (commitRequest.getBallot() >= ballot) {
+        lastCommit = Now();
+        setBallot(commitRequest.getBallot());
+        log_.commitUntil(commitRequest.getLastExecuted(), commitRequest.getBallot());
+        log_.trimUntil(commitRequest.getGlobalLastExecuted());
         response.setLastExecuted(log_.getLastExecuted());
         response.setType(ResponseType.OK);
       } else {
@@ -600,7 +598,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
       waitUntilFollower();
       while (prepareThreadRunning.get()) {
         sleepForRandomInterval();
-        if (receivedHeartbeat()) {
+        if (receivedCommit()) {
           continue;
         }
         var ballot = nextBallot();
@@ -686,9 +684,9 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     return new Result(MultiPaxosResultType.kRetry, null);
   }
 
-  public void sleepForHeartbeatInterval() {
+  public void sleepForCommitInterval() {
     try {
-      Thread.sleep(heartbeatInterval);
+      Thread.sleep(commitInterval);
     } catch (InterruptedException e) {
       e.printStackTrace();
     }
@@ -696,7 +694,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
 
   public void sleepForRandomInterval() {
     Random random = new Random();
-    var sleepTime = heartbeatInterval + random.nextInt(heartbeatDelta, (int) heartbeatInterval);
+    var sleepTime = commitInterval + random.nextInt(commitDelta, (int) commitInterval);
     try {
       Thread.sleep(sleepTime);
     } catch (InterruptedException e) {
@@ -708,9 +706,9 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     return Instant.now().toEpochMilli();
   }
 
-  public boolean receivedHeartbeat() {
+  public boolean receivedCommit() {
     var now = Instant.now().toEpochMilli();
-    return now - lastHeartbeat < heartbeatInterval;
+    return now - lastCommit < commitInterval;
   }
 
   public void replay(long ballot, HashMap<Long, log.Instance> log) {
