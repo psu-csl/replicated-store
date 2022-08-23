@@ -49,7 +49,7 @@ enum MultiPaxosResultType {
 class Result {
 
   public MultiPaxosResultType type;
-  public long leader;
+  public Long leader;
 
   public Result(MultiPaxosResultType type, Long leader) {
     this.type = type;
