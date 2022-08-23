@@ -503,20 +503,16 @@ class MultiPaxosTest {
     executor.submit(() -> peers.get(1).startRPCServer());
 
     var ballot = peers.get(0).nextBallot();
-    var index = logs.get(0).advanceLastIndex();
-    // var instance = makeInstance(ballot, index);
 
-    logs.get(0).append(makeInstance(ballot, index));
-    logs.get(1).append(makeInstance(ballot, index));
-    logs.get(2).append(makeInstance(ballot, index));
-
-    logs.get(0).commit(index);
-    logs.get(1).commit(index);
-    logs.get(2).commit(index);
-
-    logs.get(0).execute(stores.get(0));
-    logs.get(1).execute(stores.get(1));
-    logs.get(2).execute(stores.get(2));
+    for (int index = 1; index <= 3; ++index) {
+      for (int peer = 0; peer < kNumPeers; ++peer) {
+        if (index == 3 && peer == 2) {
+          continue;
+        }
+        logs.get(peer).append(makeInstance(ballot, index, InstanceState.kCommitted));
+        logs.get(peer).execute(stores.get(peer));
+      }
+    }
     // TODO: runCommitPhase stuck
     assertEquals(0, peers.get(0).runCommitPhase(ballot, 0));
 
@@ -524,7 +520,7 @@ class MultiPaxosTest {
 
     Thread.sleep(2000);
 
-    assertEquals(index, peers.get(0).runCommitPhase(ballot, 0));
+    assertEquals(2, peers.get(0).runCommitPhase(ballot, 0));
 
     peers.get(0).stopRPCServer();
     peers.get(1).stopRPCServer();
