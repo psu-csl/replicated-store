@@ -221,13 +221,6 @@ class MultiPaxosTest {
     executor.submit(() -> peers.get(0).startRPCServer());
 
     var stub = makeStub("localhost", configs.get(0).getPort());
-    peers.get(0).nextBallot();
-    assertTrue(isLeader(peers.get(0)));
-
-    var r1 = sendCommit(stub, peers.get(1).nextBallot(), 0, 0);
-    assertEquals(OK, r1.getType());
-    assertFalse(isLeader(peers.get(0)));
-    assertEquals(1, leader(peers.get(0)));
 
     peers.get(0).nextBallot();
     assertTrue(isLeader(peers.get(0)));
@@ -242,6 +235,14 @@ class MultiPaxosTest {
     var instance = makeInstance(peers.get(1).nextBallot(), index);
     var r3 = sendAccept(stub, instance);
     assertEquals(OK, r3.getType());
+    assertFalse(isLeader(peers.get(0)));
+    assertEquals(1, leader(peers.get(0)));
+
+    peers.get(0).nextBallot();
+    assertTrue(isLeader(peers.get(0)));
+
+    var r1 = sendCommit(stub, peers.get(1).nextBallot(), 0, 0);
+    assertEquals(OK, r1.getType());
     assertFalse(isLeader(peers.get(0)));
     assertEquals(1, leader(peers.get(0)));
 
