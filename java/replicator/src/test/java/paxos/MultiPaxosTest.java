@@ -424,7 +424,7 @@ class MultiPaxosTest {
 
     assertTrue(isLeader(peers.get(0)));
     // TODO: stuck here; resolve the deadlock
-    peers.get(0).sendHeartbeats(peer0Ballot, 0);
+    peers.get(0).runCommitPhase(peer0Ballot, 0);
     assertFalse(isLeader(peers.get(0)));
     assertEquals(2, leader(peers.get(0)));
 
@@ -454,7 +454,7 @@ class MultiPaxosTest {
     assertEquals(2, leader(peers.get(1)));
 
     assertTrue(isLeader(peers.get(0)));
-    peers.get(0).sendAccepts(peer0Ballot, 1, new Command(), 0);
+    peers.get(0).runAcceptPhase(peer0Ballot, 1, new Command(), 0);
     assertFalse(isLeader(peers.get(0)));
     assertEquals(2, leader(peers.get(0)));
 
@@ -466,7 +466,7 @@ class MultiPaxosTest {
 
   @Test
   @Order(11)
-  public void sendPrepares() throws InterruptedException {
+  public void runPreparePhase() throws InterruptedException {
     ExecutorService executor = Executors.newFixedThreadPool(2);
     executor.submit(() -> peers.get(0).startRPCServer());
 
@@ -478,15 +478,15 @@ class MultiPaxosTest {
     logs.get(1).append(instance);
     logs.get(2).append(instance);
 
-    // TODO: stuck in sendPrepares
-    assertNull(peers.get(0).sendPrepares(ballot));
+    // TODO: stuck in runPreparePhase
+    assertNull(peers.get(0).runPreparePhase(ballot));
     executor.submit(() -> peers.get(1).startRPCServer());
 
     Thread.sleep(2000);
 
     var expectedLog = new HashMap<Long, log.Instance>();
     expectedLog.put(index, instance);
-    assertEquals(expectedLog, peers.get(0).sendPrepares(ballot));
+    assertEquals(expectedLog, peers.get(0).runPreparePhase(ballot));
 
     peers.get(0).stopRPCServer();
     peers.get(1).stopRPCServer();
@@ -497,7 +497,7 @@ class MultiPaxosTest {
 
   @Test
   @Order(12)
-  public void sendHeartbeats() throws InterruptedException {
+  public void runCommitPhase() throws InterruptedException {
     ExecutorService executor = Executors.newFixedThreadPool(3);
     executor.submit(() -> peers.get(0).startRPCServer());
     executor.submit(() -> peers.get(1).startRPCServer());
@@ -517,14 +517,14 @@ class MultiPaxosTest {
     logs.get(0).execute(stores.get(0));
     logs.get(1).execute(stores.get(1));
     logs.get(2).execute(stores.get(2));
-    // TODO: sendHeartbeats stuck
-    assertEquals(0, peers.get(0).sendHeartbeats(ballot, 0));
+    // TODO: runCommitPhase stuck
+    assertEquals(0, peers.get(0).runCommitPhase(ballot, 0));
 
     executor.submit(() -> peers.get(2).startRPCServer());
 
     Thread.sleep(2000);
 
-    assertEquals(index, peers.get(0).sendHeartbeats(ballot, 0));
+    assertEquals(index, peers.get(0).runCommitPhase(ballot, 0));
 
     peers.get(0).stopRPCServer();
     peers.get(1).stopRPCServer();

@@ -434,13 +434,13 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
         if (!isLeader(ballot, this.id)) {
           break;
         }
-        gle = sendHeartbeats(ballot, gle);
+        gle = runCommitPhase(ballot, gle);
         sleepForHeartbeatInterval();
       }
     }
   }
 
-  public Long sendHeartbeats(long ballot, long globalLastExecuted) {
+  public Long runCommitPhase(long ballot, long globalLastExecuted) {
     var state = new HeartbeatState(this.id, log_.getLastExecuted());
     HeartbeatRequest.Builder request = HeartbeatRequest.newBuilder();
 
@@ -518,7 +518,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     }
   }
 
-  public HashMap<Long, log.Instance> sendPrepares(long ballot) {
+  public HashMap<Long, log.Instance> runPreparePhase(long ballot) {
     var state = new PrepareState(this.id);
     PrepareRequest.Builder request = PrepareRequest.newBuilder();
     request.setSender(this.id);
@@ -605,7 +605,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
           continue;
         }
         var ballot = nextBallot();
-        replay(ballot, sendPrepares(ballot));
+        replay(ballot, runPreparePhase(ballot));
         break;
       }
     }
@@ -632,7 +632,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     }
   }
 
-  public Result sendAccepts(long ballot, long index, command.Command command, long clientId) {
+  public Result runAcceptPhase(long ballot, long index, command.Command command, long clientId) {
     var state = new AcceptState(this.id);
     log.Instance instance = new log.Instance();
 
@@ -719,7 +719,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
       return;
     }
     for (Map.Entry<Long, log.Instance> entry : log.entrySet()) {
-      var res = sendAccepts(ballot, entry.getValue().getIndex(), entry.getValue().getCommand(),
+      var res = runAcceptPhase(ballot, entry.getValue().getIndex(), entry.getValue().getCommand(),
           entry.getValue().getClientId());
       if (res.type == MultiPaxosResultType.kSomeoneElseLeader) {
         return;
@@ -735,7 +735,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     var ballot = res.ballot;
     if (isLeader(ballot, this.id)) {
       if (isReady) {
-        return sendAccepts(ballot, log_.advanceLastIndex(), command, clientId);
+        return runAcceptPhase(ballot, log_.advanceLastIndex(), command, clientId);
       }
       return new Result(MultiPaxosResultType.kRetry, null);
     }
