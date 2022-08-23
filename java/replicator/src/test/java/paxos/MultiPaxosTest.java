@@ -12,6 +12,7 @@ import static paxos.MultiPaxos.kMaxNumPeers;
 import static paxos.MultiPaxos.makeProtoInstance;
 import static paxos.MultiPaxosResultType.kOk;
 import static paxos.MultiPaxosResultType.kRetry;
+import static paxos.MultiPaxosResultType.kSomeoneElseLeader;
 import static util.TestUtil.makeInstance;
 
 import command.Command;
@@ -450,13 +451,15 @@ class MultiPaxosTest {
     peers.get(1).nextBallot();
     var peer2Ballot = peers.get(2).nextBallot();
 
-    var r = sendCommit(stub1, peer2Ballot, 0, 0);
-    assertEquals(OK, r.getType());
+    var commitResult = sendCommit(stub1, peer2Ballot, 0, 0);
+    assertEquals(OK, commitResult.getType());
     assertFalse(isLeader(peers.get(1)));
     assertEquals(2, leader(peers.get(1)));
 
     assertTrue(isLeader(peers.get(0)));
-    peers.get(0).runAcceptPhase(peer0Ballot, 1, new Command(), 0);
+    var acceptResult = peers.get(0).runAcceptPhase(peer0Ballot, 1, new Command(), 0);
+    assertEquals(kSomeoneElseLeader, acceptResult.type);
+    assertEquals(2, acceptResult.leader);
     assertFalse(isLeader(peers.get(0)));
     assertEquals(2, leader(peers.get(0)));
 
