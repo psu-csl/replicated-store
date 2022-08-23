@@ -15,17 +15,17 @@ static const int kNumPeers = 3;
 
 class ReplicantTest : public testing::Test {
  public:
-  ReplicantTest() {
+  ReplicantTest() : io_contexts_(kNumPeers) {
     for (auto id = 0; id < kNumPeers; ++id) {
       auto config = json::parse(MakeConfig(id, kNumPeers));
-      auto replicant = std::make_shared<Replicant>(config);
-
-      configs_.push_back(config);
+      auto replicant = std::make_shared<Replicant>(&io_contexts_[id], config);
+      configs_.push_back(std::move(config));
       replicants_.push_back(std::move(replicant));
     }
   }
 
  protected:
+  std::vector<asio::io_context> io_contexts_;
   std::vector<json> configs_;
   std::vector<std::shared_ptr<Replicant>> replicants_;
 };

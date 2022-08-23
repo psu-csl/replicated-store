@@ -12,20 +12,21 @@
 using asio::ip::tcp;
 using nlohmann::json;
 
-Replicant::Replicant(json const& config)
+Replicant::Replicant(asio::io_context* io_context, json const& config)
     : id_(config["id"]),
       num_peers_(config["peers"].size()),
       multi_paxos_(&log_, config),
       kv_store_(std::make_unique<MemKVStore>()),
       ip_port_(config["peers"][id_]),
-      acceptor_(asio::make_strand(io_context_)),
+      io_context_(io_context),
+      acceptor_(asio::make_strand(*io_context_)),
       client_manager_(id_, num_peers_, &multi_paxos_) {}
 
 void Replicant::Start() {
   multi_paxos_.Start();
   StartExecutorThread();
   StartServer();
-  io_context_.run();
+  io_context_->run();
 }
 
 void Replicant::Stop() {
@@ -58,7 +59,7 @@ void Replicant::StopServer() {
 
 void Replicant::AcceptClient() {
   auto self(shared_from_this());
-  acceptor_.async_accept(asio::make_strand(io_context_),
+  acceptor_.async_accept(asio::make_strand(*io_context_),
                          [this, self](std::error_code ec, tcp::socket socket) {
                            if (!acceptor_.is_open())
                              return;
