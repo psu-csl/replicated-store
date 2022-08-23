@@ -121,8 +121,8 @@ class MultiPaxosTest {
       configs.add(config);
       logs.add(log);
       peers.add(peer);
+      stores.add(new MemKVStore());
     }
-    stores.add(new MemKVStore());
   }
 
 
