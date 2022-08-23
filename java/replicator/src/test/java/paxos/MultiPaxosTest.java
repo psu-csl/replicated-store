@@ -47,7 +47,7 @@ class MultiPaxosTest {
   protected List<Configuration> configs;
   protected List<Log> logs;
   protected List<MultiPaxos> peers;
-  protected MemKVStore store;
+  protected List<MemKVStore> stores;
 
 
   public static MultiPaxosRPCGrpc.MultiPaxosRPCBlockingStub makeStub(String target, int port) {
@@ -120,7 +120,7 @@ class MultiPaxosTest {
       logs.add(log);
       peers.add(peer);
     }
-    store = new MemKVStore();
+    stores.add(new MemKVStore());
   }
 
 
@@ -302,8 +302,8 @@ class MultiPaxosTest {
     assertTrue(logs.get(0).get(index2).isCommitted());
     assertTrue(logs.get(0).get(index3).isInProgress());
 
-    logs.get(0).execute(store);
-    logs.get(0).execute(store);
+    logs.get(0).execute(stores.get(0));
+    logs.get(0).execute(stores.get(0));
 
     var r2 = sendHeartbeat(stub, ballot, index2, index2);
     assertEquals(index2, r2.getLastExecuted());
@@ -347,8 +347,8 @@ class MultiPaxosTest {
     var r2 = sendHeartbeat(stub, ballot, index2, 0);
     assertEquals(OK, r2.getType());
 
-    logs.get(0).execute(store);
-    logs.get(0).execute(store);
+    logs.get(0).execute(stores.get(0));
+    logs.get(0).execute(stores.get(0));
 
     var r3 = sendPrepare(stub, ballot);
     assertEquals(OK, r3.getType());
