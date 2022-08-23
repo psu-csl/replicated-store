@@ -463,5 +463,36 @@ class MultiPaxosTest {
     peers.get(2).stopRPCServer();
     executor.shutdown();
   }
+
+  @Test
+  @Order(11)
+  public void sendPrepares() throws InterruptedException {
+    ExecutorService executor = Executors.newFixedThreadPool(2);
+    executor.submit(() -> peers.get(0).startRPCServer());
+
+    var ballot = peers.get(0).nextBallot();
+    var index = logs.get(0).advanceLastIndex();
+    var instance = makeInstance(ballot, index);
+
+    logs.get(0).append(instance);
+    logs.get(1).append(instance);
+    logs.get(2).append(instance);
+
+    // TODO: stuck in sendPrepares
+    assertNull(peers.get(0).sendPrepares(ballot));
+    executor.submit(() -> peers.get(1).startRPCServer());
+
+    Thread.sleep(2000);
+
+    var expectedLog = new HashMap<Long, log.Instance>();
+    expectedLog.put(index, instance);
+    assertEquals(expectedLog, peers.get(0).sendPrepares(ballot));
+
+    peers.get(0).stopRPCServer();
+    peers.get(1).stopRPCServer();
+
+    executor.shutdown();
+
+  }
 }
 
