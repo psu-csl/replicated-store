@@ -19,8 +19,8 @@ void ClientManager::Respond(int64_t client_id, std::string const& response) {
   it->second->WriteResponse(response);
 }
 
-void ClientManager::Stop(int64_t id) {
-  auto it = clients_.find(id);
+void ClientManager::Stop(int64_t client_id) {
+  auto it = clients_.find(client_id);
   CHECK(it != clients_.end());
   it->second->Stop();
   clients_.erase(it);
