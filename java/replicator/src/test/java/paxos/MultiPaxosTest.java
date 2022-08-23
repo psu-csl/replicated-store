@@ -431,5 +431,35 @@ class MultiPaxosTest {
     peers.get(2).stopRPCServer();
     executor.shutdown();
   }
+
+  @Test
+  @Order(10)
+  public void acceptResponseWithHighBallotChangesLeaderToFollower() {
+    ExecutorService executor = Executors.newFixedThreadPool(3);
+    executor.submit(() -> peers.get(0).startRPCServer());
+    executor.submit(() -> peers.get(1).startRPCServer());
+    executor.submit(() -> peers.get(2).startRPCServer());
+
+    var stub1 = makeStub("localhost", configs.get(1).getPort());
+
+    var peer0Ballot = peers.get(0).nextBallot();
+    peers.get(1).nextBallot();
+    var peer2Ballot = peers.get(2).nextBallot();
+
+    var r = sendHeartbeat(stub1, peer2Ballot, 0, 0);
+    assertEquals(OK, r.getType());
+    assertFalse(isLeader(peers.get(1)));
+    assertEquals(2, leader(peers.get(1)));
+
+    assertTrue(isLeader(peers.get(0)));
+    peers.get(0).sendAccepts(peer0Ballot, 1, new Command(), 0);
+    assertFalse(isLeader(peers.get(0)));
+    assertEquals(2, leader(peers.get(0)));
+
+    peers.get(0).stopRPCServer();
+    peers.get(1).stopRPCServer();
+    peers.get(2).stopRPCServer();
+    executor.shutdown();
+  }
 }
 
