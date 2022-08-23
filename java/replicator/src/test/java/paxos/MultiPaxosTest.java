@@ -12,6 +12,7 @@ import static paxos.MultiPaxos.kMaxNumPeers;
 import static paxos.MultiPaxos.makeProtoInstance;
 import static util.TestUtil.makeInstance;
 
+import command.Command;
 import command.Command.CommandType;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
@@ -425,6 +426,10 @@ class MultiPaxosTest {
     assertFalse(isLeader(peers.get(0)));
     assertEquals(2, leader(peers.get(0)));
 
+    peers.get(0).stopRPCServer();
+    peers.get(1).stopRPCServer();
+    peers.get(2).stopRPCServer();
+    executor.shutdown();
   }
 }
 
