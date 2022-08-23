@@ -17,6 +17,7 @@ import command.Command.CommandType;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -110,6 +111,7 @@ class MultiPaxosTest {
     this.configs = new ArrayList<>();
     this.logs = new ArrayList<>();
     this.peers = new ArrayList<>();
+    this.stores = new ArrayList<>();
 
     for (int i = 0; i < kNumPeers; i++) {
       var config = makeConfig(i, 3000 + i);
