@@ -561,8 +561,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
       state.mu.unlock();
       return state.log;
     }
-    state.mu.unlock(); // TODO: verify moving this above if and deleting unlock inside if
-
+    state.mu.unlock();
     return null;
   }
 
@@ -680,7 +679,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
       state.mu.unlock();
       return new Result(MultiPaxosResultType.kOk, null);
     }
-    state.mu.unlock(); // TODO: verify whether it's safe to unlock before if
+    state.mu.unlock();
     if (state.leader != this.id) {
       return new Result(MultiPaxosResultType.kSomeoneElseLeader, state.leader);
     }
