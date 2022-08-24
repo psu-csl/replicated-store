@@ -530,7 +530,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
           response = MultiPaxosRPCGrpc.newBlockingStub(peer.stub).prepare(request.build());
           logger.info(id + " sent prepare request to " + peer.id);
         } catch (StatusRuntimeException e) {
-          logger.info("RPC failed: " + e.getStatus());
+          logger.info(id + " RPC connection failed to " + peer.id);
           state.mu.lock();
           state.numRpcs++;
           state.mu.unlock();
