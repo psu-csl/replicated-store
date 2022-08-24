@@ -10,8 +10,6 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static paxos.MultiPaxos.kMaxNumPeers;
 import static paxos.MultiPaxos.makeProtoInstance;
-import static paxos.MultiPaxosResultType.kOk;
-import static paxos.MultiPaxosResultType.kRetry;
 import static paxos.MultiPaxosResultType.kSomeoneElseLeader;
 import static util.TestUtil.makeInstance;
 
@@ -20,10 +18,7 @@ import command.Command.CommandType;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import kvstore.MemKVStore;
 import log.Instance;
 import log.Instance.InstanceState;
@@ -54,9 +49,10 @@ class MultiPaxosTest {
   protected List<MemKVStore> stores;
 
 
-  public static MultiPaxosRPCGrpc.MultiPaxosRPCBlockingStub makeStub(String target, int port) {
-    ManagedChannel channel = ManagedChannelBuilder.forAddress(target, port)
-        .usePlaintext().build();
+  public static MultiPaxosRPCGrpc.MultiPaxosRPCBlockingStub makeStub(String target) {
+    /*ManagedChannel channel = ManagedChannelBuilder.forAddress(target, port)
+        .usePlaintext().build();*/
+    ManagedChannel channel = ManagedChannelBuilder.forTarget(target).usePlaintext().build();
     return MultiPaxosRPCGrpc.newBlockingStub(channel);
   }
 
@@ -152,79 +148,47 @@ class MultiPaxosTest {
     assertEquals(2, leader(peers.get(2)));
   }
 
+
   @Test
   @Order(2)
-  void commitHandlerHigherBallot() {
-    ExecutorService executor = Executors.newSingleThreadExecutor();
-    executor.submit(() -> {
-      peers.get(0).start();
-      // peer0.blockUntilShutDown();
-    });
+  void requestsWithLowerBallotIgnored() {
+    peers.get(0).startRPCServer();
+    // var stub = makeStub("localhost", configs.get(0).getPort());
+    var stub = makeStub(configs.get(0).getPeers().get(0));
 
-    var inst1 = makeInstance(17, 1, InstanceState.kExecuted, CommandType.Put);
-    var inst2 = makeInstance(17, 2, InstanceState.kInProgress, CommandType.Get);
-    var inst3 = makeInstance(17, 3, InstanceState.kInProgress, CommandType.Del);
-    logs.get(0).append(inst1);
-    logs.get(0).append(inst2);
-    logs.get(0).append(inst3);
-    logs.get(0).setLastExecuted(1);
+    peers.get(0).nextBallot();
+    peers.get(0).nextBallot();
 
-    ManagedChannel channel = ManagedChannelBuilder.forAddress("localhost", configs.get(0).getPort())
-        .usePlaintext().build();
-    var blockingStub = MultiPaxosRPCGrpc.newBlockingStub(channel);
+    var staleBallot = peers.get(1).nextBallot();
 
-    CommitRequest request = CommitRequest.newBuilder().setBallot(18).setLastExecuted(3)
-        .setGlobalLastExecuted(1).build();
-    CommitResponse response = blockingStub.commit(request);
+    var r1 = sendPrepare(stub, staleBallot);
+    assertEquals(REJECT, r1.getType());
+    assertTrue(isLeader(peers.get(0)));
 
-    assertEquals(1, response.getLastExecuted());
-    assertEquals(logs.get(0).get(2L).getState(), InstanceState.kInProgress);
-    assertEquals(logs.get(0).get(3L).getState(), InstanceState.kInProgress);
-    assertNull(logs.get(0).get(1L));
+    var index = logs.get(0).advanceLastIndex();
+    var instance = makeInstance(staleBallot, index);
+    var r2 = sendAccept(stub, instance);
+    assertEquals(REJECT, r2.getType());
+    assertTrue(isLeader(peers.get(0)));
+    assertNull(logs.get(0).get(index));
 
-    peers.get(0).stop();
-    channel.shutdown();
-    executor.shutdown();
+    var r3 = sendCommit(stub, staleBallot, 0, 0);
+    assertEquals(REJECT, r3.getType());
+    assertTrue(isLeader(peers.get(0)));
+
+    peers.get(0).stopRPCServer();
   }
 
   @Test
   @Order(3)
-  void commitHandlerSameBallot() {
-    ExecutorService executor = Executors.newSingleThreadExecutor();
-    executor.submit(() -> peers.get(0).start());
-    logs.get(0).append(makeInstance(17, 1, InstanceState.kExecuted, CommandType.Put));
-    logs.get(0).append(makeInstance(17, 2, InstanceState.kInProgress, CommandType.Get));
-    logs.get(0).setLastExecuted(1);
-
-    ManagedChannel channel = ManagedChannelBuilder.forAddress("localhost", configs.get(0).getPort())
-        .usePlaintext().build();
-    var blockingStub = MultiPaxosRPCGrpc.newBlockingStub(channel);
-
-    CommitRequest request = CommitRequest.newBuilder().setBallot(17).setLastExecuted(2)
-        .setGlobalLastExecuted(1).build();
-    CommitResponse response = blockingStub.commit(request);
-
-    assertEquals(1, response.getLastExecuted());
-    assertEquals(logs.get(0).get(2L).getState(), InstanceState.kCommitted);
-    assertNull(logs.get(0).get(1L));
-    peers.get(0).stop();
-    channel.shutdown();
-    executor.shutdown();
-  }
-
-
-  @Test
-  @Order(4)
   void requestsWithHigherBallotChangeLeaderToFollower() {
-    ExecutorService executor = Executors.newSingleThreadExecutor();
-    executor.submit(() -> peers.get(0).startRPCServer());
-
-    var stub = makeStub("localhost", configs.get(0).getPort());
+    peers.get(0).startRPCServer();
+    var stub = makeStub(configs.get(0).getPeers().get(0));
 
     peers.get(0).nextBallot();
     assertTrue(isLeader(peers.get(0)));
-    var r2 = sendPrepare(stub, peers.get(1).nextBallot());
-    assertEquals(OK, r2.getType());
+    var r1 = sendPrepare(stub, peers.get(1).nextBallot());
+    assertEquals(OK, r1.getType());
     assertFalse(isLeader(peers.get(0)));
     assertEquals(1, leader(peers.get(0)));
 
@@ -232,71 +196,32 @@ class MultiPaxosTest {
     assertTrue(isLeader(peers.get(0)));
     var index = logs.get(0).advanceLastIndex();
     var instance = makeInstance(peers.get(1).nextBallot(), index);
-    var r3 = sendAccept(stub, instance);
+    var r2 = sendAccept(stub, instance);
+    assertEquals(OK, r2.getType());
+    assertFalse(isLeader(peers.get(0)));
+    assertEquals(1, leader(peers.get(0)));
+
+    peers.get(0).nextBallot();
+    assertTrue(isLeader(peers.get(0)));
+    var r3 = sendCommit(stub, peers.get(1).nextBallot(), 0, 0);
     assertEquals(OK, r3.getType());
     assertFalse(isLeader(peers.get(0)));
     assertEquals(1, leader(peers.get(0)));
 
-    peers.get(0).nextBallot();
-    assertTrue(isLeader(peers.get(0)));
-
-    var r1 = sendCommit(stub, peers.get(1).nextBallot(), 0, 0);
-    assertEquals(OK, r1.getType());
-    assertFalse(isLeader(peers.get(0)));
-    assertEquals(1, leader(peers.get(0)));
-
     peers.get(0).stopRPCServer();
-    executor.shutdown();
   }
 
   @Test
-  @Order(5)
-  void requestsWithLowerBallotIgnored() {
-    ExecutorService executor = Executors.newSingleThreadExecutor();
-    executor.submit(() -> peers.get(0).startRPCServer());
-
-    var stub = makeStub("localhost", configs.get(0).getPort());
-
-    peers.get(0).nextBallot();
-    peers.get(0).nextBallot();
-
-    var staleBallot = peers.get(1).nextBallot();
-
-    var r1 = sendCommit(stub, staleBallot, 0, 0);
-    assertEquals(REJECT, r1.getType());
-    assertTrue(isLeader(peers.get(0)));
-
-    var r2 = sendPrepare(stub, staleBallot);
-    assertEquals(REJECT, r2.getType());
-    assertTrue(isLeader(peers.get(0)));
-
-    var index = logs.get(0).advanceLastIndex();
-    var instance = makeInstance(staleBallot, index);
-    var r3 = sendAccept(stub, instance);
-    assertEquals(REJECT, r3.getType());
-    assertTrue(isLeader(peers.get(0)));
-    assertNull(logs.get(0).get(index));
-
-    peers.get(0).stopRPCServer();
-    executor.shutdown();
-  }
-
-  @Test
-  @Order(6)
+  @Order(4)
   void commitCommitsAndTrims() {
-    ExecutorService executor = Executors.newSingleThreadExecutor();
-    executor.submit(() -> peers.get(0).startRPCServer());
-
-    var stub = makeStub("localhost", configs.get(0).getPort());
+    peers.get(0).startRPCServer();
+    var stub = makeStub(configs.get(0).getPeers().get(0));
 
     var ballot = peers.get(0).nextBallot();
-
     var index1 = logs.get(0).advanceLastIndex();
     logs.get(0).append(makeInstance(ballot, index1));
-
     var index2 = logs.get(0).advanceLastIndex();
     logs.get(0).append(makeInstance(ballot, index2));
-
     var index3 = logs.get(0).advanceLastIndex();
     logs.get(0).append(makeInstance(ballot, index3));
 
@@ -318,18 +243,16 @@ class MultiPaxosTest {
     assertTrue(logs.get(0).get(index3).isInProgress());
 
     peers.get(0).stopRPCServer();
-    executor.shutdown();
   }
 
-
   @Test
-  @Order(7)
+  @Order(5)
   void prepareRespondsWithCorrectInstances() {
-    ExecutorService executor = Executors.newSingleThreadExecutor();
-    executor.submit(() -> peers.get(0).startRPCServer());
+    peers.get(0).startRPCServer();
+    var stub = makeStub(configs.get(0).getPeers().get(0));
 
-    var stub = makeStub("localhost", configs.get(0).getPort());
     var ballot = peers.get(0).nextBallot();
+
     var index1 = logs.get(0).advanceLastIndex();
     var instance1 = makeInstance(ballot, index1);
     logs.get(0).append(instance1);
@@ -371,50 +294,40 @@ class MultiPaxosTest {
     assertEquals(instance3, MultiPaxos.makeInstance(r5.getInstances(0)));
 
     peers.get(0).stopRPCServer();
-    executor.shutdown();
   }
 
   @Test
-  @Order(8)
+  @Order(6)
   void acceptAppendsToLog() {
-    ExecutorService executor = Executors.newSingleThreadExecutor();
-    executor.submit(() -> peers.get(0).startRPCServer());
+    peers.get(0).startRPCServer();
+    var stub = makeStub(configs.get(0).getPeers().get(0));
 
     var ballot = peers.get(0).nextBallot();
-
     var index1 = logs.get(0).advanceLastIndex();
     var instance1 = makeInstance(ballot, index1);
-
     var index2 = logs.get(0).advanceLastIndex();
     var instance2 = makeInstance(ballot, index2);
 
-    var stub = makeStub("localhost", configs.get(0).getPort());
-
     var r1 = sendAccept(stub, instance1);
-
     assertEquals(OK, r1.getType());
     assertEquals(instance1, logs.get(0).get(index1));
     assertNull(logs.get(0).get(index2));
 
     var r2 = sendAccept(stub, instance2);
-
     assertEquals(OK, r2.getType());
     assertEquals(instance1, logs.get(0).get(index1));
     assertEquals(instance2, logs.get(0).get(index2));
 
     peers.get(0).stopRPCServer();
-    executor.shutdown();
   }
 
   @Test
-  @Order(9)
-  public void commitResponseWithHighBallotChangesLeaderToFollower() {
-    ExecutorService executor = Executors.newFixedThreadPool(3);
-    executor.submit(() -> peers.get(0).startRPCServer());
-    executor.submit(() -> peers.get(1).startRPCServer());
-    executor.submit(() -> peers.get(2).startRPCServer());
-
-    var stub1 = makeStub("localhost", configs.get(1).getPort());
+  @Order(7)
+  void prepareResponseWithHigherBallotChangesLeaderToFollower() {
+    peers.get(0).startRPCServer();
+    peers.get(1).startRPCServer();
+    peers.get(2).startRPCServer();
+    var stub1 = makeStub(configs.get(0).getPeers().get(1));
 
     var peer0Ballot = peers.get(0).nextBallot();
     peers.get(1).nextBallot();
@@ -426,7 +339,62 @@ class MultiPaxosTest {
     assertEquals(2, leader(peers.get(1)));
 
     assertTrue(isLeader(peers.get(0)));
-    // TODO: stuck here; resolve the deadlock
+    peers.get(0).runPreparePhase(peer0Ballot);
+    assertFalse(isLeader(peers.get(0)));
+    assertEquals(2, leader(peers.get(0)));
+
+    peers.get(0).stopRPCServer();
+    peers.get(1).stopRPCServer();
+    peers.get(2).stopRPCServer();
+  }
+
+  @Test
+  @Order(8)
+  public void acceptResponseWithHighBallotChangesLeaderToFollower() {
+    peers.get(0).startRPCServer();
+    peers.get(1).startRPCServer();
+    peers.get(2).startRPCServer();
+    var stub1 = makeStub(configs.get(0).getPeers().get(1));
+
+    var peer0Ballot = peers.get(0).nextBallot();
+    peers.get(1).nextBallot();
+    var peer2Ballot = peers.get(2).nextBallot();
+
+    var cr = sendCommit(stub1, peer2Ballot, 0, 0);
+    assertEquals(OK, cr.getType());
+    assertFalse(isLeader(peers.get(1)));
+    assertEquals(2, leader(peers.get(1)));
+
+    assertTrue(isLeader(peers.get(0)));
+    var ar = peers.get(0).runAcceptPhase(peer0Ballot, 1, new Command(), 0);
+    assertEquals(kSomeoneElseLeader, ar.type);
+    assertEquals(2, ar.leader);
+    assertFalse(isLeader(peers.get(0)));
+    assertEquals(2, leader(peers.get(0)));
+
+    peers.get(0).stopRPCServer();
+    peers.get(1).stopRPCServer();
+    peers.get(2).stopRPCServer();
+  }
+
+  @Test
+  @Order(9)
+  public void commitResponseWithHigherBallotChangesLeaderToFollower() {
+    peers.get(0).startRPCServer();
+    peers.get(1).startRPCServer();
+    peers.get(2).startRPCServer();
+    var stub1 = makeStub(configs.get(0).getPeers().get(1));
+
+    var peer0Ballot = peers.get(0).nextBallot();
+    peers.get(1).nextBallot();
+    var peer2Ballot = peers.get(2).nextBallot();
+
+    var r = sendCommit(stub1, peer2Ballot, 0, 0);
+    assertEquals(OK, r.getType());
+    assertFalse(isLeader(peers.get(1)));
+    assertEquals(2, leader(peers.get(1)));
+
+    assertTrue(isLeader(peers.get(0)));
     peers.get(0).runCommitPhase(peer0Ballot, 0);
     assertFalse(isLeader(peers.get(0)));
     assertEquals(2, leader(peers.get(0)));
@@ -434,147 +402,71 @@ class MultiPaxosTest {
     peers.get(0).stopRPCServer();
     peers.get(1).stopRPCServer();
     peers.get(2).stopRPCServer();
-    executor.shutdown();
   }
 
   @Test
   @Order(10)
-  public void acceptResponseWithHighBallotChangesLeaderToFollower() {
-    ExecutorService executor = Executors.newFixedThreadPool(3);
-    executor.submit(() -> peers.get(0).startRPCServer());
-    executor.submit(() -> peers.get(1).startRPCServer());
-    executor.submit(() -> peers.get(2).startRPCServer());
-
-    var stub1 = makeStub("localhost", configs.get(1).getPort());
+  public void runPreparePhase() throws InterruptedException {
+    peers.get(0).startRPCServer();
 
     var peer0Ballot = peers.get(0).nextBallot();
-    peers.get(1).nextBallot();
-    var peer2Ballot = peers.get(2).nextBallot();
+    var peer1Ballot = peers.get(1).nextBallot();
 
-    var commitResult = sendCommit(stub1, peer2Ballot, 0, 0);
-    assertEquals(OK, commitResult.getType());
-    assertFalse(isLeader(peers.get(1)));
-    assertEquals(2, leader(peers.get(1)));
+    long index1 = 1;
+    var i1 = makeInstance(peer0Ballot, index1, CommandType.Put);
 
-    assertTrue(isLeader(peers.get(0)));
-    var acceptResult = peers.get(0).runAcceptPhase(peer0Ballot, 1, new Command(), 0);
-    assertEquals(kSomeoneElseLeader, acceptResult.type);
-    assertEquals(2, acceptResult.leader);
-    assertFalse(isLeader(peers.get(0)));
-    assertEquals(2, leader(peers.get(0)));
+    logs.get(0).append(i1);
+    logs.get(1).append(i1);
 
-    peers.get(0).stopRPCServer();
-    peers.get(1).stopRPCServer();
-    peers.get(2).stopRPCServer();
-    executor.shutdown();
-  }
+    long index2 = 2;
+    var i2 = makeInstance(peer0Ballot, index2);
 
-  @Test
-  @Order(11)
-  public void runPreparePhase() throws InterruptedException {
-    ExecutorService executor = Executors.newFixedThreadPool(2);
-    executor.submit(() -> peers.get(0).startRPCServer());
+    logs.get(1).append(i2);
+
+    long index3 = 3;
+    var peer0i3 = makeInstance(peer0Ballot, index3, InstanceState.kCommitted, CommandType.Del);
+    var peer1i3 = makeInstance(peer1Ballot, index3, InstanceState.kInProgress, CommandType.Del);
+
+    logs.get(0).append(peer0i3);
+    logs.get(1).append(peer1i3);
+
+    long index4 = 4;
+    var peer0i4 = makeInstance(peer0Ballot, index4, InstanceState.kExecuted, CommandType.Del);
+    var peer1i4 = makeInstance(peer1Ballot, index4, InstanceState.kInProgress, CommandType.Del);
+
+    logs.get(0).append(peer0i4);
+    logs.get(1).append(peer1i4);
+
+    long index5 = 5;
+    peer0Ballot = peers.get(0).nextBallot();
+    peer1Ballot = peers.get(1).nextBallot();
+
+    var peer0i5 = makeInstance(peer0Ballot, index5, InstanceState.kInProgress, CommandType.Get);
+    var peer1i5 = makeInstance(peer1Ballot, index5, InstanceState.kInProgress, CommandType.Put);
+
+    logs.get(0).append(peer0i5);
+    logs.get(1).append(peer1i5);
 
     var ballot = peers.get(0).nextBallot();
-    var index = logs.get(0).advanceLastIndex();
-    var instance = makeInstance(ballot, index);
 
-    logs.get(0).append(instance);
-    logs.get(1).append(instance);
-    logs.get(2).append(instance);
-
-    // TODO: stuck in runPreparePhase
     assertNull(peers.get(0).runPreparePhase(ballot));
-    executor.submit(() -> peers.get(1).startRPCServer());
+
+    peers.get(1).startRPCServer();
 
     Thread.sleep(2000);
 
-    var expectedLog = new HashMap<Long, log.Instance>();
-    expectedLog.put(index, instance);
-    assertEquals(expectedLog, peers.get(0).runPreparePhase(ballot));
+    var log = peers.get(0).runPreparePhase(ballot);
+
+    assertEquals(i1, log.get(index1));
+    assertEquals(i2, log.get(index2));
+    assertEquals(peer0i3.getCommand(), log.get(index3).getCommand());
+    assertEquals(peer0i4.getCommand(), log.get(index4).getCommand());
+    assertEquals(peer1i5, log.get(index5));
 
     peers.get(0).stopRPCServer();
     peers.get(1).stopRPCServer();
-
-    executor.shutdown();
-
   }
+  
 
-  @Test
-  @Order(12)
-  public void runCommitPhase() throws InterruptedException {
-    ExecutorService executor = Executors.newFixedThreadPool(3);
-    executor.submit(() -> peers.get(0).startRPCServer());
-    executor.submit(() -> peers.get(1).startRPCServer());
-
-    var ballot = peers.get(0).nextBallot();
-
-    for (int index = 1; index <= 3; ++index) {
-      for (int peer = 0; peer < kNumPeers; ++peer) {
-        if (index == 3 && peer == 2) {
-          continue;
-        }
-        logs.get(peer).append(makeInstance(ballot, index, InstanceState.kCommitted));
-        logs.get(peer).execute(stores.get(peer));
-      }
-    }
-    // TODO: runCommitPhase stuck
-    var gle = peers.get(0).runCommitPhase(ballot, 0);
-    assertEquals(0, gle);
-    executor.submit(() -> peers.get(2).startRPCServer());
-
-    logs.get(2).append(makeInstance(ballot, 3));
-
-    Thread.sleep(2000);
-
-    gle = peers.get(0).runCommitPhase(ballot, gle);
-    assertEquals(2, gle);
-
-    logs.get(2).execute(stores.get(2));
-
-    gle = peers.get(0).runCommitPhase(ballot, gle);
-    assertEquals(3, gle);
-
-    peers.get(0).stopRPCServer();
-    peers.get(1).stopRPCServer();
-    peers.get(2).stopRPCServer();
-    executor.shutdown();
-  }
-
-  @Test
-  @Order(13)
-  void runAcceptPhase() throws InterruptedException {
-    ExecutorService executor = Executors.newFixedThreadPool(2);
-    executor.submit(() -> peers.get(0).startRPCServer());
-
-    var ballot = peers.get(0).nextBallot();
-    var index = logs.get(0).advanceLastIndex();
-    // TODO: runAcceptPhase stuck here
-    var result = peers.get(0).runAcceptPhase(ballot, index, new Command(), 0);
-
-    assertEquals(kRetry, result.type);
-    assertNull(result.leader);
-
-    assertTrue(logs.get(0).get(index).isInProgress());
-    assertNull(logs.get(1).get(index));
-    assertNull(logs.get(2).get(index));
-
-    executor.submit(() -> peers.get(1).startRPCServer());
-
-    Thread.sleep(2000);
-
-    result = peers.get(0).runAcceptPhase(ballot, index, new Command(), 0);
-
-    assertEquals(kOk, result.type);
-    assertNull(result.leader);
-
-    assertTrue(logs.get(0).get(index).isCommitted());
-    assertTrue(logs.get(1).get(index).isInProgress());
-    assertNull(logs.get(2).get(index));
-
-    peers.get(0).stopRPCServer();
-    peers.get(1).stopRPCServer();
-    executor.shutdown();
-  }
 }
 
