@@ -5,6 +5,7 @@ import static multipaxos.ResponseType.OK;
 import static multipaxos.ResponseType.REJECT;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -34,6 +35,7 @@ import multipaxos.MultiPaxosRPCGrpc;
 import multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCBlockingStub;
 import multipaxos.PrepareRequest;
 import multipaxos.PrepareResponse;
+import org.checkerframework.checker.units.qual.C;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
@@ -96,7 +98,7 @@ class MultiPaxosTest {
     Configuration config = new Configuration();
     config.setId(id);
     config.setPort(port);
-    config.setCommitPause(300);
+    config.setCommitInterval(300);
     config.setThreadPoolSize(8);
     List<String> peers = new ArrayList<>();
     for (int i = 0; i < kNumPeers; i++) {
@@ -106,6 +108,22 @@ class MultiPaxosTest {
     return config;
   }
 
+  public Long oneLeader() {
+    var leader = leader(peers.get(0));
+    var numLeaders = 0;
+
+    for (var p : peers) {
+      if (isLeader(p)) {
+        ++numLeaders;
+        if (numLeaders > 1 || p.getId() != leader) {
+          return null;
+        }
+      } else if (leader(p) != leader) {
+        return null;
+      }
+    }
+    return leader;
+  }
 
   @BeforeEach
   void setUp() {
