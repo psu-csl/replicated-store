@@ -533,6 +533,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
           logger.info(id + " RPC connection failed to " + peer.id);
           state.mu.lock();
           state.numRpcs++;
+          // TODO: be sure whether to signal here or not
           state.mu.unlock();
           return;
         }
@@ -656,7 +657,17 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
 
     for (var peer : rpcPeers) {
       threadPool.submit(() -> {
-        var response = MultiPaxosRPCGrpc.newBlockingStub(peer.stub).accept(request.build());
+        AcceptResponse response;
+        try {
+          response = MultiPaxosRPCGrpc.newBlockingStub(peer.stub).accept(request.build());
+        } catch (StatusRuntimeException e) {
+          logger.info(id + " RPC connection failed to " + peer.id);
+          state.mu.lock();
+          ++state.numRpcs;
+          // TODO: be sure whether to signal here or not
+          state.mu.unlock();
+          return;
+        }
         logger.info(id + " sent accept request to " + peer.id);
         state.mu.lock();
         ++state.numRpcs;
