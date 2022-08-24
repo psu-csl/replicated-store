@@ -10,6 +10,8 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static paxos.MultiPaxos.kMaxNumPeers;
 import static paxos.MultiPaxos.makeProtoInstance;
+import static paxos.MultiPaxosResultType.kOk;
+import static paxos.MultiPaxosResultType.kRetry;
 import static paxos.MultiPaxosResultType.kSomeoneElseLeader;
 import static util.TestUtil.makeInstance;
 
@@ -466,7 +468,40 @@ class MultiPaxosTest {
     peers.get(0).stopRPCServer();
     peers.get(1).stopRPCServer();
   }
-  
+
+  @Test
+  @Order(11)
+  void runAcceptPhase() throws InterruptedException {
+    peers.get(0).startRPCServer();
+
+    var ballot = peers.get(0).nextBallot();
+    var index = logs.get(0).advanceLastIndex();
+
+    var result = peers.get(0).runAcceptPhase(ballot, index, new Command(), 0);
+
+    assertEquals(kRetry, result.type);
+    assertNull(result.leader);
+
+    assertTrue(logs.get(0).get(index).isInProgress());
+    assertNull(logs.get(1).get(index));
+    assertNull(logs.get(2).get(index));
+
+    peers.get(1).startRPCServer();
+
+    Thread.sleep(2000);
+
+    result = peers.get(0).runAcceptPhase(ballot, index, new Command(), 0);
+
+    assertEquals(kOk, result.type);
+    assertNull(result.leader);
+
+    assertTrue(logs.get(0).get(index).isCommitted());
+    assertTrue(logs.get(1).get(index).isInProgress());
+    assertNull(logs.get(2).get(index));
+
+    peers.get(0).stopRPCServer();
+    peers.get(1).stopRPCServer();
+  }
 
 }
 
