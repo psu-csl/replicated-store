@@ -451,9 +451,18 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     request.setGlobalLastExecuted(globalLastExecuted);
     for (var peer : rpcPeers) {
       threadPool.submit(() -> {
-
-        var response = MultiPaxosRPCGrpc.newBlockingStub(peer.stub).commit(request.build());
-        logger.info(id + " sent commit to " + peer.id);
+        CommitResponse response;
+        try {
+          response = MultiPaxosRPCGrpc.newBlockingStub(peer.stub).commit(request.build());
+          logger.info(id + " sent commit to " + peer.id);
+        } catch (StatusRuntimeException e) {
+          logger.info(id + " RPC connection failed to " + peer.id);
+          state.mu.lock();
+          state.numRpcs++;
+          // TODO: be sure whether to signal here or not
+          state.mu.unlock();
+          return;
+        }
         state.mu.lock();
         ++state.numRpcs;
         if (response.isInitialized()) {
