@@ -336,7 +336,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     } finally {
       mu.unlock();
     }
-    blockUntilShutDown();
+    rpcServerThread.submit(this::blockUntilShutDown);
   }
 
   public void startCommitThread() {
@@ -391,6 +391,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     } catch (InterruptedException e) {
       e.printStackTrace();
     }
+    rpcServerThread.shutdown();
   }
 
   public void stopCommitThread() {
