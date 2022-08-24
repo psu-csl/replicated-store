@@ -503,5 +503,45 @@ class MultiPaxosTest {
     peers.get(1).stopRPCServer();
   }
 
+  @Test
+  @Order(12)
+  void runCommitPhase() throws InterruptedException {
+    peers.get(0).startRPCServer();
+    peers.get(1).startRPCServer();
+
+    var ballot = peers.get(0).nextBallot();
+
+    for (long index = 1; index <= 3; ++index) {
+      for (int peer = 0; peer < kNumPeers; ++peer) {
+        if (index == 3 && peer == 2) {
+          continue;
+        }
+        logs.get(peer).append(makeInstance(ballot, index, InstanceState.kCommitted));
+        logs.get(peer).execute(stores.get(peer));
+      }
+    }
+    long gle = 0;
+    gle = peers.get(0).runCommitPhase(ballot, gle);
+    assertEquals(0, gle);
+
+    peers.get(2).startRPCServer();
+
+    logs.get(2).append(makeInstance(ballot, 3));
+
+    Thread.sleep(2000);
+
+    gle = peers.get(0).runCommitPhase(ballot, gle);
+    assertEquals(2, gle);
+
+    logs.get(2).execute(stores.get(2));
+
+    gle = peers.get(0).runCommitPhase(ballot, gle);
+    assertEquals(3, gle);
+
+    peers.get(0).stopRPCServer();
+    peers.get(1).stopRPCServer();
+    peers.get(2).stopRPCServer();
+  }
+
 }
 
