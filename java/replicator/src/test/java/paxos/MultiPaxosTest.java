@@ -35,19 +35,12 @@ import multipaxos.MultiPaxosRPCGrpc;
 import multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCBlockingStub;
 import multipaxos.PrepareRequest;
 import multipaxos.PrepareResponse;
-import org.checkerframework.checker.units.qual.C;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.MethodOrderer;
-import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.TestMethodOrder;
 
-
-@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class MultiPaxosTest {
 
   private static final int kNumPeers = 3;
-
   protected List<Configuration> configs;
   protected List<Log> logs;
   protected List<MultiPaxos> peers;
@@ -55,8 +48,6 @@ class MultiPaxosTest {
 
 
   public static MultiPaxosRPCGrpc.MultiPaxosRPCBlockingStub makeStub(String target) {
-    /*ManagedChannel channel = ManagedChannelBuilder.forAddress(target, port)
-        .usePlaintext().build();*/
     ManagedChannel channel = ManagedChannelBuilder.forTarget(target).usePlaintext().build();
     return MultiPaxosRPCGrpc.newBlockingStub(channel);
   }
@@ -146,7 +137,6 @@ class MultiPaxosTest {
 
 
   @Test
-  @Order(0)
   void constructor() {
     assertEquals(kMaxNumPeers, leader(peers.get(0)));
     assertFalse(isLeader(peers.get(0)));
@@ -154,7 +144,6 @@ class MultiPaxosTest {
   }
 
   @Test
-  @Order(1)
   void nextBallot() {
 
     int ballot = 2;
@@ -169,12 +158,9 @@ class MultiPaxosTest {
     assertEquals(2, leader(peers.get(2)));
   }
 
-
   @Test
-  @Order(2)
   void requestsWithLowerBallotIgnored() {
     peers.get(0).startRPCServer();
-    // var stub = makeStub("localhost", configs.get(0).getPort());
     var stub = makeStub(configs.get(0).getPeers().get(0));
 
     peers.get(0).nextBallot();
@@ -201,7 +187,6 @@ class MultiPaxosTest {
   }
 
   @Test
-  @Order(3)
   void requestsWithHigherBallotChangeLeaderToFollower() {
     peers.get(0).startRPCServer();
     var stub = makeStub(configs.get(0).getPeers().get(0));
@@ -233,7 +218,6 @@ class MultiPaxosTest {
   }
 
   @Test
-  @Order(4)
   void commitCommitsAndTrims() {
     peers.get(0).startRPCServer();
     var stub = makeStub(configs.get(0).getPeers().get(0));
@@ -267,7 +251,6 @@ class MultiPaxosTest {
   }
 
   @Test
-  @Order(5)
   void prepareRespondsWithCorrectInstances() {
     peers.get(0).startRPCServer();
     var stub = makeStub(configs.get(0).getPeers().get(0));
@@ -318,7 +301,6 @@ class MultiPaxosTest {
   }
 
   @Test
-  @Order(6)
   void acceptAppendsToLog() {
     peers.get(0).startRPCServer();
     var stub = makeStub(configs.get(0).getPeers().get(0));
@@ -343,7 +325,6 @@ class MultiPaxosTest {
   }
 
   @Test
-  @Order(7)
   void prepareResponseWithHigherBallotChangesLeaderToFollower() {
     peers.get(0).startRPCServer();
     peers.get(1).startRPCServer();
@@ -370,7 +351,6 @@ class MultiPaxosTest {
   }
 
   @Test
-  @Order(8)
   public void acceptResponseWithHighBallotChangesLeaderToFollower() {
     peers.get(0).startRPCServer();
     peers.get(1).startRPCServer();
@@ -399,7 +379,6 @@ class MultiPaxosTest {
   }
 
   @Test
-  @Order(9)
   public void commitResponseWithHigherBallotChangesLeaderToFollower() {
     peers.get(0).startRPCServer();
     peers.get(1).startRPCServer();
@@ -426,7 +405,6 @@ class MultiPaxosTest {
   }
 
   @Test
-  @Order(10)
   public void runPreparePhase() throws InterruptedException {
     peers.get(0).startRPCServer();
 
@@ -489,7 +467,6 @@ class MultiPaxosTest {
   }
 
   @Test
-  @Order(11)
   void runAcceptPhase() throws InterruptedException {
     peers.get(0).startRPCServer();
 
@@ -523,7 +500,6 @@ class MultiPaxosTest {
   }
 
   @Test
-  @Order(12)
   void runCommitPhase() throws InterruptedException {
     peers.get(0).startRPCServer();
     peers.get(1).startRPCServer();
@@ -563,7 +539,6 @@ class MultiPaxosTest {
   }
 
   @Test
-  @Order(13)
   void replay() {
     peers.get(0).startRPCServer();
     peers.get(1).startRPCServer();
@@ -618,7 +593,6 @@ class MultiPaxosTest {
   }
 
   @Test
-  @Order(14)
   void replicate() throws InterruptedException {
     peers.get(0).start();
 
