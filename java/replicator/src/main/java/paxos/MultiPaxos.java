@@ -13,6 +13,7 @@ import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 import io.grpc.Server;
 import io.grpc.ServerBuilder;
+import io.grpc.StatusRuntimeException;
 import io.grpc.stub.StreamObserver;
 import java.io.IOException;
 import java.time.Instant;
@@ -152,6 +153,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
   private final ExecutorService prepareThread;
   private final List<RpcPeer> rpcPeers;
   private final ExecutorService threadPool;
+  private final ExecutorService rpcServerThread;
   private AtomicBoolean ready;
   private AtomicBoolean commitThreadRunning;
 
@@ -175,6 +177,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     lastCommit = 0;
 
     rpcServerRunning = false;
+    rpcServerThread = Executors.newSingleThreadExecutor();
     ready = new AtomicBoolean(false);
     commitThreadRunning = new AtomicBoolean(false);
     prepareThreadRunning = new AtomicBoolean(false);
@@ -468,8 +471,8 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
             mu.unlock();
           }
         }
-        state.mu.unlock();
         state.cv.signal();
+        state.mu.unlock();
       });
     }
     state.mu.lock();
@@ -521,8 +524,17 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     request.setBallot(ballot);
     for (var peer : rpcPeers) {
       threadPool.submit(() -> {
-        var response = MultiPaxosRPCGrpc.newBlockingStub(peer.stub).prepare(request.build());
-        logger.info(id + " sent prepare request to " + peer.id);
+        PrepareResponse response = null;
+        try {
+          response = MultiPaxosRPCGrpc.newBlockingStub(peer.stub).prepare(request.build());
+          logger.info(id + " sent prepare request to " + peer.id);
+        } catch (StatusRuntimeException e) {
+          logger.info("RPC failed: " + e.getStatus());
+          state.mu.lock();
+          state.numRpcs++;
+          state.mu.unlock();
+          return;
+        }
         state.mu.lock();
         ++state.numRpcs;
         if (response.getType() == ResponseType.OK) {
