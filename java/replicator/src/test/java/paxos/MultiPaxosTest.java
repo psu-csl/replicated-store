@@ -20,6 +20,7 @@ import command.Command.CommandType;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import kvstore.MemKVStore;
 import log.Instance;
@@ -543,5 +544,59 @@ class MultiPaxosTest {
     peers.get(2).stopRPCServer();
   }
 
+  @Test
+  @Order(13)
+  void replay() {
+    peers.get(0).startRPCServer();
+    peers.get(1).startRPCServer();
+
+    var ballot = peers.get(0).nextBallot();
+
+    long index1 = 1;
+    var i1 = makeInstance(ballot, index1, InstanceState.kCommitted, CommandType.Put);
+    long index2 = 2;
+    var i2 = makeInstance(ballot, index2, InstanceState.kExecuted, CommandType.Get);
+    long index3 = 3;
+    var i3 = makeInstance(ballot, index3, InstanceState.kInProgress, CommandType.Del);
+
+    HashMap<Long, log.Instance> log = new HashMap<>();
+    log.put(index1, i1);
+    log.put(index2, i2);
+    log.put(index3, i3);
+
+    assertNull(logs.get(0).get(index1));
+    assertNull(logs.get(0).get(index2));
+    assertNull(logs.get(0).get(index3));
+
+    assertNull(logs.get(1).get(index1));
+    assertNull(logs.get(1).get(index2));
+    assertNull(logs.get(1).get(index3));
+
+    var newBallot = peers.get(0).nextBallot();
+    peers.get(0).replay(newBallot, log);
+
+    i1.setBallot(newBallot);
+    i2.setBallot(newBallot);
+    i3.setBallot(newBallot);
+
+    i1.setState(InstanceState.kCommitted);
+    i2.setState(InstanceState.kCommitted);
+    i3.setState(InstanceState.kCommitted);
+
+    assertEquals(i1, logs.get(0).get(index1));
+    assertEquals(i2, logs.get(0).get(index2));
+    assertEquals(i3, logs.get(0).get(index3));
+
+    i1.setState(InstanceState.kInProgress);
+    i2.setState(InstanceState.kInProgress);
+    i3.setState(InstanceState.kInProgress);
+
+    assertEquals(i1, logs.get(1).get(index1));
+    assertEquals(i2, logs.get(1).get(index2));
+    assertEquals(i3, logs.get(1).get(index3));
+
+    peers.get(0).stopRPCServer();
+    peers.get(1).stopRPCServer();
+  }
 }
 
