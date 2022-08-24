@@ -166,7 +166,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
   public MultiPaxos(Log log, Configuration config) {
     this.id = config.getId();
     this.ballot = kMaxNumPeers;
-    this.commitInterval = config.getCommitPause();
+    this.commitInterval = config.getCommitInterval();
     this.log_ = log;
 
     mu = new ReentrantLock();

@@ -6,7 +6,7 @@ public class Configuration {
 
   private long id;
   private int port;
-  private long commitPause;
+  private long commitInterval;
   private int threadPoolSize;
   private List<String> peers;
 
@@ -26,12 +26,12 @@ public class Configuration {
     this.port = port;
   }
 
-  public long getCommitPause() {
-    return commitPause;
+  public long getCommitInterval() {
+    return commitInterval;
   }
 
-  public void setCommitPause(long commitPause) {
-    this.commitPause = commitPause;
+  public void setCommitInterval(long commitInterval) {
+    this.commitInterval = commitInterval;
   }
 
   public int getThreadPoolSize() {
