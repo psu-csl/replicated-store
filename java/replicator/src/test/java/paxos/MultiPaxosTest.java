@@ -616,5 +616,40 @@ class MultiPaxosTest {
     peers.get(0).stopRPCServer();
     peers.get(1).stopRPCServer();
   }
+
+  @Test
+  @Order(14)
+  void replicate() throws InterruptedException {
+    peers.get(0).start();
+
+    var result = peers.get(0).replicate(new Command(), 0);
+    assertEquals(kRetry, result.type);
+    assertNull(result.leader);
+
+    peers.get(1).start();
+    peers.get(2).start();
+
+    long commitInterval = configs.get(0).getCommitInterval();
+    var commitInterval3x = 3 * commitInterval;
+
+    Thread.sleep(commitInterval3x);
+
+    var leader = oneLeader();
+    assertNotNull(leader);
+
+    result = peers.get(Math.toIntExact(leader)).replicate(new Command(), 0);
+    assertEquals(kOk, result.type);
+    assertNull(result.leader);
+
+    var nonLeader = (leader + 1) % kNumPeers;
+
+    result = peers.get((int) nonLeader).replicate(new Command(), 0);
+    assertEquals(kSomeoneElseLeader, result.type);
+    assertEquals(leader, result.leader);
+
+    peers.get(0).stop();
+    peers.get(1).stop();
+    peers.get(2).stop();
+  }
 }
 
