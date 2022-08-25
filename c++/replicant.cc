@@ -26,12 +26,11 @@ void Replicant::Start() {
   multi_paxos_.Start();
   StartExecutorThread();
   StartServer();
-  io_context_->run();
 }
 
 void Replicant::Stop() {
-  StopExecutorThread();
   StopServer();
+  StopExecutorThread();
   multi_paxos_.Stop();
 }
 
@@ -49,6 +48,7 @@ void Replicant::StartServer() {
 
   auto self(shared_from_this());
   asio::dispatch(acceptor_.get_executor(), [this, self] { AcceptClient(); });
+  io_context_->run();
 }
 
 void Replicant::StopServer() {
