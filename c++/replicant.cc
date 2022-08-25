@@ -86,8 +86,8 @@ void Replicant::ExecutorThread() {
     auto r = log_.Execute(kv_store_.get());
     if (!r)
       break;
-    auto [client_id, result] = *r;
-    auto client = client_manager_.Get(client_id);
+    auto [id, result] = *r;
+    auto client = client_manager_.Get(id);
     if (client)
       client->Write(*result.value_);
   }
