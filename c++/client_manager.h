@@ -18,9 +18,10 @@ class ClientManager {
   ClientManager& operator=(ClientManager const&&) = delete;
 
   void Start(asio::ip::tcp::socket socket);
-  void Respond(int64_t client_id, std::string const& response);
   void Stop(int64_t client_id);
   void StopAll();
+
+  client_ptr Get(int64_t client_id);
 
  private:
   int64_t NextClientId() {

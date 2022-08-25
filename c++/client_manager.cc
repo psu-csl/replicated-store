@@ -12,11 +12,11 @@ void ClientManager::Start(tcp::socket socket) {
   client->Start();
 }
 
-void ClientManager::Respond(int64_t client_id, std::string const& response) {
+client_ptr ClientManager::Get(int64_t client_id) {
   auto it = clients_.find(client_id);
   if (it == clients_.end())
-    return;
-  it->second->Write(response);
+    return nullptr;
+  return it->second;
 }
 
 void ClientManager::Stop(int64_t client_id) {

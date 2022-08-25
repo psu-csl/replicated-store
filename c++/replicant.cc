@@ -87,6 +87,8 @@ void Replicant::ExecutorThread() {
     if (!r)
       break;
     auto [client_id, result] = *r;
-    client_manager_.Respond(client_id, *result.value_);
+    auto client = client_manager_.Get(client_id);
+    if (client)
+      client->Write(*result.value_);
   }
 }
