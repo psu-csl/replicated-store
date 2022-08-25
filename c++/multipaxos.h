@@ -120,7 +120,7 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
   }
 
   void SleepForRandomInterval() {
-    auto sleep_time = commit_interval_ + dist_(engine_);
+    auto sleep_time = commit_interval_ + commit_interval_ / 2 + dist_(engine_);
     std::this_thread::sleep_for(std::chrono::milliseconds(sleep_time));
   }
 

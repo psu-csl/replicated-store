@@ -38,7 +38,7 @@ MultiPaxos::MultiPaxos(Log* log, json const& config)
       id_(config["id"]),
       commit_interval_(config["commit_interval"]),
       engine_(id_),
-      dist_(0, commit_interval_),
+      dist_(0, commit_interval_ / 2),
       port_(config["peers"][id_]),
       last_commit_(0),
       thread_pool_(config["threadpool_size"]),
