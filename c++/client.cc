@@ -12,7 +12,9 @@ using multipaxos::CommandType::GET;
 using multipaxos::CommandType::PUT;
 
 std::optional<Command> Parse(asio::streambuf* request) {
-  std::istream request_stream(request);
+  std::string line;
+  std::getline(std::istream(request), line);
+  std::istringstream request_stream(line);
   std::string command, key;
   Command c;
 
