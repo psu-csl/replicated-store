@@ -28,11 +28,10 @@ public class TestUtil {
     return new Instance(ballot, index, 0, state, new Command());
   }
 
-  public static Configuration makeConfig(long id, int port, int numPeers) {
+  public static Configuration makeConfig(long id, int numPeers) {
     assert (id < numPeers);
     Configuration config = new Configuration();
     config.setId(id);
-    config.setPort(port);
     config.setCommitInterval(300);
     config.setThreadPoolSize(8);
     List<String> peers = new ArrayList<>();

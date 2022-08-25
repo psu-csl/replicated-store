@@ -191,7 +191,9 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
       ManagedChannel channel = ManagedChannelBuilder.forTarget(peer).usePlaintext().build();
       rpcPeers.add(new RpcPeer(rpcId++, channel));
     }
-    rpcServer = ServerBuilder.forPort(config.getPort()).addService(this).build();
+    String target = config.getPeers().get((int) this.id);
+    int port = Integer.parseInt(target.substring(target.indexOf(":") + 1));
+    rpcServer = ServerBuilder.forPort(port).addService(this).build();
   }
 
   public static boolean isSomeoneElseLeader(long ballot, long id) {

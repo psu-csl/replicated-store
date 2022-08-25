@@ -57,6 +57,11 @@
   </build>
   <dependencies>
     <dependency>
+      <artifactId>netty-all</artifactId>
+      <groupId>io.netty</groupId>
+      <version>4.1.79.Final</version>
+    </dependency>
+    <dependency>
       <artifactId>gson</artifactId>
       <groupId>com.google.code.gson</groupId>
       <version>2.9.0</version>
