@@ -79,7 +79,7 @@ void Client::Read() {
 
 void Client::Write(std::string const& response) {
   std::ostream response_stream(&response_);
-  response_stream << response;
+  response_stream << response << '\n';
 
   auto self(shared_from_this());
   asio::async_write(socket_, response_,
