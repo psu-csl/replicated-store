@@ -44,7 +44,7 @@ std::optional<Command> Parse(asio::streambuf* request) {
 
 void Client::Start() {
   auto self(shared_from_this());
-  asio::dispatch(socket_.get_executor(), [this, self] { HandleRequest(); });
+  asio::dispatch(socket_.get_executor(), [this, self] { Read(); });
 }
 
 void Client::Stop() {
@@ -52,7 +52,7 @@ void Client::Stop() {
   asio::dispatch(socket_.get_executor(), [this, self] { socket_.close(); });
 }
 
-void Client::HandleRequest() {
+void Client::Read() {
   auto self(shared_from_this());
   asio::async_read_until(
       socket_, request_, '\n', [this, self](std::error_code ec, size_t) {
@@ -61,15 +61,15 @@ void Client::HandleRequest() {
           if (command) {
             auto r = multi_paxos_->Replicate(std::move(*command), id_);
             if (r.type_ == ResultType::kOk) {
-              HandleRequest();
+              Read();
             } else if (r.type_ == ResultType::kRetry) {
-              WriteResponse("retry");
+              Write("retry");
             } else {
               CHECK(r.type_ == ResultType::kSomeoneElseLeader);
-              WriteResponse("leader is ...");
+              Write("leader is ...");
             }
           } else {
-            WriteResponse("bad command");
+            Write("bad command");
           }
         } else {
           manager_->Stop(id_);
@@ -77,7 +77,7 @@ void Client::HandleRequest() {
       });
 }
 
-void Client::WriteResponse(std::string const& response) {
+void Client::Write(std::string const& response) {
   std::ostream response_stream(&response_);
   response_stream << response;
 
@@ -87,6 +87,6 @@ void Client::WriteResponse(std::string const& response) {
                       if (ec) {
                         manager_->Stop(id_);
                       }
-                      HandleRequest();
+                      Read();
                     });
 }
