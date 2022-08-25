@@ -22,6 +22,8 @@ public class Log {
   private long lastIndex = 0;
   private long lastExecuted = 0;
 
+  private boolean running = true;
+
   public Log() {
     log = new HashMap<>();
     mu = new ReentrantLock();
@@ -136,8 +138,11 @@ public class Log {
   public Map.Entry<Long, KVResult> execute(KVStore kv) {
     mu.lock();
     try {
-      while (!isExecutable()) {
+      while (running && !isExecutable()) {
         cvExecutable.await();
+      }
+      if (!running) {
+        return null;
       }
       var it = log.get(lastExecuted + 1);
       assert it != null;
@@ -208,6 +213,13 @@ public class Log {
     } finally {
       mu.unlock();
     }
+  }
+
+  public void stop() {
+    mu.lock();
+    running = false;
+    cvExecutable.signal();
+    mu.unlock();
   }
 
   @Override
