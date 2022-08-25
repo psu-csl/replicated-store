@@ -441,7 +441,18 @@ class LogTest {
       expected.remove(0);
     }
     assertEquals(expected, log_.instancesSinceGlobalLastExecuted());
+  }
 
+  @Test
+  void callingStopUnblocksExecutor() {
+    ExecutorService executeThread = Executors.newSingleThreadExecutor();
+    executeThread.submit(() -> {
+      var r = log_.execute(store_);
+      assertNull(r);
+    });
+    Thread.yield();
+    log_.stop();
+    executeThread.shutdown();
   }
 
 }
