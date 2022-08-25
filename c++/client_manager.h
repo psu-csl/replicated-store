@@ -33,6 +33,7 @@ class ClientManager {
   int64_t next_id_;
   int64_t num_peers_;
   MultiPaxos* multi_paxos_;
+  std::mutex mu_;
   std::unordered_map<int64_t, client_ptr> clients_;
 };
 

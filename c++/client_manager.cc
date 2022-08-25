@@ -7,12 +7,16 @@ void ClientManager::Start(tcp::socket socket) {
   auto id = NextClientId();
   auto client =
       std::make_shared<Client>(id, std::move(socket), multi_paxos_, this);
-  auto [it, ok] = clients_.insert({id, client});
-  CHECK(ok);
+  {
+    std::scoped_lock lock(mu_);
+    auto [it, ok] = clients_.insert({id, client});
+    CHECK(ok);
+  }
   client->Start();
 }
 
 client_ptr ClientManager::Get(int64_t id) {
+  std::scoped_lock lock(mu_);
   auto it = clients_.find(id);
   if (it == clients_.end())
     return nullptr;
@@ -20,6 +24,7 @@ client_ptr ClientManager::Get(int64_t id) {
 }
 
 void ClientManager::Stop(int64_t id) {
+  std::scoped_lock lock(mu_);
   auto it = clients_.find(id);
   CHECK(it != clients_.end());
   it->second->Stop();
@@ -27,6 +32,7 @@ void ClientManager::Stop(int64_t id) {
 }
 
 void ClientManager::StopAll() {
+  std::scoped_lock lock(mu_);
   for (auto& [id, client] : clients_)
     client->Stop();
   clients_.clear();
