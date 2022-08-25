@@ -19,6 +19,14 @@ type command struct {
 	CommandType string
 }
 
+type clientResult struct {
+	Ok        bool
+	Value     string
+	NewLeader bool
+	Leader    int64
+	Retry     bool
+}
+
 type Replicant struct {
 	log           *consensusLog.Log
 	mp            *multipaxos.Multipaxos
@@ -75,11 +83,14 @@ func (r *Replicant) handleClient(clientId int64) {
 	for {
 		command, err := r.readCommand(client)
 		if err != nil {
-			reply := store.Result{
+			reply := clientResult{
 				Ok:    false,
 				Value: "",
+				Retry: true,
 			}
 			r.respond(client, reply)
+			client.Close()
+			delete(r.clientSockets, clientId)
 			break
 		}
 		r.Replicate(command, clientId)
@@ -91,7 +102,13 @@ func (r *Replicant) executorThread() {
 		clientId, result := r.log.Execute(r.store)
 		log.Printf("exec result %v\n", result)
 		if conn, isExist := r.clientSockets[clientId]; isExist {
-			r.respond(conn, result)
+			reply := clientResult{
+				Ok: result.Ok,
+				Value: result.Value,
+				Retry: false,
+				NewLeader: false,
+			}
+			r.respond(conn, reply)
 		}
 	}
 }
@@ -143,17 +160,30 @@ func (r *Replicant) Replicate(command *pb.Command, clientId int64) {
 	}
 	if result.Type == multipaxos.Retry {
 		//TODO: write back retry
+		reply := clientResult{
+			Ok: false,
+			Retry: true,
+			NewLeader: false,
+		}
+		r.respond(client, reply)
 	} else {
 		if result.Type != multipaxos.SomeElseLeader{
 			panic("result type is not someElseLeader")
 		}
 		//TODO: send back new leader id
+		reply := clientResult{
+			Ok: false,
+			NewLeader: true,
+			Leader: result.Leader,
+			Retry: false,
+		}
+		r.respond(client, reply)
 		client.Close()
 		delete(r.clientSockets, clientId)
 	}
 }
 
-func (r *Replicant) respond(conn net.Conn, result store.Result) {
+func (r *Replicant) respond(conn net.Conn, result clientResult) {
 	respByte, err := json.Marshal(result)
 	if err != nil {
 		log.Printf("json marshal error on server: %v", err)
