@@ -412,7 +412,7 @@ class LogTest {
   }
 
   @Test
-  void instancesForPrepare() {
+  void instancesSinceGlobalLastExecuted() {
     ExecutorService executor = Executors.newFixedThreadPool(1);
     List<Future<Map.Entry<Long, KVResult>>> futures = new ArrayList<>();
     for (int i = 0; i < 5; i++) {
