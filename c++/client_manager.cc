@@ -12,6 +12,7 @@ void ClientManager::Start(tcp::socket socket) {
     auto [it, ok] = clients_.insert({id, client});
     CHECK(ok);
   }
+  DLOG(INFO) << " client_manager started client " << id;
   client->Start();
 }
 
@@ -25,6 +26,7 @@ client_ptr ClientManager::Get(int64_t id) {
 
 void ClientManager::Stop(int64_t id) {
   std::scoped_lock lock(mu_);
+  DLOG(INFO) << " client_manager stopped client " << id;
   auto it = clients_.find(id);
   CHECK(it != clients_.end());
   it->second->Stop();
@@ -33,7 +35,9 @@ void ClientManager::Stop(int64_t id) {
 
 void ClientManager::StopAll() {
   std::scoped_lock lock(mu_);
-  for (auto& [id, client] : clients_)
+  for (auto& [id, client] : clients_) {
+    DLOG(INFO) << " client_manager stopping all clients " << id;
     client->Stop();
+  }
   clients_.clear();
 }
