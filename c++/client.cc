@@ -60,9 +60,9 @@ void Client::Read() {
           auto command = Parse(&request_);
           if (command) {
             auto r = multi_paxos_->Replicate(std::move(*command), id_);
-            if (r.type_ == ResultType::kOk) {
-              Read();
-            } else if (r.type_ == ResultType::kRetry) {
+            if (r.type_ == ResultType::kOk)
+              return;
+            if (r.type_ == ResultType::kRetry) {
               Write("retry");
             } else {
               CHECK(r.type_ == ResultType::kSomeoneElseLeader);
