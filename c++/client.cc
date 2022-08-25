@@ -71,7 +71,7 @@ void Client::Read() {
           } else {
             Write("bad command");
           }
-        } else {
+        } else if (ec != asio::error::operation_aborted) {
           manager_->Stop(id_);
         }
       });
