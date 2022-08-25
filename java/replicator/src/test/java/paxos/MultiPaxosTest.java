@@ -14,6 +14,7 @@ import static paxos.MultiPaxos.makeProtoInstance;
 import static paxos.MultiPaxosResultType.kOk;
 import static paxos.MultiPaxosResultType.kRetry;
 import static paxos.MultiPaxosResultType.kSomeoneElseLeader;
+import static util.TestUtil.makeConfig;
 import static util.TestUtil.makeInstance;
 
 import command.Command;
@@ -84,20 +85,6 @@ class MultiPaxosTest {
     return !isLeader(peer) && leader(peer) < kMaxNumPeers;
   }
 
-  public Configuration makeConfig(long id, int port) {
-    assert (id < kNumPeers);
-    Configuration config = new Configuration();
-    config.setId(id);
-    config.setPort(port);
-    config.setCommitInterval(300);
-    config.setThreadPoolSize(8);
-    List<String> peers = new ArrayList<>();
-    for (int i = 0; i < kNumPeers; i++) {
-      peers.add("127.0.0.1:300" + i);
-    }
-    config.setPeers(peers);
-    return config;
-  }
 
   public Long oneLeader() {
     var leader = leader(peers.get(0));
@@ -124,7 +111,7 @@ class MultiPaxosTest {
     this.stores = new ArrayList<>();
 
     for (int i = 0; i < kNumPeers; i++) {
-      var config = makeConfig(i, 3000 + i);
+      var config = makeConfig(i, 10000 + i * 1000, kNumPeers);
       var log = new Log();
       var peer = new MultiPaxos(log, config);
 
