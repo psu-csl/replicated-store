@@ -27,7 +27,7 @@ KVResult MemKVStore::Execute(const Command& cmd) {
     auto r = Get(cmd.key());
     if (!r)
       return KVResult{false, kKeyNotFound};
-    return KVResult{true, *r};
+    return KVResult{true, std::move(*r)};
   }
 
   if (cmd.type() == multipaxos::CommandType::PUT) {

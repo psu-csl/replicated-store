@@ -94,7 +94,7 @@ std::optional<log_result_t> Log::Execute(KVStore* kv) {
   KVResult result = kv->Execute(instance->command());
   instance->set_state(EXECUTED);
   ++last_executed_;
-  return {{instance->client_id(), result}};
+  return {{instance->client_id(), std::move(result)}};
 }
 
 void Log::CommitUntil(int64_t leader_last_executed, int64_t ballot) {
