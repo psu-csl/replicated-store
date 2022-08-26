@@ -16,8 +16,10 @@ class ReplicantTest {
     Replicant replicant = new Replicant(config);
     ExecutorService t0 = Executors.newSingleThreadExecutor();
     t0.submit(replicant::start);
-    Thread.sleep(3000);
+    while (true) {
+    }
+    /*Thread.sleep(3000);
     replicant.stop();
-    t0.shutdown();
+    t0.shutdown();*/
   }
 }
