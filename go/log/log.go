@@ -131,7 +131,7 @@ func (l *Log) Commit(index int64) {
 	l.mu.Unlock()
 }
 
-func (l *Log) Execute(kv *store.MemKVStore) (int64, store.Result) {
+func (l *Log) Execute(kv *store.MemKVStore) (int64, store.KVResult) {
 	l.mu.Lock()
 	for !l.IsExecutable() {
 		l.cvExecutable.Wait()

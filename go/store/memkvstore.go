@@ -4,15 +4,6 @@ import (
 	pb "github.com/psu-csl/replicated-store/go/consensus/multipaxos/comm"
 )
 
-const (
-	KeyNotFound string = "key not found"
-	Empty              = ""
-)
-
-type Result struct {
-	Ok    bool
-	Value string
-}
 
 type MemKVStore struct {
 	store map[string]string
@@ -47,19 +38,19 @@ func (s *MemKVStore) Del(key string) bool {
 	}
 }
 
-func (s *MemKVStore) Execute(cmd *pb.Command) Result {
+func (s *MemKVStore) Execute(cmd *pb.Command) KVResult {
 	if cmd.Type == pb.CommandType_GET {
 		value := s.Get(cmd.Key)
 		if value != nil {
-			return Result{Ok: true, Value: *value}
+			return KVResult{Ok: true, Value: *value}
 		} else {
-			return Result{Ok: false, Value: KeyNotFound}
+			return KVResult{Ok: false, Value: KeyNotFound}
 		}
 	}
 
 	if cmd.Type == pb.CommandType_PUT {
 		s.Put(cmd.Key, cmd.Value)
-		return Result{Ok: true, Value: Empty}
+		return KVResult{Ok: true, Value: Empty}
 	}
 
 	if cmd.Type != pb.CommandType_DEL {
@@ -67,7 +58,7 @@ func (s *MemKVStore) Execute(cmd *pb.Command) Result {
 	}
 
 	if s.Del(cmd.Key) {
-		return Result{Ok: true, Value: Empty}
+		return KVResult{Ok: true, Value: Empty}
 	}
-	return Result{Ok: false, Value: KeyNotFound}
+	return KVResult{Ok: false, Value: KeyNotFound}
 }
