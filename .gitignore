@@ -1,2 +1,5 @@
 # Bazel files
 bazel-*
+
+Cargo.lock
+target
