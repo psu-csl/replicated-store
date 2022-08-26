@@ -43,21 +43,6 @@ import multipaxos.PrepareResponse;
 import multipaxos.ResponseType;
 import org.slf4j.LoggerFactory;
 
-enum MultiPaxosResultType {
-  kOk, kRetry, kSomeoneElseLeader
-}
-
-class Result {
-
-  public MultiPaxosResultType type;
-  public Long leader;
-
-  public Result(MultiPaxosResultType type, Long leader) {
-    this.type = type;
-    this.leader = leader;
-  }
-}
-
 class BallotResult {
 
   public boolean isReady;
@@ -154,13 +139,13 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
   private final List<RpcPeer> rpcPeers;
   private final ExecutorService threadPool;
   private final ExecutorService rpcServerThread;
-  private AtomicBoolean ready;
-  private AtomicBoolean commitThreadRunning;
+  private final AtomicBoolean ready;
+  private final AtomicBoolean commitThreadRunning;
 
-  private AtomicBoolean prepareThreadRunning;
+  private final AtomicBoolean prepareThreadRunning;
+  private final long id;
   private boolean rpcServerRunning;
   private long lastCommit;
-  private long id;
   private long ballot;
 
   public MultiPaxos(Log log, Configuration config) {
@@ -315,9 +300,6 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     return id;
   }
 
-  public void setId(long id) {
-    this.id = id;
-  }
 
   public void start() {
     startCommitThread();
@@ -536,7 +518,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     request.setBallot(ballot);
     for (var peer : rpcPeers) {
       threadPool.submit(() -> {
-        PrepareResponse response = null;
+        PrepareResponse response;
         try {
           response = MultiPaxosRPCGrpc.newBlockingStub(peer.stub).prepare(request.build());
           logger.info(id + " sent prepare request to " + peer.id);
@@ -597,7 +579,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
 
         for (var i : log_.instancesSinceGlobalLastExecuted()) {
           if (i == null) {
-            logger.info("null instance of log: " + i);
+            logger.info("null instance of log");
             continue;
           }
           responseBuilder.addInstances(makeProtoInstance(i));
