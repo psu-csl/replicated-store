@@ -501,6 +501,20 @@ func TestLog_InstancesSinceGlobalLastExecuted(t *testing.T) {
 	assert.Equal(t, expect, log1.InstancesSinceGlobalLastExecuted())
 }
 
+func TestCallingStopUnblocksExecutor(t *testing.T) {
+	setup()
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		clientId, result := log1.Execute(store1)
+		assert.EqualValues(t, -1, clientId)
+		assert.Nil(t, result)
+		wg.Done()
+	}()
+	log1.Stop()
+	wg.Wait()
+}
+
 func expectDeath(t *testing.T, msg string) {
 	if r := recover(); r == nil {
 		t.Errorf(msg)
