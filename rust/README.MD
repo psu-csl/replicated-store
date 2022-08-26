@@ -1,1 +1,0 @@
-Replicated store in Rust.
