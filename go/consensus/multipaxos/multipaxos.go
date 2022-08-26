@@ -15,31 +15,40 @@ import (
 	"time"
 )
 
-const (
-	IdBits               = 0xff
-	RoundIncrement       = IdBits + 1
-	MaxNumPeers    int64 = 0xf
-	NoLeader       int64 = -1
-	RPCTimeout           = 300
-)
+func Leader(ballot int64) int64 {
+	return ballot & IdBits
+}
+
+func IsLeader(ballot int64, id int64) bool {
+	return Leader(ballot) == id
+}
+
+func IsSomeoneElseLeader(ballot int64, id int64) bool {
+	return !IsLeader(ballot, id) && Leader(ballot) < MaxNumPeers
+}
 
 type Multipaxos struct {
-	running            int32
-	isReady            int32
-	ballot             int64
-	log                *consensusLog.Log
-	id                 int64
-	CommitInterval     int64
-	CommitDelta        int64
-	ports              string
-	lastCommit         int64
-	rpcPeers           []pb.MultiPaxosRPCClient
+	running        int32
+	ready          int32
+	ballot         int64
+	log            *consensusLog.Log
+	id             int64
+	CommitInterval int64
+	CommitDelta    int64
+	port           string
+	lastCommit     int64
+	rpcPeers       []pb.MultiPaxosRPCClient
+	mu             sync.Mutex
+
+	cvLeader   *sync.Cond
+	cvFollower *sync.Cond
+
 	server             *grpc.Server
 	rpcServerRunning   bool
 	rpcServerRunningCv *sync.Cond
-	mu                 sync.Mutex
-	cvLeader           *sync.Cond
-	cvFollower         *sync.Cond
+
+	prepareThreadRunning bool
+	commitThreadRunning  bool
 
 	addrs []string
 	pb.UnimplementedMultiPaxosRPCServer
@@ -47,19 +56,21 @@ type Multipaxos struct {
 
 func NewMultipaxos(config config.Config, log *consensusLog.Log) *Multipaxos {
 	paxos := Multipaxos{
-		running:          0,
-		isReady:          0,
-		ballot:           MaxNumPeers,
-		log:              log,
-		id:               config.Id,
-		CommitInterval:   config.CommitInterval,
-		CommitDelta:      config.CommitDelta,
-		ports:            config.Peers[config.Id],
-		lastCommit:       0,
-		rpcPeers:         make([]pb.MultiPaxosRPCClient, len(config.Peers)),
-		rpcServerRunning: false,
-		server:           nil,
-		addrs:            config.Peers,
+		running:              0,
+		ready:                0,
+		ballot:               MaxNumPeers,
+		log:                  log,
+		id:                   config.Id,
+		CommitInterval:       config.CommitInterval,
+		CommitDelta:          config.CommitDelta,
+		port:                 config.Peers[config.Id],
+		lastCommit:           0,
+		rpcPeers:             make([]pb.MultiPaxosRPCClient, len(config.Peers)),
+		rpcServerRunning:     false,
+		prepareThreadRunning: false,
+		commitThreadRunning:  false,
+		server:               nil,
+		addrs:                config.Peers,
 	}
 	paxos.rpcServerRunningCv = sync.NewCond(&paxos.mu)
 	paxos.cvFollower = sync.NewCond(&paxos.mu)
@@ -97,18 +108,18 @@ func (p *Multipaxos) Stop() {
 }
 
 func (p *Multipaxos) Replicate(command *pb.Command, clientId int64) Result {
-	ballot, isReady := p.Ballot()
+	ballot, ready := p.Ballot()
 	if IsLeader(ballot, p.id) {
-		if isReady == 1 {
+		if ready == 1 {
 			return p.RunAcceptPhase(ballot, p.log.AdvanceLastIndex(), command,
 				clientId)
 		}
-		return Result{Type: Retry, Leader: -1}
+		return Result{Type: Retry, Leader: NoLeader}
 	}
 	if IsSomeoneElseLeader(ballot, p.id) {
 		return Result{Type: SomeElseLeader, Leader: Leader(ballot)}
 	}
-	return Result{Type: Retry, Leader: -1}
+	return Result{Type: Retry, Leader: NoLeader}
 }
 
 func (p *Multipaxos) PrepareThread() {
@@ -331,7 +342,6 @@ func (p *Multipaxos) RunCommitPhase(ballot int64, globalLastExecuted int64) int6
 	return globalLastExecuted
 }
 
-
 func (p *Multipaxos) Replay(ballot int64, replayLog map[int64]*pb.Instance) {
 	if replayLog == nil {
 		return
@@ -346,7 +356,7 @@ func (p *Multipaxos) Replay(ballot int64, replayLog map[int64]*pb.Instance) {
 			continue
 		}
 	}
-	atomic.StoreInt32(&p.isReady, 1)
+	atomic.StoreInt32(&p.ready, 1)
 }
 
 func (p *Multipaxos) Prepare(ctx context.Context,
@@ -424,7 +434,7 @@ func (p *Multipaxos) NextBallot() int64 {
 	oldBallot := p.ballot
 	p.ballot += RoundIncrement
 	p.ballot = (p.ballot & ^IdBits) | p.id
-	p.isReady = 1
+	p.ready = 1
 	log.Printf("%v became a leader: ballot: %v -> %v\n", p.id, oldBallot,
 		p.ballot)
 	p.cvLeader.Signal()
@@ -448,7 +458,7 @@ func (p *Multipaxos) Ballot() (int64, int32) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	return p.ballot, p.isReady
+	return p.ballot, p.ready
 }
 
 func (p *Multipaxos) waitUntilLeader() {
@@ -469,7 +479,7 @@ func (p *Multipaxos) waitUntilFollower() {
 
 func (p *Multipaxos) StartServer() {
 	atomic.StoreInt32(&p.running, 1)
-	listener, err := net.Listen("tcp", p.ports)
+	listener, err := net.Listen("tcp", p.port)
 	if err != nil {
 		panic(err)
 	}
@@ -506,16 +516,4 @@ func (p *Multipaxos) Connect() {
 		client := pb.NewMultiPaxosRPCClient(conn)
 		p.rpcPeers[i] = client
 	}
-}
-
-func Leader(ballot int64) int64 {
-	return ballot & IdBits
-}
-
-func IsLeader(ballot int64, id int64) bool {
-	return Leader(ballot) == id
-}
-
-func IsSomeoneElseLeader(ballot int64, id int64) bool {
-	return !IsLeader(ballot, id) && Leader(ballot) < MaxNumPeers
 }
