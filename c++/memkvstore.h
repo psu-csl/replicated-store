@@ -14,7 +14,7 @@ class MemKVStore : public KVStore {
   MemKVStore(MemKVStore&& store) = delete;
   MemKVStore& operator=(MemKVStore&& store) = delete;
 
-  std::string* Get(const std::string& key) override;
+  std::optional<std::string> Get(const std::string& key) override;
   bool Put(const std::string& key, const std::string& value) override;
   bool Del(const std::string& key) override;
   KVResult Execute(const multipaxos::Command& cmd) override;
