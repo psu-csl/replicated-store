@@ -15,8 +15,9 @@ using nlohmann::json;
 Replicant::Replicant(asio::io_context* io_context, json const& config)
     : id_(config["id"]),
       num_peers_(config["peers"].size()),
-      multi_paxos_(&log_, config),
       kv_store_(std::make_unique<MemKVStore>()),
+      log_(kv_store_.get()),
+      multi_paxos_(&log_, config),
       ip_port_(config["peers"][id_]),
       io_context_(io_context),
       acceptor_(asio::make_strand(*io_context_)),
@@ -83,7 +84,7 @@ void Replicant::StopExecutorThread() {
 
 void Replicant::ExecutorThread() {
   for (;;) {
-    auto r = log_.Execute(kv_store_.get());
+    auto r = log_.Execute();
     if (!r)
       break;
     auto [id, result] = std::move(*r);

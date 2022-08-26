@@ -18,9 +18,12 @@ using multipaxos::InstanceState::EXECUTED;
 using multipaxos::InstanceState::INPROGRESS;
 
 class LogTest : public testing::Test {
+ public:
+  LogTest() : log_(&store_) {}
+
  protected:
-  Log log_;
   MemKVStore store_;
+  Log log_;
 };
 
 using LogDeathTest = LogTest;
@@ -166,7 +169,7 @@ TEST_F(LogTest, CommitBeforeAppend) {
 }
 
 TEST_F(LogTest, AppendCommitExecute) {
-  std::thread execute_thread([this] { log_.Execute(&store_); });
+  std::thread execute_thread([this] { log_.Execute(); });
 
   auto index = 1;
   log_.Append(MakeInstance(0, index));
@@ -179,9 +182,9 @@ TEST_F(LogTest, AppendCommitExecute) {
 
 TEST_F(LogTest, AppendCommitExecuteOutOfOrder) {
   std::thread execute_thread([this] {
-    log_.Execute(&store_);
-    log_.Execute(&store_);
-    log_.Execute(&store_);
+    log_.Execute();
+    log_.Execute();
+    log_.Execute();
   });
 
   auto index1 = 1;
@@ -268,9 +271,9 @@ TEST_F(LogTest, CommitUntilWithGap) {
 
 TEST_F(LogTest, AppendCommitUntilExecute) {
   std::thread execute_thread([this] {
-    log_.Execute(&store_);
-    log_.Execute(&store_);
-    log_.Execute(&store_);
+    log_.Execute();
+    log_.Execute();
+    log_.Execute();
   });
 
   auto ballot = 0;
@@ -292,9 +295,9 @@ TEST_F(LogTest, AppendCommitUntilExecute) {
 
 TEST_F(LogTest, AppendCommitUntilExecuteTrimUntil) {
   std::thread execute_thread([this] {
-    log_.Execute(&store_);
-    log_.Execute(&store_);
-    log_.Execute(&store_);
+    log_.Execute();
+    log_.Execute();
+    log_.Execute();
   });
 
   auto ballot = 0;
@@ -320,8 +323,8 @@ TEST_F(LogTest, AppendCommitUntilExecuteTrimUntil) {
 
 TEST_F(LogTest, AppendAtTrimmedIndex) {
   std::thread execute_thread([this] {
-    log_.Execute(&store_);
-    log_.Execute(&store_);
+    log_.Execute();
+    log_.Execute();
   });
 
   auto ballot = 0;
@@ -349,8 +352,8 @@ TEST_F(LogTest, AppendAtTrimmedIndex) {
 
 TEST_F(LogTest, InstancesSinceGlobalLastExecuted) {
   std::thread execute_thread([this] {
-    log_.Execute(&store_);
-    log_.Execute(&store_);
+    log_.Execute();
+    log_.Execute();
   });
 
   auto ballot = 0;
@@ -376,7 +379,7 @@ TEST_F(LogTest, InstancesSinceGlobalLastExecuted) {
 
 TEST_F(LogTest, CallingStopUnblocksExecutor) {
   std::thread execute_thread([this] {
-    auto r = log_.Execute(&store_);
+    auto r = log_.Execute();
     EXPECT_EQ(std::nullopt, r);
   });
   std::this_thread::yield();

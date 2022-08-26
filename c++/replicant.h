@@ -35,9 +35,9 @@ class Replicant : public std::enable_shared_from_this<Replicant> {
 
   int64_t id_;
   int64_t num_peers_;
+  std::unique_ptr<KVStore> kv_store_;
   Log log_;
   MultiPaxos multi_paxos_;
-  std::unique_ptr<KVStore> kv_store_;
   std::string ip_port_;
   asio::io_context* io_context_;
   asio::ip::tcp::acceptor acceptor_;

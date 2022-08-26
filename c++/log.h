@@ -27,7 +27,7 @@ bool operator==(multipaxos::Instance const& a, multipaxos::Instance const& b);
 
 class Log {
  public:
-  Log() = default;
+  explicit Log(KVStore* kv_store) : kv_store_(kv_store) {}
   Log(Log const& log) = delete;
   Log& operator=(Log const& log) = delete;
   Log(Log&& log) = delete;
@@ -56,7 +56,7 @@ class Log {
 
   void Append(multipaxos::Instance instance);
   void Commit(int64_t index);
-  std::optional<log_result_t> Execute(KVStore* kv);
+  std::optional<log_result_t> Execute();
 
   void CommitUntil(int64_t leader_last_executed, int64_t ballot);
   void TrimUntil(int64_t leader_global_last_executed);
@@ -72,6 +72,7 @@ class Log {
 
  private:
   bool running_ = true;
+  KVStore* kv_store_;
   log_map_t log_;
   int64_t last_index_ = 0;
   int64_t last_executed_ = 0;

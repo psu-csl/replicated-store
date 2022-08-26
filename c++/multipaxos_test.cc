@@ -94,9 +94,9 @@ class MultiPaxosTest : public testing::Test {
   MultiPaxosTest() {
     for (auto id = 0; id < kNumPeers; ++id) {
       auto config = json::parse(MakeConfig(id, kNumPeers));
-      auto log = std::make_unique<Log>();
-      auto peer = std::make_unique<MultiPaxos>(log.get(), config);
       auto store = std::make_unique<MemKVStore>();
+      auto log = std::make_unique<Log>(store.get());
+      auto peer = std::make_unique<MultiPaxos>(log.get(), config);
 
       configs_.push_back(config);
       logs_.push_back(std::move(log));
@@ -221,8 +221,8 @@ TEST_F(MultiPaxosTest, CommitCommitsAndTrims) {
   EXPECT_TRUE(IsCommitted(*(*logs_[0])[index2]));
   EXPECT_TRUE(IsInProgress(*(*logs_[0])[index3]));
 
-  logs_[0]->Execute(stores_[0].get());
-  logs_[0]->Execute(stores_[0].get());
+  logs_[0]->Execute();
+  logs_[0]->Execute();
 
   auto r2 = SendCommit(stub.get(), ballot, index2, index2);
   EXPECT_EQ(OK, r2.type());
@@ -262,8 +262,8 @@ TEST_F(MultiPaxosTest, PrepareRespondsWithCorrectInstances) {
   auto r2 = SendCommit(stub.get(), ballot, index2, 0);
   EXPECT_EQ(OK, r2.type());
 
-  logs_[0]->Execute(stores_[0].get());
-  logs_[0]->Execute(stores_[0].get());
+  logs_[0]->Execute();
+  logs_[0]->Execute();
 
   auto r3 = SendPrepare(stub.get(), ballot);
   EXPECT_EQ(OK, r3.type());
@@ -487,7 +487,7 @@ TEST_F(MultiPaxosTest, RunCommitPhase) {
       if (index == 3 && peer == 2)
         continue;
       logs_[peer]->Append(MakeInstance(ballot, index, COMMITTED));
-      logs_[peer]->Execute(stores_[peer].get());
+      logs_[peer]->Execute();
     }
   }
 
@@ -504,7 +504,7 @@ TEST_F(MultiPaxosTest, RunCommitPhase) {
   gle = peers_[0]->RunCommitPhase(ballot, gle);
   EXPECT_EQ(2, gle);
 
-  logs_[2]->Execute(stores_[2].get());
+  logs_[2]->Execute();
 
   gle = peers_[0]->RunCommitPhase(ballot, gle);
   EXPECT_EQ(3, gle);

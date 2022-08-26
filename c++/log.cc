@@ -78,7 +78,7 @@ void Log::Commit(int64_t index) {
     cv_executable_.notify_one();
 }
 
-std::optional<log_result_t> Log::Execute(KVStore* kv) {
+std::optional<log_result_t> Log::Execute() {
   std::unique_lock lock(mu_);
   while (running_ && !IsExecutable())
     cv_executable_.wait(lock);
@@ -89,9 +89,7 @@ std::optional<log_result_t> Log::Execute(KVStore* kv) {
   auto it = log_.find(last_executed_ + 1);
   CHECK(it != log_.end());
   Instance* instance = &it->second;
-
-  CHECK_NOTNULL(kv);
-  KVResult result = kv->Execute(instance->command());
+  KVResult result = kv_store_->Execute(instance->command());
   instance->set_state(EXECUTED);
   ++last_executed_;
   return {{instance->client_id(), std::move(result)}};
