@@ -389,10 +389,12 @@ func (p *Multipaxos) Replay(ballot int64, replayLog map[int64]*pb.Instance) {
 	for index, instance := range replayLog {
 		result := p.RunAcceptPhase(ballot, index, instance.GetCommand(),
 			instance.GetClientId())
+		for result.Type == Retry {
+			result = p.RunAcceptPhase(ballot, index, instance.GetCommand(),
+				instance.GetClientId())
+		}
 		if result.Type == SomeElseLeader {
 			return
-		} else if result.Type == Retry {
-			continue
 		}
 	}
 	atomic.StoreInt32(&p.ready, 1)
