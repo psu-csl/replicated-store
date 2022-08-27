@@ -24,7 +24,7 @@ var (
 	stores  = make([]*store.MemKVStore, NumPeers)
 )
 
-func setupPeers() {
+func initPeers() {
 	for i:= int64(0); i < NumPeers; i++ {
 		configs[i] = config.DefaultConfig(i, NumPeers)
 		logs[i] = log.NewLog()
@@ -33,8 +33,8 @@ func setupPeers() {
 	}
 }
 
-func setupServer() {
-	setupPeers()
+func setup() {
+	initPeers()
 	peers[0].Start()
 	peers[1].Start()
 	peers[2].Start()
@@ -50,6 +50,12 @@ func setupOnePeer(id int64) {
 func tearDown() {
 	for _, peer := range peers {
 		peer.Stop()
+	}
+}
+
+func tearDownServers() {
+	for _, peer := range peers {
+		peer.StopRPCServer()
 	}
 }
 
@@ -79,7 +85,7 @@ func TestNextBallot(t *testing.T) {
 func TestRequestsWithLowerBallotIgnored(t *testing.T) {
 	setupOnePeer(0)
 	setupOnePeer(1)
-	peers[0].StartServer()
+	peers[0].StartRPCServer()
 	stub := makeStub(configs[0].Peers[0])
 
 	peers[0].NextBallot()
@@ -101,13 +107,13 @@ func TestRequestsWithLowerBallotIgnored(t *testing.T) {
 	assert.True(t, IsLeaderByPeer(peers[0]))
 	assert.Nil(t, logs[0].Find(index))
 
-	peers[0].Stop()
+	peers[0].StopRPCServer()
 }
 
 func TestRequestsWithHigherBallotChangeLeaderToFollower(t *testing.T) {
 	setupOnePeer(0)
 	setupOnePeer(1)
-	peers[0].StartServer()
+	peers[0].StartRPCServer()
 	stub := makeStub(configs[0].Peers[0])
 
 	peers[0].NextBallot()
@@ -133,12 +139,12 @@ func TestRequestsWithHigherBallotChangeLeaderToFollower(t *testing.T) {
 	assert.False(t, IsLeaderByPeer(peers[0]))
 	assert.EqualValues(t, 1, LeaderByPeer(peers[0]))
 
-	peers[0].Stop()
+	peers[0].StopRPCServer()
 }
 
 func TestNextBallotAfterCommit(t *testing.T) {
-	setupPeers()
-	peers[0].StartServer()
+	initPeers()
+	peers[0].StartRPCServer()
 	stub := makeStub(configs[0].Peers[0])
 	ballot := peers[0].Id()
 
@@ -153,12 +159,12 @@ func TestNextBallotAfterCommit(t *testing.T) {
 	ballot += RoundIncrement
 	assert.EqualValues(t, ballot, peers[0].NextBallot())
 
-	peers[0].Stop()
+	peers[0].StopRPCServer()
 }
 
 func TestCommitCommitsAndTrims(t *testing.T) {
 	setupOnePeer(0)
-	peers[0].StartServer()
+	peers[0].StartRPCServer()
 	stub := makeStub(configs[0].Peers[0])
 
 	ballot := peers[0].NextBallot()
@@ -186,12 +192,12 @@ func TestCommitCommitsAndTrims(t *testing.T) {
 	assert.Nil(t, logs[0].Find(index2))
 	assert.True(t, log.IsInProgress(logs[0].Find(index3)))
 
-	peers[0].Stop()
+	peers[0].StopRPCServer()
 }
 
 func TestPrepareRespondsWithCorrectInstances(t *testing.T) {
 	setupOnePeer(0)
-	peers[0].StartServer()
+	peers[0].StartRPCServer()
 	stub := makeStub(configs[0].Peers[0])
 
 	ballot := peers[0].NextBallot()
@@ -232,12 +238,12 @@ func TestPrepareRespondsWithCorrectInstances(t *testing.T) {
 	assert.EqualValues(t, 1, len(r5.GetLogs()))
 	assert.True(t, log.IsEqualInstance(instance3, r5.GetLogs()[0]))
 
-	peers[0].Stop()
+	peers[0].StopRPCServer()
 }
 
 func TestAcceptAppendsToLog(t *testing.T) {
 	setupOnePeer(0)
-	peers[0].StartServer()
+	peers[0].StartRPCServer()
 	stub := makeStub(configs[0].Peers[0])
 
 	ballot := peers[0].NextBallot()
@@ -256,14 +262,14 @@ func TestAcceptAppendsToLog(t *testing.T) {
 	assert.True(t, log.IsEqualInstance(instance1, logs[0].Find(index1)))
 	assert.True(t, log.IsEqualInstance(instance2, logs[0].Find(index2)))
 
-	peers[0].Stop()
+	peers[0].StopRPCServer()
 }
 
 func TestPrepareResponseWithHigherBallotChangesLeaderToFollower(t *testing.T) {
-	setupPeers()
-	defer tearDown()
+	initPeers()
+	defer tearDownServers()
 	for _, peer := range peers {
-		peer.StartServer()
+		peer.StartRPCServer()
 		peer.Connect()
 	}
 	stub1 := makeStub(configs[0].Peers[1])
@@ -283,10 +289,10 @@ func TestPrepareResponseWithHigherBallotChangesLeaderToFollower(t *testing.T) {
 }
 
 func TestAcceptResponseWithHigherBallotChangesLeaderToFollower(t *testing.T) {
-	setupPeers()
-	defer tearDown()
+	initPeers()
+	defer tearDownServers()
 	for _, peer := range peers {
-		peer.StartServer()
+		peer.StartRPCServer()
 		peer.Connect()
 	}
 	stub1 := makeStub(configs[0].Peers[1])
@@ -308,10 +314,10 @@ func TestAcceptResponseWithHigherBallotChangesLeaderToFollower(t *testing.T) {
 }
 
 func TestCommitResponseWithHigherBallotChangesLeaderToFollower(t *testing.T) {
-	setupPeers()
-	defer tearDown()
+	initPeers()
+	defer tearDownServers()
 	for _, peer := range peers {
-		peer.StartServer()
+		peer.StartRPCServer()
 	}
 	peers[0].Connect()
 	stub1 := makeStub(configs[0].Peers[1])
@@ -331,9 +337,9 @@ func TestCommitResponseWithHigherBallotChangesLeaderToFollower(t *testing.T) {
 }
 
 func TestRunPreparePhase(t *testing.T) {
-	setupPeers()
-	peers[0].StartServer()
-	defer peers[0].Stop()
+	initPeers()
+	peers[0].StartRPCServer()
+	defer peers[0].StopRPCServer()
 
 	const (
 		index1 int64 = iota + 1
@@ -385,8 +391,8 @@ func TestRunPreparePhase(t *testing.T) {
 	ballot := peers[0].NextBallot()
 	assert.Nil(t, peers[0].RunPreparePhase(ballot))
 
-	peers[1].StartServer()
-	defer peers[1].Stop()
+	peers[1].StartRPCServer()
+	defer peers[1].StopRPCServer()
 	peers[0].Connect()
 
 	logMap := peers[0].RunPreparePhase(ballot)
@@ -402,11 +408,11 @@ func TestRunPreparePhase(t *testing.T) {
 }
 
 func TestReplay(t *testing.T) {
-	setupPeers()
-	peers[0].StartServer()
-	peers[1].StartServer()
-	defer peers[0].Stop()
-	defer peers[1].Stop()
+	initPeers()
+	peers[0].StartRPCServer()
+	peers[1].StartRPCServer()
+	defer peers[0].StopRPCServer()
+	defer peers[1].StopRPCServer()
 	peers[0].Connect()
 
 	const (
@@ -458,9 +464,9 @@ func TestReplay(t *testing.T) {
 }
 
 func TestRunAcceptPhase(t *testing.T) {
-	setupPeers()
-	peers[0].StartServer()
-	defer peers[0].Stop()
+	initPeers()
+	peers[0].StartRPCServer()
+	defer peers[0].StopRPCServer()
 
 	ballot := peers[0].NextBallot()
 	index1 := logs[0].AdvanceLastIndex()
@@ -474,8 +480,8 @@ func TestRunAcceptPhase(t *testing.T) {
 	assert.Nil(t, logs[1].Find(index1))
 	assert.Nil(t, logs[2].Find(index1))
 
-	peers[1].StartServer()
-	defer peers[1].Stop()
+	peers[1].StartRPCServer()
+	defer peers[1].StopRPCServer()
 	peers[0].Connect()
 
 	r2 := peers[0].RunAcceptPhase(ballot, index1, &pb.Command{Type: pb.CommandType_PUT}, 0)
@@ -488,10 +494,10 @@ func TestRunAcceptPhase(t *testing.T) {
 }
 
 func TestRunCommitPhase(t *testing.T) {
-	setupPeers()
-	defer tearDown()
-	peers[0].StartServer()
-	peers[1].StartServer()
+	initPeers()
+	defer tearDownServers()
+	peers[0].StartRPCServer()
+	peers[1].StartRPCServer()
 
 	numInstances := int64(3)
 	ballot := peers[0].NextBallot()
@@ -512,7 +518,7 @@ func TestRunCommitPhase(t *testing.T) {
 	gle = peers[0].RunCommitPhase(ballot, gle)
 	assert.EqualValues(t, 0, gle)
 
-	peers[2].StartServer()
+	peers[2].StartRPCServer()
 	logs[2].Append(util.MakeInstance(ballot, 3))
 	time.Sleep(2 * time.Second)
 
@@ -526,7 +532,7 @@ func TestRunCommitPhase(t *testing.T) {
 }
 
 func TestReplicate(t *testing.T) {
-	setupPeers()
+	initPeers()
 	defer tearDown()
 	peers[0].Start()
 
@@ -537,8 +543,7 @@ func TestReplicate(t *testing.T) {
 	peers[1].Start()
 	peers[2].Start()
 
-	commit3x := 3 * configs[0].CommitInterval
-	time.Sleep(time.Duration(commit3x) * time.Millisecond)
+	time.Sleep(2 * time.Second)
 
 	leader := oneLeader()
 	assert.NotEqualValues(t, NoLeader, leader)
@@ -546,18 +551,18 @@ func TestReplicate(t *testing.T) {
 	r2 := peers[leader].Replicate(&pb.Command{}, 0)
 	assert.Equal(t, Ok, r2.Type)
 
-	nonLeader := (leader + 1) % NumPeers
-	r3 := peers[nonLeader].Replicate(&pb.Command{}, 0)
+	notLeader := (leader + 1) % NumPeers
+	r3 := peers[notLeader].Replicate(&pb.Command{}, 0)
 	assert.EqualValues(t, SomeElseLeader, r3.Type)
 	assert.EqualValues(t, leader, r3.Leader)
 }
 
 func TestReplicateSomeOneElseLeader(t *testing.T) {
-	setupPeers()
-	peers[0].StartServer()
-	peers[1].StartServer()
-	defer peers[0].Stop()
-	defer peers[1].Stop()
+	initPeers()
+	peers[0].StartRPCServer()
+	peers[1].StartRPCServer()
+	defer peers[0].StopRPCServer()
+	defer peers[1].StopRPCServer()
 	stub := makeStub(configs[0].Peers[0])
 
 	ballot := peers[1].NextBallot()
@@ -571,11 +576,11 @@ func TestReplicateSomeOneElseLeader(t *testing.T) {
 }
 
 func TestProposeCommand(t *testing.T) {
-	setupServer()
+	setup()
 	defer tearDown()
 
-	time.Sleep(time.Duration(3 * configs[0].CommitInterval) * time.Millisecond)
-	for oneLeader() != NoLeader {
+	time.Sleep(time.Duration(4 * configs[0].CommitInterval) * time.Millisecond)
+	for oneLeader() == NoLeader {
 		time.Sleep(100 * time.Millisecond)
 	}
 
@@ -594,7 +599,7 @@ func TestProposeCommand(t *testing.T) {
 		}
 	}
 	assert.EqualValues(t, 1, numOk)
-	assert.EqualValues(t, SomeElseLeader, numSomeoneElseLeader)
+	assert.EqualValues(t, 2, numSomeoneElseLeader)
 
 	for _, log := range logs {
 		assert.EqualValues(t, 2, log.AdvanceLastIndex())
@@ -602,11 +607,11 @@ func TestProposeCommand(t *testing.T) {
 }
 
 func TestTrimAfterExecution(t *testing.T) {
-	setupServer()
+	setup()
 	defer tearDown()
 
 	time.Sleep(time.Duration(3 * configs[0].CommitInterval) * time.Millisecond)
-	for oneLeader() != NoLeader {
+	for oneLeader() == NoLeader {
 		time.Sleep(100 * time.Millisecond)
 	}
 
@@ -643,9 +648,9 @@ func TestTrimAfterExecution(t *testing.T) {
 }
 
 func TestProposeWithFailPeer(t *testing.T) {
-	setupPeers()
-	peers[0].StartServer()
-	peers[1].StartServer()
+	initPeers()
+	peers[0].StartRPCServer()
+	peers[1].StartRPCServer()
 	peers[0].Connect()
 
 	ballot0 := peers[0].NextBallot()
@@ -657,8 +662,8 @@ func TestProposeWithFailPeer(t *testing.T) {
 	assert.EqualValues(t, pb.CommandType_PUT, logs[1].Find(1).GetCommand().
 		GetType())
 
-	peers[0].Stop()
-	peers[2].StartServer()
+	peers[0].StopRPCServer()
+	peers[2].StartRPCServer()
 	time.Sleep(2 * time.Second)
 
 	ballot2 := peers[2].NextBallot()
