@@ -36,7 +36,7 @@
 *** handle errors in asio calls
 
 ** C++
-
+*** try other sanitizers (msan, asan) as well
 ** All
 *** reorder the code in tests/doc/code to match the protocol
     - currently things are mixed up with commit stuff followed by prepare and
