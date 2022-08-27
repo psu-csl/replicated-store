@@ -270,6 +270,8 @@ func TestPrepareResponseWithHigherBallotChangesLeaderToFollower(t *testing.T) {
 	defer tearDownServers()
 	for _, peer := range peers {
 		peer.StartRPCServer()
+	}
+	for _, peer := range peers {
 		peer.Connect()
 	}
 	stub1 := makeStub(configs[0].Peers[1])
@@ -293,6 +295,8 @@ func TestAcceptResponseWithHigherBallotChangesLeaderToFollower(t *testing.T) {
 	defer tearDownServers()
 	for _, peer := range peers {
 		peer.StartRPCServer()
+	}
+	for _, peer := range peers {
 		peer.Connect()
 	}
 	stub1 := makeStub(configs[0].Peers[1])
@@ -612,7 +616,7 @@ func TestTrimAfterExecution(t *testing.T) {
 
 	time.Sleep(time.Duration(3 * configs[0].CommitInterval) * time.Millisecond)
 	for oneLeader() == NoLeader {
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(300 * time.Millisecond)
 	}
 
 	leaderId := int64(0)
