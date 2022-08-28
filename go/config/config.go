@@ -7,17 +7,12 @@ type Config struct {
 	Peers          []string
 	CommitInterval int64
 	CommitDelta    int64
-	ClientPorts    []string
 }
 
 func DefaultConfig(id int64, n int) Config {
 	peers := make([]string, n)
 	for i := 0; i < n; i++ {
-		peers[i] = "127.0.0.1:" + strconv.Itoa(3000 + i)
-	}
-	clientPorts := make([]string, n)
-	for i := 0; i < n; i++ {
-		clientPorts[i] = "127.0.0.1:" + strconv.Itoa(8000 + i)
+		peers[i] = "127.0.0.1:" + strconv.Itoa(10000 + i * 1000)
 	}
 
 	config := Config{
@@ -25,7 +20,6 @@ func DefaultConfig(id int64, n int) Config {
 		CommitInterval: 300,
 		CommitDelta:    10,
 		Peers:          peers,
-		ClientPorts:    clientPorts,
 	}
 	return config
 }
