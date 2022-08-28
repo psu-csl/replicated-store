@@ -48,7 +48,6 @@ type Multipaxos struct {
 	prepareThreadRunning uint32
 	commitThreadRunning  uint32
 
-	addrs []string
 	pb.UnimplementedMultiPaxosRPCServer
 }
 
@@ -66,11 +65,11 @@ func NewMultipaxos(config config.Config, log *consensusLog.Log) *Multipaxos {
 		prepareThreadRunning: 0,
 		commitThreadRunning:  0,
 		server:               nil,
-		addrs:                config.Peers,
 	}
 	paxos.rpcServerRunningCv = sync.NewCond(&paxos.mu)
 	paxos.cvFollower = sync.NewCond(&paxos.mu)
 	paxos.cvLeader = sync.NewCond(&paxos.mu)
+	rand.Seed(paxos.id)
 
 	var opts []grpc.DialOption
 	opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -175,7 +174,7 @@ func (p *Multipaxos) PrepareThread() {
 		p.waitUntilFollower()
 		for p.prepareThreadRunning == 1 {
 			p.sleepForRandomInterval()
-			if time.Now().UnixNano()/1e6-p.lastCommit < p.CommitInterval {
+			if p.receivedCommit() {
 				continue
 			}
 			ballot := p.NextBallot()
@@ -409,20 +408,17 @@ func (p *Multipaxos) Accept(ctx context.Context,
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
+	response := &pb.AcceptResponse{}
 	if request.GetInstance().GetBallot() >= p.ballot {
 		p.SetBallot(request.GetInstance().GetBallot())
-		//instance := &pb.Instance{
-		//	Ballot:   request.GetInstance().GetBallot(),
-		//	Index:    request.GetInstance().GetIndex(),
-		//	ClientId: request.GetInstance().GetClientId(),
-		//	State:    pb.InstanceState_INPROGRESS,
-		//	Command:  request.GetInstance().GetCommand(),
-		//}
 		p.log.Append(request.GetInstance())
-		return &pb.AcceptResponse{Type: pb.ResponseType_OK, Ballot: p.ballot}, nil
+		response.Type = pb.ResponseType_OK
+		return response, nil
+	} else {
+		response.Ballot = p.ballot
+		response.Type = pb.ResponseType_REJECT
+		return response, nil
 	}
-	return &pb.AcceptResponse{Type: pb.ResponseType_REJECT,
-		Ballot: p.ballot}, nil
 }
 
 func (p *Multipaxos) Commit(ctx context.Context,
@@ -506,10 +502,14 @@ func (p *Multipaxos) sleepForRandomInterval() {
 	time.Sleep(time.Duration(sleepTime) * time.Millisecond)
 }
 
-func (p *Multipaxos) Connect() {
+func (p *Multipaxos) receivedCommit() bool {
+	return time.Now().UnixNano() /1e6 - p.lastCommit < p.CommitInterval
+}
+
+func (p *Multipaxos) Connect(addrs []string) {
 	var opts []grpc.DialOption
 	opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	for i, addr := range p.addrs {
+	for i, addr := range addrs {
 		conn, err := grpc.Dial(addr, opts...)
 		if err != nil {
 			panic("dial error")
