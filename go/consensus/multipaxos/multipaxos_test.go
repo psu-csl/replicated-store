@@ -27,8 +27,8 @@ var (
 func initPeers() {
 	for i:= int64(0); i < NumPeers; i++ {
 		configs[i] = config.DefaultConfig(i, NumPeers)
-		logs[i] = log.NewLog()
 		stores[i] = store.NewMemKVStore()
+		logs[i] = log.NewLog(stores[i])
 		peers[i] = NewMultipaxos(configs[i], logs[i])
 	}
 }
@@ -42,8 +42,8 @@ func setup() {
 
 func setupOnePeer(id int64) {
 	configs[id] = config.DefaultConfig(id, NumPeers)
-	logs[id] = log.NewLog()
 	stores[id] = store.NewMemKVStore()
+	logs[id] = log.NewLog(stores[id])
 	peers[id] = NewMultipaxos(configs[id], logs[id])
 }
 
@@ -230,8 +230,8 @@ func TestCommitCommitsAndTrims(t *testing.T) {
 	assert.True(t, log.IsCommitted(logs[0].Find(index2)))
 	assert.True(t, log.IsInProgress(logs[0].Find(index3)))
 
-	logs[0].Execute(stores[0])
-	logs[0].Execute(stores[0])
+	logs[0].Execute()
+	logs[0].Execute()
 
 	r2 := sendCommit(stub, ballot, index2, index2)
 	assert.EqualValues(t, pb.ResponseType_OK, r2.GetType())
@@ -271,8 +271,8 @@ func TestPrepareRespondsWithCorrectInstances(t *testing.T) {
 	r2 := sendCommit(stub, ballot, index2, 0)
 	assert.EqualValues(t, pb.ResponseType_OK, r2.GetType())
 
-	logs[0].Execute(stores[0])
-	logs[0].Execute(stores[0])
+	logs[0].Execute()
+	logs[0].Execute()
 
 	r3 := sendPrepare(stub, ballot)
 	assert.EqualValues(t, pb.ResponseType_OK, r3.GetType())
@@ -512,7 +512,7 @@ func TestRunCommitPhase(t *testing.T) {
 			instance := util.MakeInstanceWithState(ballot, index,
 				pb.InstanceState_COMMITTED)
 			log.Append(instance)
-			log.Execute(stores[peerId])
+			log.Execute()
 		}
 	}
 
@@ -527,7 +527,7 @@ func TestRunCommitPhase(t *testing.T) {
 	gle = peers[0].RunCommitPhase(ballot, gle)
 	assert.EqualValues(t, 2, gle)
 
-	logs[2].Execute(stores[2])
+	logs[2].Execute()
 
 	gle = peers[0].RunCommitPhase(ballot, gle)
 	assert.EqualValues(t, numInstances, gle)
@@ -687,11 +687,11 @@ func TestTrimAfterExecution(t *testing.T) {
 
 	gle := logs[leaderId].AdvanceLastIndex() - 1
 	var wg sync.WaitGroup
-	for i, l := range logs {
+	for _, l := range logs {
 		wg.Add(1)
 		go func(log *log.Log) {
 			for index := int64(0); index < gle; index++ {
-				log.Execute(stores[i])
+				log.Execute()
 			}
 			wg.Done()
 		}(l)

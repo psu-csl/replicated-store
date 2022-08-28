@@ -17,8 +17,8 @@ var (
 )
 
 func setup() {
-	log1 = NewLog()
 	store1 = store.NewMemKVStore()
+	log1 = NewLog(store1)
 }
 
 func TestConstructor(t *testing.T) {
@@ -226,7 +226,7 @@ func TestAppendCommitExecute(t *testing.T) {
 
 	go func(wg *sync.WaitGroup) {
 		for atomic.LoadInt64(&done) != 1 {
-			log1.Execute(store1)
+			log1.Execute()
 		}
 		wg.Done()
 	}(&wg)
@@ -253,9 +253,9 @@ func TestAppendCommitExecuteOutOfOrder(t *testing.T) {
 
 	wg.Add(1)
 	go func() {
-		log1.Execute(store1)
-		log1.Execute(store1)
-		log1.Execute(store1)
+		log1.Execute()
+		log1.Execute()
+		log1.Execute()
 		wg.Done()
 	}()
 
@@ -372,9 +372,9 @@ func TestAppendCommitUntilExecute(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
-		log1.Execute(store1)
-		log1.Execute(store1)
-		log1.Execute(store1)
+		log1.Execute()
+		log1.Execute()
+		log1.Execute()
 		wg.Done()
 	}()
 
@@ -403,9 +403,9 @@ func TestAppendCommitUntilExecuteTrimUntil(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
-		log1.Execute(store1)
-		log1.Execute(store1)
-		log1.Execute(store1)
+		log1.Execute()
+		log1.Execute()
+		log1.Execute()
 		wg.Done()
 	}()
 
@@ -436,8 +436,8 @@ func TestAppendAtTrimmedIndex(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
-		log1.Execute(store1)
-		log1.Execute(store1)
+		log1.Execute()
+		log1.Execute()
 		wg.Done()
 	}()
 
@@ -490,8 +490,8 @@ func TestLog_InstancesSinceGlobalLastExecuted(t *testing.T) {
 
 	wg.Add(1)
 	go func() {
-		log1.Execute(store1)
-		log1.Execute(store1)
+		log1.Execute()
+		log1.Execute()
 		wg.Done()
 	}()
 	wg.Wait()
@@ -506,7 +506,7 @@ func TestCallingStopUnblocksExecutor(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
-		clientId, result := log1.Execute(store1)
+		clientId, result := log1.Execute()
 		assert.EqualValues(t, -1, clientId)
 		assert.Nil(t, result)
 		wg.Done()

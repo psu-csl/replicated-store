@@ -63,6 +63,7 @@ func Insert(insertLog map[int64]*pb.Instance, instance *pb.Instance) bool {
 
 type Log struct {
 	running            bool
+	store              store.KVStore
 	log                map[int64]*pb.Instance
 	lastIndex          int64
 	lastExecuted       int64
@@ -72,9 +73,10 @@ type Log struct {
 	cvCommitable       *sync.Cond
 }
 
-func NewLog() *Log {
+func NewLog(s store.KVStore) *Log {
 	l := Log{
 		running:            true,
+		store:              s,
 		log:                make(map[int64]*pb.Instance),
 		lastIndex:          0,
 		lastExecuted:       0,
@@ -162,7 +164,7 @@ func (l *Log) Commit(index int64) {
 	}
 }
 
-func (l *Log) Execute(kv *store.MemKVStore) (int64, *store.KVResult) {
+func (l *Log) Execute() (int64, *store.KVResult) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -178,10 +180,7 @@ func (l *Log) Execute(kv *store.MemKVStore) (int64, *store.KVResult) {
 	if !ok {
 		log.Panicf("Instance at Index %v empty\n", l.lastExecuted+ 1)
 	}
-	if kv == nil {
-		panic("kv is a nil pointer")
-	}
-	result := kv.Execute(inst.GetCommand())
+	result := l.store.Execute(inst.GetCommand())
 	inst.State = pb.InstanceState_EXECUTED
 	l.lastExecuted += 1
 	return inst.ClientId, &result

@@ -27,9 +27,9 @@ func NewReplicant(config config.Config) *Replicant {
 		id:            config.Id,
 		numPeers:      int64(len(config.Peers)),
 		store:         store.NewMemKVStore(),
-		log:           consensusLog.NewLog(),
 		ipPort:        config.Peers[config.Id],
 	}
+	r.log = consensusLog.NewLog(r.store)
 	r.multipaxos = multipaxos.NewMultipaxos(config, r.log)
 	r.clientManager = NewClientManager(r.id, r.numPeers, r.multipaxos)
 
@@ -95,7 +95,7 @@ func (r *Replicant) StopExecutorThread() {
 
 func (r *Replicant) executorThread() {
 	for {
-		clientId, result := r.log.Execute(r.store)
+		clientId, result := r.log.Execute()
 		if result == nil {
 			break
 		}
