@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"github.com/psu-csl/replicated-store/go/config"
 	"github.com/psu-csl/replicated-store/go/replicant"
 	"os"
@@ -9,7 +10,11 @@ import (
 )
 
 func main() {
-	config := config.DefaultConfig(0, 1)
+	const numPeers = 3
+	id := flag.Int64("id", 0, "peer id")
+	flag.Parse()
+
+	config := config.DefaultConfig(*id, numPeers)
 	replicant := replicant.NewReplicant(config)
 
 	signalChan := make(chan os.Signal, 1)
