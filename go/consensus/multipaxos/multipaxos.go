@@ -170,9 +170,9 @@ func (p *Multipaxos) Replicate(command *pb.Command, clientId int64) Result {
 }
 
 func (p *Multipaxos) PrepareThread() {
-	for p.prepareThreadRunning == 1 {
+	for atomic.LoadUint32(&p.prepareThreadRunning) == 1 {
 		p.waitUntilFollower()
-		for p.prepareThreadRunning == 1 {
+		for atomic.LoadUint32(&p.prepareThreadRunning) == 1 {
 			p.sleepForRandomInterval()
 			if p.receivedCommit() {
 				continue
@@ -186,11 +186,11 @@ func (p *Multipaxos) PrepareThread() {
 }
 
 func (p *Multipaxos) CommitThread() {
-	for p.commitThreadRunning == 1 {
+	for atomic.LoadUint32(&p.commitThreadRunning) == 1 {
 		p.waitUntilLeader()
 
 		gle := p.log.GlobalLastExecuted()
-		for p.commitThreadRunning == 1 {
+		for atomic.LoadUint32(&p.commitThreadRunning) == 1 {
 			ballot, _ := p.Ballot()
 			if !IsLeader(ballot, p.id) {
 				break
@@ -479,7 +479,7 @@ func (p *Multipaxos) Ballot() (int64, int32) {
 func (p *Multipaxos) waitUntilLeader() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	for p.commitThreadRunning == 1 && !IsLeader(p.ballot, p.id) {
+	for atomic.LoadUint32(&p.commitThreadRunning) == 1 && !IsLeader(p.ballot, p.id) {
 		p.cvLeader.Wait()
 	}
 }
@@ -487,7 +487,7 @@ func (p *Multipaxos) waitUntilLeader() {
 func (p *Multipaxos) waitUntilFollower() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	for p.prepareThreadRunning == 1 && IsLeader(p.ballot, p.id) {
+	for atomic.LoadUint32(&p.prepareThreadRunning) == 1 && IsLeader(p.ballot, p.id) {
 		p.cvFollower.Wait()
 	}
 }
