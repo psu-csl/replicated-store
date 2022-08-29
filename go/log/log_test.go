@@ -471,7 +471,7 @@ func TestLog_InstancesSinceGlobalLastExecuted(t *testing.T) {
 
 	var wg sync.WaitGroup
 
-	expect := make([]*pb.Instance, 0)
+	expect := make([]*pb.Instance, 0, 3)
 	assert.Equal(t, expect, log1.InstancesSinceGlobalLastExecuted())
 
 	expect = append(expect, util.MakeInstance(ballot, index1))
@@ -482,11 +482,15 @@ func TestLog_InstancesSinceGlobalLastExecuted(t *testing.T) {
 	log1.Append(util.MakeInstance(ballot, index3))
 
 	instances := log1.InstancesSinceGlobalLastExecuted()
-	assert.Equal(t, expect, instances)
+	for index, instance := range expect {
+		assert.True(t, IsEqualInstance(instance, instances[index]))
+	}
 
 	var index int64 = 2
 	log1.CommitUntil(index, ballot)
-	assert.Equal(t, expect, instances)
+	for index, instance := range expect {
+		assert.True(t, IsEqualInstance(instance, instances[index]))
+	}
 
 	wg.Add(1)
 	go func() {
@@ -498,7 +502,10 @@ func TestLog_InstancesSinceGlobalLastExecuted(t *testing.T) {
 
 	log1.TrimUntil(index)
 	expect = expect[index:]
-	assert.Equal(t, expect, log1.InstancesSinceGlobalLastExecuted())
+	instances = log1.InstancesSinceGlobalLastExecuted()
+	for index, instance := range expect {
+		assert.True(t, IsEqualInstance(instance, instances[index]))
+	}
 }
 
 func TestCallingStopUnblocksExecutor(t *testing.T) {
