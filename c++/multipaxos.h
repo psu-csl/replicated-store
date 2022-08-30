@@ -73,6 +73,7 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
   MultiPaxos& operator=(MultiPaxos&& mp) = delete;
 
   int64_t NextBallot() {
+    std::scoped_lock lock(mu_);
     int64_t next_ballot = ballot_;
     next_ballot += kRoundIncrement;
     next_ballot = (next_ballot & ~kIdBits) | id_;
@@ -172,7 +173,7 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
                       multipaxos::CommitResponse*) override;
 
   std::atomic<bool> ready_;
-  std::atomic<int64_t> ballot_;
+  int64_t ballot_;
   Log* log_;
   int64_t id_;
   long commit_interval_;
