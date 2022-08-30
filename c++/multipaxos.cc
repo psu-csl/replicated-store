@@ -140,9 +140,13 @@ void MultiPaxos::PrepareThread() {
       SleepForRandomInterval();
       if (ReceivedCommit())
         continue;
-      auto ballot = NextBallot();
-      Replay(ballot, RunPreparePhase(ballot));
-      break;
+      auto next_ballot = NextBallot();
+      auto log = RunPreparePhase(next_ballot);
+      if (log) {
+        BecomeLeader(next_ballot);
+        Replay(next_ballot, *log);
+        break;
+      }
     }
   }
 }
@@ -184,8 +188,8 @@ std::optional<log_map_t> MultiPaxos::RunPreparePhase(int64_t ballot) {
               Insert(&state->log_, std::move(response.instances(i)));
           } else {
             std::scoped_lock lock(mu_);
-            if (response.ballot() >= ballot_) {
-              SetBallot(response.ballot());
+            if (response.ballot() > ballot_) {
+              BecomeFollower(response.ballot());
               state->leader_ = Leader(ballot_);
             }
           }
@@ -236,8 +240,8 @@ Result MultiPaxos::RunAcceptPhase(int64_t ballot,
             ++state->num_oks_;
           } else {
             std::scoped_lock lock(mu_);
-            if (response.ballot() >= ballot_) {
-              SetBallot(response.ballot());
+            if (response.ballot() > ballot_) {
+              BecomeFollower(response.ballot());
               state->leader_ = Leader(ballot_);
             }
           }
@@ -287,8 +291,8 @@ int64_t MultiPaxos::RunCommitPhase(int64_t ballot,
               state->min_last_executed_ = response.last_executed();
           } else {
             std::scoped_lock lock(mu_);
-            if (response.ballot() >= ballot_) {
-              SetBallot(response.ballot());
+            if (response.ballot() > ballot_) {
+              BecomeFollower(response.ballot());
               state->leader_ = Leader(ballot_);
             }
           }
@@ -307,10 +311,8 @@ int64_t MultiPaxos::RunCommitPhase(int64_t ballot,
   return global_last_executed;
 }
 
-void MultiPaxos::Replay(int64_t ballot, std::optional<log_map_t> const& log) {
-  if (!log)
-    return;
-  for (auto const& [index, instance] : *log) {
+void MultiPaxos::Replay(int64_t ballot, log_map_t const& log) {
+  for (auto const& [index, instance] : log) {
     Result r = RunAcceptPhase(ballot, instance.index(), instance.command(),
                               instance.client_id());
     while (r.type_ == ResultType::kRetry)
@@ -326,10 +328,10 @@ void MultiPaxos::Replay(int64_t ballot, std::optional<log_map_t> const& log) {
 Status MultiPaxos::Prepare(ServerContext*,
                            const PrepareRequest* request,
                            PrepareResponse* response) {
-  DLOG(INFO) << id_ << " received prepare rpc from " << request->sender();
   std::scoped_lock lock(mu_);
-  if (request->ballot() >= ballot_) {
-    SetBallot(request->ballot());
+  DLOG(INFO) << id_ << " <--prepare-- " << request->sender();
+  if (request->ballot() > ballot_) {
+    BecomeFollower(request->ballot());
     for (auto& i : log_->InstancesSinceGlobalLastExecuted())
       *response->add_instances() = std::move(i);
     response->set_type(OK);
@@ -343,10 +345,10 @@ Status MultiPaxos::Prepare(ServerContext*,
 Status MultiPaxos::Accept(ServerContext*,
                           const AcceptRequest* request,
                           AcceptResponse* response) {
-  DLOG(INFO) << id_ << " received accept rpc from " << request->sender();
   std::scoped_lock lock(mu_);
+  DLOG(INFO) << id_ << " <--accept--- " << request->sender();
   if (request->instance().ballot() >= ballot_) {
-    SetBallot(request->instance().ballot());
+    BecomeFollower(request->instance().ballot());
     log_->Append(request->instance());
     response->set_type(OK);
   } else {
@@ -359,11 +361,11 @@ Status MultiPaxos::Accept(ServerContext*,
 Status MultiPaxos::Commit(ServerContext*,
                           const CommitRequest* request,
                           CommitResponse* response) {
-  DLOG(INFO) << id_ << " received commit rpc from " << request->sender();
   std::scoped_lock lock(mu_);
+  DLOG(INFO) << id_ << " <--commit--- " << request->sender();
   if (request->ballot() >= ballot_) {
     last_commit_ = Now();
-    SetBallot(request->ballot());
+    BecomeFollower(request->ballot());
     log_->CommitUntil(request->last_executed(), request->ballot());
     log_->TrimUntil(request->global_last_executed());
     response->set_last_executed(log_->LastExecuted());

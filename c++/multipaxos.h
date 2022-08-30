@@ -73,27 +73,31 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
   MultiPaxos& operator=(MultiPaxos&& mp) = delete;
 
   int64_t NextBallot() {
-    std::scoped_lock lock(mu_);
-    auto old_ballot = ballot_;
-    ballot_ += kRoundIncrement;
-    ballot_ = (ballot_ & ~kIdBits) | id_;
-    ready_ = false;
-    DLOG(INFO) << id_ << " became a leader: ballot: " << old_ballot << " -> "
-               << ballot_;
-    cv_leader_.notify_one();
-    return ballot_;
+    int64_t next_ballot = ballot_;
+    next_ballot += kRoundIncrement;
+    next_ballot = (next_ballot & ~kIdBits) | id_;
+    return next_ballot;
   }
 
-  void SetBallot(int64_t ballot) {
-    auto old_leader = Leader(ballot_);
-    auto new_leader = Leader(ballot);
-    if (old_leader != new_leader &&
-        (old_leader == id_ || old_leader == kMaxNumPeers)) {
+  void BecomeLeader(int64_t next_ballot) {
+    std::scoped_lock lock(mu_);
+    DLOG(INFO) << id_ << " became a leader: ballot: " << ballot_ << " -> "
+               << next_ballot;
+    ballot_ = next_ballot;
+    ready_ = false;
+    cv_leader_.notify_one();
+  }
+
+  void BecomeFollower(int64_t next_ballot) {
+    auto prev_leader = Leader(ballot_);
+    auto next_leader = Leader(next_ballot);
+    if (next_leader != id_ &&
+        (prev_leader == id_ || prev_leader == kMaxNumPeers)) {
       DLOG(INFO) << id_ << " became a follower: ballot: " << ballot_ << " -> "
-                 << ballot;
+                 << next_ballot;
       cv_follower_.notify_one();
     }
-    ballot_ = ballot;
+    ballot_ = next_ballot;
   }
 
   int64_t Id() const { return id_; }
@@ -152,7 +156,7 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
                         int64_t client_id);
   int64_t RunCommitPhase(int64_t ballot, int64_t global_last_executed);
 
-  void Replay(int64_t ballot, std::optional<log_map_t> const& log);
+  void Replay(int64_t ballot, log_map_t const& log);
 
  private:
   grpc::Status Prepare(grpc::ServerContext*,
@@ -168,7 +172,7 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
                       multipaxos::CommitResponse*) override;
 
   std::atomic<bool> ready_;
-  int64_t ballot_;
+  std::atomic<int64_t> ballot_;
   Log* log_;
   int64_t id_;
   long commit_interval_;
