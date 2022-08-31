@@ -130,7 +130,7 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
   }
 
   bool ReceivedCommit() const {
-    return Now() - last_commit_ < commit_interval_;
+    return Now() - last_commit_ < 1.5 * commit_interval_;
   }
 
   void Start();
