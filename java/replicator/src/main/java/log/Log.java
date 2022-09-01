@@ -186,8 +186,6 @@ public class Log {
   }
 
   public void trimUntil(long leaderGlobalLastExecuted) {
-    assert (leaderGlobalLastExecuted >= globalLastExecuted) : "invalid leader_global_last_executed";
-
     mu.lock();
     try {
       while (globalLastExecuted < leaderGlobalLastExecuted) {
