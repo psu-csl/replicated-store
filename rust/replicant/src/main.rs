@@ -1,5 +1,10 @@
 mod kvstore;
 
+use kvstore::memkvstore::MemKVStore;
+use kvstore::KVStore;
+
 fn main() {
-    println!("Hello, world!");
+    let store = MemKVStore::new();
+
+    store.get("foo");
 }

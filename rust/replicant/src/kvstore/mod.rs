@@ -10,10 +10,6 @@ pub enum Command {
 }
 
 pub trait KVStore {
-    fn new() -> Self
-    where
-        Self: Sized;
-
     fn get(&self, key: &str) -> Option<String>;
 
     fn put(&mut self, key: &str, value: &str) -> bool;

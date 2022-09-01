@@ -5,13 +5,15 @@ pub struct MemKVStore {
     map: HashMap<String, String>,
 }
 
-impl KVStore for MemKVStore {
-    fn new() -> MemKVStore {
+impl MemKVStore {
+    pub fn new() -> Self {
         MemKVStore {
             map: HashMap::new(),
         }
     }
+}
 
+impl KVStore for MemKVStore {
     fn get(&self, key: &str) -> Option<String> {
         match self.map.get(key) {
             Some(value) => Some(value.clone()),
