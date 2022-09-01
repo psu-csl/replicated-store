@@ -45,13 +45,6 @@ struct Result {
   std::optional<int64_t> leader_;
 };
 
-inline int64_t Now() {
-  return std::chrono::time_point_cast<std::chrono::milliseconds>(
-             std::chrono::steady_clock::now())
-      .time_since_epoch()
-      .count();
-}
-
 inline int64_t Leader(int64_t ballot) {
   return ballot & kIdBits;
 }
@@ -129,8 +122,9 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
     std::this_thread::sleep_for(std::chrono::milliseconds(sleep_time));
   }
 
-  bool ReceivedCommit() const {
-    return Now() - last_commit_ < 1.5 * commit_interval_;
+  bool ReceivedCommit() {
+    bool t = true;
+    return std::atomic_compare_exchange_strong(&commit_received_, &t, false);
   }
 
   void Start();
@@ -176,11 +170,11 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
   int64_t ballot_;
   Log* log_;
   int64_t id_;
+  std::atomic<bool> commit_received_;
   long commit_interval_;
   std::mt19937 engine_;
   std::uniform_int_distribution<int> dist_;
   std::string port_;
-  std::atomic<long> last_commit_;
   std::vector<rpc_peer_t> rpc_peers_;
   mutable std::mutex mu_;
   asio::thread_pool thread_pool_;

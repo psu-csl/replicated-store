@@ -36,11 +36,11 @@ MultiPaxos::MultiPaxos(Log* log, json const& config)
       ballot_(kMaxNumPeers),
       log_(log),
       id_(config["id"]),
+      commit_received_(false),
       commit_interval_(config["commit_interval"]),
       engine_(id_),
       dist_(0, commit_interval_ / 2),
       port_(config["peers"][id_]),
-      last_commit_(0),
       thread_pool_(config["threadpool_size"]),
       rpc_server_running_(false),
       prepare_thread_running_(false),
@@ -364,7 +364,7 @@ Status MultiPaxos::Commit(ServerContext*,
   std::scoped_lock lock(mu_);
   DLOG(INFO) << id_ << " <--commit--- " << request->sender();
   if (request->ballot() >= ballot_) {
-    last_commit_ = Now();
+    commit_received_ = true;
     BecomeFollower(request->ballot());
     log_->CommitUntil(request->last_executed(), request->ballot());
     log_->TrimUntil(request->global_last_executed());
