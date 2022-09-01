@@ -145,7 +145,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
   private final AtomicBoolean prepareThreadRunning;
   private final long id;
   private boolean rpcServerRunning;
-  private long lastCommit;
+  private final AtomicBoolean commitReceived;
   private long ballot;
 
   public MultiPaxos(Log log, Configuration config) {
@@ -159,7 +159,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     cvFollower = mu.newCondition();
     commitThread = Executors.newSingleThreadExecutor();
     prepareThread = Executors.newSingleThreadExecutor();
-    lastCommit = 0;
+    commitReceived = new AtomicBoolean(false);
 
     rpcServerRunning = false;
     rpcServerThread = Executors.newSingleThreadExecutor();
@@ -515,7 +515,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     try {
       var response = CommitResponse.newBuilder();
       if (commitRequest.getBallot() >= ballot) {
-        lastCommit = Now();
+        commitReceived.set(true);
         becomeFollower(commitRequest.getBallot());
         log_.commitUntil(commitRequest.getLastExecuted(), commitRequest.getBallot());
         log_.trimUntil(commitRequest.getGlobalLastExecuted());
@@ -743,13 +743,9 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     }
   }
 
-  public long Now() {
-    return Instant.now().toEpochMilli();
-  }
 
   public boolean receivedCommit() {
-    var now = Instant.now().toEpochMilli();
-    return now - lastCommit < commitInterval;
+    return commitReceived.compareAndExchange(commitReceived.get(), true);
   }
 
   public void replay(long ballot, HashMap<Long, log.Instance> log) {
