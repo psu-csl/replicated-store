@@ -350,7 +350,7 @@ TEST_F(LogTest, AppendAtTrimmedIndex) {
   EXPECT_EQ(nullptr, log_[index2]);
 }
 
-TEST_F(LogTest, InstancesSinceGlobalLastExecuted) {
+TEST_F(LogTest, Instances) {
   std::thread execute_thread([this] {
     log_.Execute();
     log_.Execute();
@@ -366,7 +366,7 @@ TEST_F(LogTest, InstancesSinceGlobalLastExecuted) {
   expected.emplace_back(MakeInstance(ballot, log_.AdvanceLastIndex()));
   log_.Append(expected.back());
 
-  EXPECT_EQ(expected, log_.InstancesSinceGlobalLastExecuted());
+  EXPECT_EQ(expected, log_.Instances());
 
   auto index = 2;
   log_.CommitUntil(index, ballot);
@@ -374,7 +374,7 @@ TEST_F(LogTest, InstancesSinceGlobalLastExecuted) {
   log_.TrimUntil(index);
 
   expected.erase(expected.begin(), expected.begin() + index);
-  EXPECT_EQ(expected, log_.InstancesSinceGlobalLastExecuted());
+  EXPECT_EQ(expected, log_.Instances());
 }
 
 TEST_F(LogTest, CallingStopUnblocksExecutor) {

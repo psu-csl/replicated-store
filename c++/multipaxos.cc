@@ -332,7 +332,7 @@ Status MultiPaxos::Prepare(ServerContext*,
   DLOG(INFO) << id_ << " <--prepare-- " << request->sender();
   if (request->ballot() > ballot_) {
     BecomeFollower(request->ballot());
-    for (auto& i : log_->InstancesSinceGlobalLastExecuted())
+    for (auto& i : log_->Instances())
       *response->add_instances() = std::move(i);
     response->set_type(OK);
   } else {

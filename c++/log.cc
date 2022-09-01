@@ -122,7 +122,7 @@ void Log::TrimUntil(int64_t leader_global_last_executed) {
   }
 }
 
-log_vector_t Log::InstancesSinceGlobalLastExecuted() const {
+log_vector_t Log::Instances() const {
   std::scoped_lock lock(mu_);
   log_vector_t instances;
   for (auto i = global_last_executed_ + 1; i <= last_index_; ++i)
