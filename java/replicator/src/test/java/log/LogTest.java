@@ -30,8 +30,8 @@ class LogTest {
 
   @BeforeEach
   void SetUp() {
-    log_ = new Log();
     store_ = new MemKVStore();
+    log_ = new Log(store_);
   }
 
   @Test
@@ -203,7 +203,7 @@ class LogTest {
     ExecutorService service = Executors.newFixedThreadPool(1);
 
     var f = service.submit(() -> {
-      log_.execute(store_);
+      log_.execute();
     });
 
     log_.append(makeInstance(0, index));
@@ -222,9 +222,9 @@ class LogTest {
   void appendCommitExecuteOutOfOrder() {
     ExecutorService service = Executors.newFixedThreadPool(1);
     var f = service.submit(() -> {
-      log_.execute(store_);
-      log_.execute(store_);
-      log_.execute(store_);
+      log_.execute();
+      log_.execute();
+      log_.execute();
     });
 
     long index1 = 1, index2 = 2, index3 = 3;
@@ -323,7 +323,7 @@ class LogTest {
     ExecutorService executor = Executors.newFixedThreadPool(1);
     List<Future<Map.Entry<Long, KVResult>>> futures = new ArrayList<>();
     for (int i = 0; i < 10; i++) {
-      futures.add(executor.submit(() -> log_.execute(store_)));
+      futures.add(executor.submit(() -> log_.execute()));
     }
     long ballot = 0, index;
     for (index = 1; index < 11; index++) {
@@ -349,7 +349,7 @@ class LogTest {
     ExecutorService executor = Executors.newFixedThreadPool(1);
     List<Future<Map.Entry<Long, KVResult>>> futures = new ArrayList<>();
     for (int i = 0; i < 10; i++) {
-      futures.add(executor.submit(() -> log_.execute(store_)));
+      futures.add(executor.submit(() -> log_.execute()));
     }
     long ballot = 0, index;
     for (index = 1; index < 11; index++) {
@@ -378,7 +378,7 @@ class LogTest {
     ExecutorService executor = Executors.newFixedThreadPool(1);
     List<Future<Map.Entry<Long, KVResult>>> futures = new ArrayList<>();
     for (int i = 0; i < 10; i++) {
-      futures.add(executor.submit(() -> log_.execute(store_)));
+      futures.add(executor.submit(() -> log_.execute()));
     }
 
     long ballot = 0, index;
@@ -416,7 +416,7 @@ class LogTest {
     ExecutorService executor = Executors.newFixedThreadPool(1);
     List<Future<Map.Entry<Long, KVResult>>> futures = new ArrayList<>();
     for (int i = 0; i < 5; i++) {
-      futures.add(executor.submit(() -> log_.execute(store_)));
+      futures.add(executor.submit(() -> log_.execute()));
     }
     ArrayList<Instance> expected = new ArrayList<>();
     long ballot = 0;
@@ -447,7 +447,7 @@ class LogTest {
   void callingStopUnblocksExecutor() {
     ExecutorService executeThread = Executors.newSingleThreadExecutor();
     executeThread.submit(() -> {
-      var r = log_.execute(store_);
+      var r = log_.execute();
       assertNull(r);
     });
     Thread.yield();

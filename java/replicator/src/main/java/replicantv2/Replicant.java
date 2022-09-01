@@ -30,9 +30,10 @@ public class Replicant {
   private final long id;
   private final long numPeers;
   private final String ipPort;
-  private final Log log = new Log();
+
   private final MultiPaxos multiPaxos;
   private final KVStore kvStore = new MemKVStore();
+  private final Log log = new Log(kvStore);
 
   private ClientHandler clientHandler;
 
@@ -102,7 +103,7 @@ public class Replicant {
 
   private void executorThread() {
     while (true) {
-      var r = log.execute(kvStore);
+      var r = log.execute();
       if (r == null) {
         break;
       }

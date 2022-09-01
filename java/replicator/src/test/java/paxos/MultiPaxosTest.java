@@ -110,13 +110,13 @@ class MultiPaxosTest {
 
     for (int i = 0; i < kNumPeers; i++) {
       var config = makeConfig(i, kNumPeers);
-      var log = new Log();
+      stores.add(new MemKVStore());
+      var log = new Log(stores.get(i));
       var peer = new MultiPaxos(log, config);
-
       configs.add(config);
       logs.add(log);
       peers.add(peer);
-      stores.add(new MemKVStore());
+
     }
   }
 
@@ -223,8 +223,8 @@ class MultiPaxosTest {
     assertTrue(logs.get(0).get(index2).isCommitted());
     assertTrue(logs.get(0).get(index3).isInProgress());
 
-    logs.get(0).execute(stores.get(0));
-    logs.get(0).execute(stores.get(0));
+    logs.get(0).execute();
+    logs.get(0).execute();
 
     var r2 = sendCommit(stub.get(), ballot, index2, index2);
     assertEquals(index2, r2.getLastExecuted());
@@ -266,8 +266,8 @@ class MultiPaxosTest {
     var r2 = sendCommit(stub.get(), ballot, index2, 0);
     assertEquals(OK, r2.getType());
 
-    logs.get(0).execute(stores.get(0));
-    logs.get(0).execute(stores.get(0));
+    logs.get(0).execute();
+    logs.get(0).execute();
 
     var r3 = sendPrepare(stub.get(), ballot);
     assertEquals(OK, r3.getType());
@@ -503,7 +503,7 @@ class MultiPaxosTest {
           continue;
         }
         logs.get(peer).append(makeInstance(ballot, index, InstanceState.kCommitted));
-        logs.get(peer).execute(stores.get(peer));
+        logs.get(peer).execute();
       }
     }
     long gle = 0;
@@ -519,7 +519,7 @@ class MultiPaxosTest {
     gle = peers.get(0).runCommitPhase(ballot, gle);
     assertEquals(2, gle);
 
-    logs.get(2).execute(stores.get(2));
+    logs.get(2).execute();
 
     gle = peers.get(0).runCommitPhase(ballot, gle);
     assertEquals(3, gle);

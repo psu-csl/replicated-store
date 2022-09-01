@@ -10,10 +10,12 @@ import java.util.Map;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 import kvstore.KVStore;
+import kvstore.MemKVStore;
 import log.Instance.InstanceState;
 
 public class Log {
 
+  private final KVStore kvStore;
   private final ReentrantLock mu;
   private final Condition cvExecutable;
   private final Condition cvCommitable;
@@ -24,7 +26,8 @@ public class Log {
 
   private boolean running = true;
 
-  public Log() {
+  public Log(KVStore kvStore) {
+    this.kvStore = kvStore;
     log = new HashMap<>();
     mu = new ReentrantLock();
     cvExecutable = mu.newCondition();
@@ -135,7 +138,7 @@ public class Log {
     }
   }
 
-  public Map.Entry<Long, KVResult> execute(KVStore kv) {
+  public Map.Entry<Long, KVResult> execute() {
     mu.lock();
     try {
       while (running && !isExecutable()) {
@@ -147,8 +150,7 @@ public class Log {
       var it = log.get(lastExecuted + 1);
       assert it != null;
 
-      assert kv != null;
-      KVResult result = kv.execute(it.getCommand());
+      KVResult result = kvStore.execute(it.getCommand());
       it.setExecuted();
       ++lastExecuted;
       return new SimpleEntry<>(it.getClientId(), result);
