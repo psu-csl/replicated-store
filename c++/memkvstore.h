@@ -14,10 +14,10 @@ class MemKVStore : public KVStore {
   MemKVStore(MemKVStore&& store) = delete;
   MemKVStore& operator=(MemKVStore&& store) = delete;
 
-  std::optional<std::string> Get(const std::string& key) override;
-  bool Put(const std::string& key, const std::string& value) override;
-  bool Del(const std::string& key) override;
-  KVResult Execute(const multipaxos::Command& cmd) override;
+  std::optional<std::string> Get(std::string const& key) override;
+  bool Put(std::string const& key, std::string const& value) override;
+  bool Del(std::string const& key) override;
+  KVResult Execute(multipaxos::Command const& cmd) override;
 
  private:
   std::map<std::string, std::string> map_;

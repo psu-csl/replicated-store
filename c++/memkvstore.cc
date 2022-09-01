@@ -6,23 +6,23 @@
 
 using multipaxos::Command;
 
-std::optional<std::string> MemKVStore::Get(const std::string& key) {
+std::optional<std::string> MemKVStore::Get(std::string const& key) {
   auto it = map_.find(key);
   if (it != map_.end())
     return it->second;
   return std::nullopt;
 }
 
-bool MemKVStore::Put(const std::string& key, const std::string& value) {
+bool MemKVStore::Put(std::string const& key, std::string const& value) {
   map_[key] = value;
   return true;
 }
 
-bool MemKVStore::Del(const std::string& key) {
+bool MemKVStore::Del(std::string const& key) {
   return map_.erase(key) != 0;
 }
 
-KVResult MemKVStore::Execute(const Command& cmd) {
+KVResult MemKVStore::Execute(Command const& cmd) {
   if (cmd.type() == multipaxos::CommandType::GET) {
     auto r = Get(cmd.key());
     if (!r)

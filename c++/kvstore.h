@@ -14,10 +14,10 @@ struct KVResult {
 class KVStore {
  public:
   virtual ~KVStore() = default;
-  virtual std::optional<std::string> Get(const std::string& key) = 0;
-  virtual bool Put(const std::string& key, const std::string& value) = 0;
-  virtual bool Del(const std::string& key) = 0;
-  virtual KVResult Execute(const multipaxos::Command& cmd) = 0;
+  virtual std::optional<std::string> Get(std::string const& key) = 0;
+  virtual bool Put(std::string const& key, std::string const& value) = 0;
+  virtual bool Del(std::string const& key) = 0;
+  virtual KVResult Execute(multipaxos::Command const& cmd) = 0;
 };
 
 #endif
