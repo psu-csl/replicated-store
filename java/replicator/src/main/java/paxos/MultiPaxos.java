@@ -247,16 +247,38 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
   public long nextBallot() {
     mu.lock();
     try {
-      var oldBallot = ballot;
-      ballot += kRoundIncrement;
-      ballot = (ballot & ~kIdBits) | id;
-      ready.set(false);
-      logger.info(id + " became a leaderTest: ballot: " + oldBallot + " -> " + ballot);
-      cvLeader.signal();
-      return ballot;
+      long nextBallot = ballot;
+      nextBallot += kRoundIncrement;
+      nextBallot = (nextBallot & ~kIdBits) | id;
+      return nextBallot;
     } finally {
       mu.unlock();
     }
+  }
+
+  public void becomeLeader(long nextBallot) {
+    mu.lock();
+    try {
+      logger.info(id + " became a leader: ballot: " + ballot + " -> " + nextBallot);
+      ballot = nextBallot;
+      ready.set(false);
+      cvLeader.signal();
+    } finally {
+      mu.unlock();
+    }
+  }
+
+  public void becomeFollower(long nextBallot) {
+    var prevLeader = leader(ballot);
+    var nextLeader = leader(nextBallot);
+    if (nextLeader != id && (prevLeader == id || prevLeader == kMaxNumPeers)) {
+      logger.info(id + " became a follower: ballot: " + ballot + " -> " + nextBallot);
+      mu.lock();
+      cvFollower.signal();
+      mu.unlock();
+    }
+    // TODO: don't we need lock here?
+    ballot = nextBallot;
   }
 
   public void setBallot(long ballot) {
@@ -488,13 +510,13 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
 
   public void commit(CommitRequest commitRequest,
       StreamObserver<CommitResponse> responseObserver) {
-    logger.info(id + " received commit rpc from " + commitRequest.getSender());
     mu.lock();
+    logger.info(id + " <--commit--- " + commitRequest.getSender());
     try {
       var response = CommitResponse.newBuilder();
       if (commitRequest.getBallot() >= ballot) {
         lastCommit = Now();
-        setBallot(commitRequest.getBallot());
+        becomeFollower(commitRequest.getBallot());
         log_.commitUntil(commitRequest.getLastExecuted(), commitRequest.getBallot());
         log_.trimUntil(commitRequest.getGlobalLastExecuted());
         response.setLastExecuted(log_.getLastExecuted());
@@ -540,8 +562,8 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
         } else {
           assert (response.getType() == ResponseType.REJECT);
           mu.lock();
-          if (response.getBallot() >= ballot) {
-            setBallot(response.getBallot());
+          if (response.getBallot() > ballot) {
+            becomeFollower(response.getBallot());
             state.leader = leader(this.ballot);
           }
           mu.unlock();
@@ -570,12 +592,12 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
 
   @Override
   public void prepare(PrepareRequest request, StreamObserver<PrepareResponse> responseObserver) {
-    logger.info(id + " received prepare rpc from " + request.getSender());
     mu.lock();
+    logger.info(id + " <-- prepare-- " + request.getSender());
     PrepareResponse.Builder responseBuilder = PrepareResponse.newBuilder();
     try {
-      if (request.getBallot() >= ballot) {
-        setBallot(request.getBallot());
+      if (request.getBallot() > ballot) {
+        becomeFollower(request.getBallot());
 
         for (var i : log_.instancesSinceGlobalLastExecuted()) {
           if (i == null) {
@@ -606,21 +628,25 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
         if (receivedCommit()) {
           continue;
         }
-        var ballot = nextBallot();
-        replay(ballot, runPreparePhase(ballot));
-        break;
+        var nextBallot = nextBallot();
+        var log = runPreparePhase(nextBallot);
+        if (log != null) {
+          becomeLeader(nextBallot);
+          replay(nextBallot, log);
+          break;
+        }
       }
     }
   }
 
   @Override
   public void accept(AcceptRequest request, StreamObserver<AcceptResponse> responseObserver) {
-    logger.info(this.id + " received rpc from " + request.getSender());
     mu.lock();
+    logger.info(this.id + " <--accept---  " + request.getSender());
     AcceptResponse.Builder responseBuilder = AcceptResponse.newBuilder();
     try {
       if (request.getInstance().getBallot() >= this.ballot) {
-        setBallot(request.getInstance().getBallot());
+        becomeFollower(request.getInstance().getBallot());
         log_.append(makeInstance(request.getInstance()));
         responseBuilder = responseBuilder.setType(ResponseType.OK);
       } else {
@@ -668,8 +694,8 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
           ++state.numOks;
         } else {
           mu.lock();
-          if (response.getBallot() >= this.ballot) {
-            setBallot(response.getBallot());
+          if (response.getBallot() > this.ballot) {
+            becomeFollower(response.getBallot());
             state.leader = leader(this.ballot);
           }
           mu.unlock();
