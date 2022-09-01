@@ -22,7 +22,7 @@ class LogTest : public testing::Test {
   LogTest() : log_(&store_) {}
 
  protected:
-  MemKVStore store_;
+  kvstore::MemKVStore store_;
   Log log_;
 };
 

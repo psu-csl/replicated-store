@@ -11,7 +11,7 @@
 
 #include "kvstore.h"
 
-using log_result_t = std::tuple<int64_t, KVResult>;
+using log_result_t = std::tuple<int64_t, kvstore::KVResult>;
 using log_map_t = std::unordered_map<int64_t, multipaxos::Instance>;
 using log_vector_t = std::vector<multipaxos::Instance>;
 
@@ -27,7 +27,7 @@ bool operator==(multipaxos::Instance const& a, multipaxos::Instance const& b);
 
 class Log {
  public:
-  explicit Log(KVStore* kv_store) : kv_store_(kv_store) {}
+  explicit Log(kvstore::KVStore* kv_store) : kv_store_(kv_store) {}
   Log(Log const& log) = delete;
   Log& operator=(Log const& log) = delete;
   Log(Log&& log) = delete;
@@ -72,7 +72,7 @@ class Log {
 
  private:
   bool running_ = true;
-  KVStore* kv_store_;
+  kvstore::KVStore* kv_store_;
   log_map_t log_;
   int64_t last_index_ = 0;
   int64_t last_executed_ = 0;

@@ -3,6 +3,8 @@
 
 #include "kvstore.h"
 
+namespace kvstore {
+
 static std::string const kKeyNotFound = "key not found";
 static std::string const kEmpty = "";
 
@@ -22,3 +24,5 @@ class MemKVStore : public KVStore {
  private:
   std::map<std::string, std::string> map_;
 };
+
+}  // namespace kvstore

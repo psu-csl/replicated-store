@@ -15,7 +15,7 @@ using multipaxos::CommandType::GET;
 using multipaxos::CommandType::PUT;
 
 TEST(MemKVStoreTest, GetPutDel) {
-  MemKVStore store;
+  kvstore::MemKVStore store;
 
   EXPECT_EQ(std::nullopt, store.Get(key1));
 
@@ -51,47 +51,47 @@ Command MakeCommand(CommandType type,
 }
 
 TEST(MemKVStoreTest, Execute) {
-  MemKVStore store;
+  kvstore::MemKVStore store;
   {
-    KVResult r = store.Execute(MakeCommand(GET, key1, ""));
-    EXPECT_TRUE(!r.ok_ && r.value_ == kKeyNotFound);
+    kvstore::KVResult r = store.Execute(MakeCommand(GET, key1, ""));
+    EXPECT_TRUE(!r.ok_ && r.value_ == kvstore::kKeyNotFound);
   }
   {
-    KVResult r = store.Execute(MakeCommand(DEL, key1, ""));
-    EXPECT_TRUE(!r.ok_ && r.value_ == kKeyNotFound);
+    kvstore::KVResult r = store.Execute(MakeCommand(DEL, key1, ""));
+    EXPECT_TRUE(!r.ok_ && r.value_ == kvstore::kKeyNotFound);
   }
   {
-    KVResult r1 = store.Execute(MakeCommand(PUT, key1, val1));
-    EXPECT_TRUE(r1.ok_ && r1.value_ == kEmpty);
+    kvstore::KVResult r1 = store.Execute(MakeCommand(PUT, key1, val1));
+    EXPECT_TRUE(r1.ok_ && r1.value_ == kvstore::kEmpty);
 
-    KVResult r2 = store.Execute(MakeCommand(GET, key1, ""));
+    kvstore::KVResult r2 = store.Execute(MakeCommand(GET, key1, ""));
     EXPECT_TRUE(r2.ok_ && r2.value_ == val1);
   }
   {
-    KVResult r1 = store.Execute(MakeCommand(PUT, key2, val2));
-    EXPECT_TRUE(r1.ok_ && r1.value_ == kEmpty);
+    kvstore::KVResult r1 = store.Execute(MakeCommand(PUT, key2, val2));
+    EXPECT_TRUE(r1.ok_ && r1.value_ == kvstore::kEmpty);
 
-    KVResult r2 = store.Execute(MakeCommand(GET, key2, ""));
+    kvstore::KVResult r2 = store.Execute(MakeCommand(GET, key2, ""));
     EXPECT_TRUE(r2.ok_ && r2.value_ == val2);
   }
   {
-    KVResult r1 = store.Execute(MakeCommand(PUT, key1, val2));
-    EXPECT_TRUE(r1.ok_ && r1.value_ == kEmpty);
+    kvstore::KVResult r1 = store.Execute(MakeCommand(PUT, key1, val2));
+    EXPECT_TRUE(r1.ok_ && r1.value_ == kvstore::kEmpty);
 
-    KVResult r2 = store.Execute(MakeCommand(GET, key1, ""));
+    kvstore::KVResult r2 = store.Execute(MakeCommand(GET, key1, ""));
     EXPECT_TRUE(r2.ok_ && r2.value_ == val2);
 
-    KVResult r3 = store.Execute(MakeCommand(GET, key2, ""));
+    kvstore::KVResult r3 = store.Execute(MakeCommand(GET, key2, ""));
     EXPECT_TRUE(r3.ok_ && r3.value_ == val2);
   }
   {
-    KVResult r1 = store.Execute(MakeCommand(DEL, key1, ""));
-    EXPECT_TRUE(r1.ok_ && r1.value_ == kEmpty);
+    kvstore::KVResult r1 = store.Execute(MakeCommand(DEL, key1, ""));
+    EXPECT_TRUE(r1.ok_ && r1.value_ == kvstore::kEmpty);
 
-    KVResult r2 = store.Execute(MakeCommand(GET, key1, ""));
-    EXPECT_FALSE(r2.ok_ && r2.value_ == kKeyNotFound);
+    kvstore::KVResult r2 = store.Execute(MakeCommand(GET, key1, ""));
+    EXPECT_FALSE(r2.ok_ && r2.value_ == kvstore::kKeyNotFound);
 
-    KVResult r3 = store.Execute(MakeCommand(GET, key2, ""));
+    kvstore::KVResult r3 = store.Execute(MakeCommand(GET, key2, ""));
     EXPECT_TRUE(r3.ok_ && r3.value_ == val2);
   }
 }

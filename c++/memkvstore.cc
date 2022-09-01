@@ -4,6 +4,8 @@
 
 #include "memkvstore.h"
 
+namespace kvstore {
+
 using multipaxos::Command;
 
 std::optional<std::string> MemKVStore::Get(std::string const& key) {
@@ -41,3 +43,5 @@ KVResult MemKVStore::Execute(Command const& cmd) {
     return KVResult{true, kEmpty};
   return KVResult{false, kKeyNotFound};
 }
+
+}  // namespace kvstore

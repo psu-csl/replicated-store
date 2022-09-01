@@ -6,6 +6,8 @@
 
 #include "multipaxos.pb.h"
 
+namespace kvstore {
+
 struct KVResult {
   bool ok_ = false;
   std::string value_;
@@ -19,5 +21,7 @@ class KVStore {
   virtual bool Del(std::string const& key) = 0;
   virtual KVResult Execute(multipaxos::Command const& cmd) = 0;
 };
+
+}  // namespace kvstore
 
 #endif
