@@ -61,11 +61,11 @@ TEST(MemKVStoreTest, Execute) {
   kvstore::MemKVStore store;
   {
     kvstore::KVResult r = kvstore::Execute(get_key1, &store);
-    EXPECT_TRUE(!r.ok_ && r.value_ == kvstore::kKeyNotFound);
+    EXPECT_TRUE(!r.ok_ && r.value_ == kvstore::kNotFound);
   }
   {
     kvstore::KVResult r = kvstore::Execute(del_key1, &store);
-    EXPECT_TRUE(!r.ok_ && r.value_ == kvstore::kKeyNotFound);
+    EXPECT_TRUE(!r.ok_ && r.value_ == kvstore::kNotFound);
   }
   {
     kvstore::KVResult r1 = kvstore::Execute(put_key1val1, &store);
@@ -96,7 +96,7 @@ TEST(MemKVStoreTest, Execute) {
     EXPECT_TRUE(r1.ok_ && r1.value_ == kvstore::kEmpty);
 
     kvstore::KVResult r2 = kvstore::Execute(get_key1, &store);
-    EXPECT_FALSE(r2.ok_ && r2.value_ == kvstore::kKeyNotFound);
+    EXPECT_FALSE(r2.ok_ && r2.value_ == kvstore::kNotFound);
 
     kvstore::KVResult r3 = kvstore::Execute(get_key2, &store);
     EXPECT_TRUE(r3.ok_ && r3.value_ == val2);

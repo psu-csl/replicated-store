@@ -8,7 +8,8 @@
 
 namespace kvstore {
 
-static std::string const kKeyNotFound = "key not found";
+static std::string const kNotFound = "key not found";
+static std::string const kPutFailed = "put failed";
 static std::string const kEmpty = "";
 
 struct KVResult {
