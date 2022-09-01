@@ -32,29 +32,6 @@ impl KVStore for MemKVStore {
             None => false,
         }
     }
-
-    fn execute(&mut self, command: &Command) -> Result<Option<String>, &str> {
-        match command {
-            Command::Get(key) => match self.get(key) {
-                Some(value) => Ok(Some(value)),
-                None => Err(NOT_FOUND),
-            },
-            Command::Put(key, value) => {
-                if self.put(key, value) {
-                    Ok(None)
-                } else {
-                    Err(PUT_FAILED)
-                }
-            }
-            Command::Del(key) => {
-                if self.del(key) {
-                    Ok(None)
-                } else {
-                    Err(NOT_FOUND)
-                }
-            }
-        }
-    }
 }
 
 #[cfg(test)]
@@ -105,22 +82,22 @@ mod tests {
         let put_key2val2 = Command::Put(KEY2.to_string(), VAL2.to_string());
         let put_key1val2 = Command::Put(KEY1.to_string(), VAL2.to_string());
 
-        assert_eq!(Err(NOT_FOUND), store.execute(&get_key1));
+        assert_eq!(Err(NOT_FOUND), get_key1.execute(&mut store));
 
-        assert_eq!(Err(NOT_FOUND), store.execute(&del_key1));
+        assert_eq!(Err(NOT_FOUND), del_key1.execute(&mut store));
 
-        assert_eq!(Ok(None), store.execute(&put_key1val1));
-        assert_eq!(Ok(Some(VAL1.to_string())), store.execute(&get_key1));
+        assert_eq!(Ok(None), put_key1val1.execute(&mut store));
+        assert_eq!(Ok(Some(VAL1.to_string())), get_key1.execute(&mut store));
 
-        assert_eq!(Ok(None), store.execute(&put_key2val2));
-        assert_eq!(Ok(Some(VAL2.to_string())), store.execute(&get_key2));
+        assert_eq!(Ok(None), put_key2val2.execute(&mut store));
+        assert_eq!(Ok(Some(VAL2.to_string())), get_key2.execute(&mut store));
 
-        assert_eq!(Ok(None), store.execute(&put_key1val2));
-        assert_eq!(Ok(Some(VAL2.to_string())), store.execute(&get_key1));
-        assert_eq!(Ok(Some(VAL2.to_string())), store.execute(&get_key2));
+        assert_eq!(Ok(None), put_key1val2.execute(&mut store));
+        assert_eq!(Ok(Some(VAL2.to_string())), get_key1.execute(&mut store));
+        assert_eq!(Ok(Some(VAL2.to_string())), get_key2.execute(&mut store));
 
-        assert_eq!(Ok(None), store.execute(&del_key1));
-        assert_eq!(Err(NOT_FOUND), store.execute(&get_key1));
-        assert_eq!(Ok(Some(VAL2.to_string())), store.execute(&get_key2));
+        assert_eq!(Ok(None), del_key1.execute(&mut store));
+        assert_eq!(Err(NOT_FOUND), get_key1.execute(&mut store));
+        assert_eq!(Ok(Some(VAL2.to_string())), get_key2.execute(&mut store));
     }
 }

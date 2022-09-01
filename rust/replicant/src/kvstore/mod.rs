@@ -11,10 +11,31 @@ pub enum Command {
 
 pub trait KVStore {
     fn get(&self, key: &str) -> Option<String>;
-
     fn put(&mut self, key: &str, value: &str) -> bool;
-
     fn del(&mut self, key: &str) -> bool;
+}
 
-    fn execute(&mut self, command: &Command) -> Result<Option<String>, &str>;
+impl Command {
+    pub fn execute(&self, store: &mut impl KVStore) -> Result<Option<String>, &str> {
+        match self {
+            Command::Get(key) => match store.get(&key) {
+                Some(value) => Ok(Some(value)),
+                None => Err(NOT_FOUND),
+            },
+            Command::Put(key, value) => {
+                if store.put(&key, &value) {
+                    Ok(None)
+                } else {
+                    Err(PUT_FAILED)
+                }
+            }
+            Command::Del(key) => {
+                if store.del(&key) {
+                    Ok(None)
+                } else {
+                    Err(NOT_FOUND)
+                }
+            }
+        }
+    }
 }
