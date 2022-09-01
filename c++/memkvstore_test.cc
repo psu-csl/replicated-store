@@ -41,8 +41,8 @@ TEST(MemKVStoreTest, GetPutDel) {
 }
 
 Command MakeCommand(CommandType type,
-                    const std::string& key,
-                    const std::string& value) {
+                    std::string const& key,
+                    std::string const& value) {
   Command cmd;
   cmd.set_type(type);
   cmd.set_key(key);
