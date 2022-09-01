@@ -144,8 +144,8 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
 
   private final AtomicBoolean prepareThreadRunning;
   private final long id;
-  private boolean rpcServerRunning;
   private final AtomicBoolean commitReceived;
+  private boolean rpcServerRunning;
   private long ballot;
 
   public MultiPaxos(Log log, Configuration config) {
