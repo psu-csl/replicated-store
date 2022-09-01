@@ -15,7 +15,7 @@ using nlohmann::json;
 Replicant::Replicant(asio::io_context* io_context, json const& config)
     : id_(config["id"]),
       num_peers_(config["peers"].size()),
-      kv_store_(std::make_unique<MemKVStore>()),
+      kv_store_(std::make_unique<kvstore::MemKVStore>()),
       log_(kv_store_.get()),
       multi_paxos_(&log_, config),
       ip_port_(config["peers"][id_]),

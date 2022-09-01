@@ -89,7 +89,7 @@ std::optional<log_result_t> Log::Execute() {
   auto it = log_.find(last_executed_ + 1);
   CHECK(it != log_.end());
   Instance* instance = &it->second;
-  kvstore::KVResult result = kv_store_->Execute(instance->command());
+  kvstore::KVResult result = kvstore::Execute(instance->command(), kv_store_);
   instance->set_state(EXECUTED);
   ++last_executed_;
   return {{instance->client_id(), std::move(result)}};

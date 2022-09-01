@@ -2,10 +2,21 @@ load("@com_github_grpc_grpc//bazel:grpc_build_system.bzl", "grpc_proto_library")
 load("@com_github_grpc_grpc//bazel:cc_grpc_library.bzl", "cc_grpc_library")
 
 cc_library(
+    name = "kvstore",
+    srcs = ["kvstore.cc"],
+    hdrs = ["kvstore.h"],
+    deps = [
+        ":multipaxos_cc_proto",
+        "@com_github_google_glog//:glog",
+    ],
+)
+
+cc_library(
     name = "memkvstore",
     srcs = ["memkvstore.cc"],
-    hdrs = ["memkvstore.h", "kvstore.h"],
+    hdrs = ["memkvstore.h"],
     deps = [
+        ":kvstore",
         ":multipaxos_cc_proto",
         "@com_github_google_glog//:glog",
     ],
