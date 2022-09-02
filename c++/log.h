@@ -79,7 +79,7 @@ class Log {
   int64_t global_last_executed_ = 0;
   mutable std::mutex mu_;
   std::condition_variable cv_executable_;
-  std::condition_variable cv_commitable_;
+  std::condition_variable cv_committable_;
 };
 
 #endif

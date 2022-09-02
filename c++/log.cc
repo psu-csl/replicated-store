@@ -57,7 +57,7 @@ void Log::Append(Instance instance) {
 
   if (Insert(&log_, std::move(instance))) {
     last_index_ = std::max(last_index_, i);
-    cv_commitable_.notify_all();
+    cv_committable_.notify_all();
   }
 }
 
@@ -67,7 +67,7 @@ void Log::Commit(int64_t index) {
   std::unique_lock lock(mu_);
   auto it = log_.find(index);
   while (it == log_.end()) {
-    cv_commitable_.wait(lock);
+    cv_committable_.wait(lock);
     it = log_.find(index);
   }
 
