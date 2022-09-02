@@ -1,12 +1,12 @@
 mod kvstore;
+mod log;
 
 use kvstore::memkvstore::MemKVStore;
 use kvstore::Command;
 use kvstore::KVStore;
+use log::Log;
 
 fn main() {
-    let mut store = MemKVStore::new();
-    let command = Command::Put(String::from("foo"), String::from("bar"));
-    command.execute(&mut store);
-    command.execute(&mut store);
+    let store = Box::new(MemKVStore::new());
+    let log = Log::new(store);
 }
