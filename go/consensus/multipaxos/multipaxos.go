@@ -34,7 +34,7 @@ type Multipaxos struct {
 	id             int64
 	CommitInterval int64
 	port           string
-	lastCommit     int64
+	commitReceived int32
 	rpcPeers       []*RpcPeer
 	mu             sync.Mutex
 
@@ -59,7 +59,7 @@ func NewMultipaxos(config config.Config, log *consensusLog.Log) *Multipaxos {
 		id:                   config.Id,
 		CommitInterval:       config.CommitInterval,
 		port:                 config.Peers[config.Id],
-		lastCommit:           0,
+		commitReceived:       0,
 		rpcPeers:             make([]*RpcPeer, len(config.Peers)),
 		rpcServerRunning:     false,
 		prepareThreadRunning: 0,
@@ -428,7 +428,7 @@ func (p *Multipaxos) Commit(ctx context.Context,
 
 	response := &pb.CommitResponse{}
 	if request.GetBallot() >= p.ballot {
-		atomic.StoreInt64(&p.lastCommit, time.Now().UnixNano()/1e6)
+		atomic.StoreInt32(&p.commitReceived, 1)
 		p.SetBallot(request.GetBallot())
 		p.log.CommitUntil(request.GetLastExecuted(), request.GetBallot())
 		p.log.TrimUntil(request.GetGlobalLastExecuted())
@@ -503,7 +503,8 @@ func (p *Multipaxos) sleepForRandomInterval() {
 }
 
 func (p *Multipaxos) receivedCommit() bool {
-	return time.Now().UnixNano() /1e6 - p.lastCommit < p.CommitInterval
+	var t int32 = 1
+	return atomic.CompareAndSwapInt32(&p.commitReceived, t, 0)
 }
 
 func (p *Multipaxos) Connect(addrs []string) {

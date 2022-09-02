@@ -31,7 +31,7 @@ func NewClient(id int64, conn net.Conn, mp *multipaxos.Multipaxos,
 }
 
 func (c *Client) Parse(request string) *pb.Command {
-	substrings := strings.SplitN(request, " ", 3)
+	substrings := strings.SplitN(strings.TrimRight(request, "\n"), " ", 3)
 	if len(substrings) < 2 {
 		return nil
 	}
