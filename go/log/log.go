@@ -180,7 +180,7 @@ func (l *Log) Execute() (int64, *store.KVResult) {
 	if !ok {
 		log.Panicf("Instance at Index %v empty\n", l.lastExecuted+ 1)
 	}
-	result := l.store.Execute(inst.GetCommand())
+	result := store.Execute(inst.GetCommand(), l.store)
 	inst.State = pb.InstanceState_EXECUTED
 	l.lastExecuted += 1
 	return inst.ClientId, &result

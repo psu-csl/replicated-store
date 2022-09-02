@@ -52,68 +52,62 @@ func TestMemKVStore_GetPutDel(t *testing.T) {
 
 func TestMemKVStore_Execute(t *testing.T) {
 	store := NewMemKVStore()
+	getKey1 := &pb.Command{Key: key1, Value: "", Type: pb.CommandType_GET}
+	getKey2 := &pb.Command{Key: key2, Value: "", Type: pb.CommandType_GET}
+	delKey1 := &pb.Command{Key: key1, Value: "", Type: pb.CommandType_DEL}
+	putKey1Val1 := &pb.Command{Key: key1, Value: val1, Type: pb.CommandType_PUT}
+	putKey2Val2 := &pb.Command{Key: key2, Value: val2, Type: pb.CommandType_PUT}
+	putKey1Val2 := &pb.Command{Key: key1, Value: val2, Type: pb.CommandType_PUT}
 
 	// Get command for a non-exist key
 	{
-		getCmd := &pb.Command{Key: key1, Value: "", Type: pb.CommandType_GET}
-		r := store.Execute(getCmd)
-		assert.True(t, !r.Ok && r.Value == KeyNotFound)
+		r := Execute(getKey1, store)
+		assert.True(t, !r.Ok && r.Value == NotFound)
 	}
 
 	// Delete command for a non-exist key
 	{
-		delCmd := &pb.Command{Key: key1, Value: "", Type: pb.CommandType_DEL}
-		r := store.Execute(delCmd)
-		assert.True(t, !r.Ok && r.Value == KeyNotFound)
+		r := Execute(delKey1, store)
+		assert.True(t, !r.Ok && r.Value == NotFound)
 	}
 
 	// Put command then get command
 	{
-		putCmd := &pb.Command{Key: key1, Value: val1, Type: pb.CommandType_PUT}
-		r := store.Execute(putCmd)
-		assert.True(t, r.Ok && r.Value == Empty)
-		getCmd := &pb.Command{Key: key1, Value: "", Type: pb.CommandType_GET}
-		r = store.Execute(getCmd)
-		assert.True(t, r.Ok && r.Value == val1)
+		r1 := Execute(putKey1Val1, store)
+		assert.True(t, r1.Ok && r1.Value == Empty)
+		r2 := Execute(getKey1, store)
+		assert.True(t, r2.Ok && r2.Value == val1)
 	}
 
 	{
-		putCmd := &pb.Command{Key: key2, Value: val2, Type: pb.CommandType_PUT}
-		r := store.Execute(putCmd)
-		assert.True(t, r.Ok && r.Value == Empty)
-		getCmd := &pb.Command{Key: key2, Value: "", Type: pb.CommandType_GET}
-		r = store.Execute(getCmd)
-		assert.True(t, r.Ok && r.Value == val2)
+		r1 := Execute(putKey2Val2, store)
+		assert.True(t, r1.Ok && r1.Value == Empty)
+		r2 := Execute(getKey2, store)
+		assert.True(t, r2.Ok && r2.Value == val2)
 	}
 
 	// Put command with the same key but a different value
 	{
-		putCmd := &pb.Command{Key: key1, Value: val2, Type: pb.CommandType_PUT}
-		r := store.Execute(putCmd)
-		assert.True(t, r.Ok && r.Value == Empty)
+		r1 := Execute(putKey1Val2, store)
+		assert.True(t, r1.Ok && r1.Value == Empty)
 
-		getCmd1 := &pb.Command{Key: key1, Value: "", Type: pb.CommandType_GET}
-		r = store.Execute(getCmd1)
-		assert.True(t, r.Ok && r.Value == val2)
+		r2 := Execute(getKey1, store)
+		assert.True(t, r2.Ok && r2.Value == val2)
 
-		getCmd2 := &pb.Command{Key: key2, Value: "", Type: pb.CommandType_GET}
-		r = store.Execute(getCmd2)
-		assert.True(t, r.Ok && r.Value == val2)
+		r3 := Execute(getKey2, store)
+		assert.True(t, r3.Ok && r3.Value == val2)
 	}
 
 	// Delete command for an existing key
 	{
-		delCmd := &pb.Command{Key: key1, Value: "", Type: pb.CommandType_DEL}
-		r := store.Execute(delCmd)
-		assert.True(t, r.Ok && r.Value == Empty)
+		r1 := Execute(delKey1, store)
+		assert.True(t, r1.Ok && r1.Value == Empty)
 
-		getCmd1 := &pb.Command{Key: key1, Value: "", Type: pb.CommandType_GET}
-		r = store.Execute(getCmd1)
-		assert.False(t, r.Ok)
-		assert.Equal(t, KeyNotFound, r.Value)
+		r2 := Execute(getKey1, store)
+		assert.False(t, r2.Ok)
+		assert.Equal(t, NotFound, r2.Value)
 
-		getCmd2 := &pb.Command{Key: key2, Value: "", Type: pb.CommandType_GET}
-		r = store.Execute(getCmd2)
-		assert.True(t, r.Ok && r.Value == val2)
+		r3 := Execute(getKey2, store)
+		assert.True(t, r3.Ok && r3.Value == val2)
 	}
 }
