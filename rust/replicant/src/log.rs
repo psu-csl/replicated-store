@@ -20,6 +20,10 @@ impl Instance {
         self.state == State::InProgress
     }
 
+    fn is_committed(&self) -> bool {
+        self.state == State::Committed
+    }
+
     fn set_state(&mut self, state: State) {
         self.state = state;
     }
@@ -34,7 +38,10 @@ impl LogMap {
     }
 
     fn is_executable(&self, index: i64) -> bool {
-        self.0.get(&index).is_some()
+        match self.0.get(&index) {
+            Some(instance) => instance.is_committed(),
+            None => false,
+        }
     }
 }
 
@@ -114,7 +121,7 @@ impl Log {
         if instance.is_in_progress() {
             instance.set_state(State::Committed);
         }
-        if guard.log.is_executable(guard.last_index + 1) {
+        if guard.log.is_executable(guard.last_executed + 1) {
             self.cv_executable.notify_one();
         }
     }
