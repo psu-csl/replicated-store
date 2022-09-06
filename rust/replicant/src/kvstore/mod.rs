@@ -3,6 +3,7 @@ pub mod memkvstore;
 pub const NOT_FOUND: &str = "key not found";
 pub const PUT_FAILED: &str = "put failed";
 
+#[derive(PartialEq, Debug, Clone)]
 pub enum Command {
     Get(String),
     Put(String, String),
