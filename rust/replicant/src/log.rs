@@ -3,7 +3,8 @@ use crate::kvstore::Command;
 use crate::kvstore::KVStore;
 use std::cmp;
 use std::collections::HashMap;
-use std::sync::{Condvar, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
+use std::thread;
 
 #[derive(PartialEq, Debug, Copy, Clone)]
 enum State {
@@ -495,5 +496,25 @@ mod tests {
         assert!(log.at(index1).unwrap().is_committed());
         assert!(log.at(index2).unwrap().is_committed());
         assert!(log.is_executable());
+    }
+
+    #[test]
+    fn commit_before_append() {
+        let store = Box::new(MemKVStore::new());
+        let log = Arc::new(Log::new(store));
+
+        let get = Command::Get(String::from(""));
+        let ballot = 0;
+        let index = log.advance_last_index();
+        let instance = Instance::new(ballot, index, State::InProgress, get);
+
+        let thread_log = Arc::clone(&log);
+        let commit_thread = thread::spawn(move || {
+            thread_log.commit(index);
+        });
+
+        log.append(instance);
+        commit_thread.join().unwrap();
+        assert!(log.at(index).unwrap().is_committed());
     }
 }
