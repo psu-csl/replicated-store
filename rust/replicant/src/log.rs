@@ -278,7 +278,8 @@ mod tests {
         let ballot = 1;
         let instance1 = Instance::new(ballot, index, State::InProgress, put.clone());
         let instance2 = instance1.clone();
-        let mut log = MapLog::new();
+        let store = Box::new(MemKVStore::new());
+        let mut log = MapLog::new(store);
 
         assert!(log.insert(instance1));
         assert_eq!(put, log.map[&index].command);
@@ -293,7 +294,8 @@ mod tests {
         let ballot = 1;
         let instance1 = Instance::new(ballot, index, State::InProgress, put.clone());
         let instance2 = Instance::new(ballot + 1, index, State::InProgress, del.clone());
-        let mut log = MapLog::new();
+        let store = Box::new(MemKVStore::new());
+        let mut log = MapLog::new(store);
 
         assert!(log.insert(instance1));
         assert_eq!(put, log.map[&index].command);
@@ -308,7 +310,8 @@ mod tests {
         let ballot = 1;
         let instance1 = Instance::new(ballot, index, State::Committed, put.clone());
         let instance2 = Instance::new(ballot + 1, index, State::InProgress, put);
-        let mut log = MapLog::new();
+        let store = Box::new(MemKVStore::new());
+        let mut log = MapLog::new(store);
 
         assert!(log.insert(instance1));
         assert!(!log.insert(instance2));
@@ -322,7 +325,8 @@ mod tests {
         let ballot = 1;
         let instance1 = Instance::new(ballot, index, State::InProgress, put.clone());
         let instance2 = Instance::new(ballot - 1, index, State::InProgress, del.clone());
-        let mut log = MapLog::new();
+        let store = Box::new(MemKVStore::new());
+        let mut log = MapLog::new(store);
 
         assert!(log.insert(instance1));
         assert_eq!(put, log.map[&index].command);
@@ -339,7 +343,8 @@ mod tests {
         let ballot = 0;
         let instance1 = Instance::new(ballot, index, State::Committed, put);
         let instance2 = Instance::new(ballot, index, State::InProgress, del);
-        let mut log = MapLog::new();
+        let store = Box::new(MemKVStore::new());
+        let mut log = MapLog::new(store);
 
         assert!(log.insert(instance1));
         log.insert(instance2);
@@ -354,7 +359,8 @@ mod tests {
         let ballot = 0;
         let instance1 = Instance::new(ballot, index, State::Executed, put);
         let instance2 = Instance::new(ballot, index, State::InProgress, del);
-        let mut log = MapLog::new();
+        let store = Box::new(MemKVStore::new());
+        let mut log = MapLog::new(store);
 
         assert!(log.insert(instance1));
         log.insert(instance2);
@@ -369,7 +375,8 @@ mod tests {
         let ballot = 0;
         let instance1 = Instance::new(ballot, index, State::InProgress, put);
         let instance2 = Instance::new(ballot, index, State::InProgress, del);
-        let mut log = MapLog::new();
+        let store = Box::new(MemKVStore::new());
+        let mut log = MapLog::new(store);
 
         assert!(log.insert(instance1));
         log.insert(instance2);
@@ -511,13 +518,349 @@ mod tests {
         let index = log.advance_last_index();
         let instance = Instance::new(ballot, index, State::InProgress, get);
 
-        let thread_log = Arc::clone(&log);
-        let commit_thread = thread::spawn(move || {
-            thread_log.commit(index);
-        });
+        let commit_thread = {
+            let log = Arc::clone(&log);
+            thread::spawn(move || {
+                log.commit(index);
+            })
+        };
+        thread::yield_now();
 
         log.append(instance);
         commit_thread.join().unwrap();
         assert!(log.at(index).unwrap().is_committed());
+    }
+
+    #[test]
+    fn append_commit_execute() {
+        let store = Box::new(MemKVStore::new());
+        let log = Arc::new(Log::new(store));
+
+        let get = Command::Get(String::from(""));
+        let ballot = 0;
+        let index = log.advance_last_index();
+        let instance = Instance::new(ballot, index, State::InProgress, get);
+
+        let execute_thread = {
+            let log = Arc::clone(&log);
+            thread::spawn(move || {
+                log.execute();
+            })
+        };
+
+        log.append(instance);
+        log.commit(index);
+        execute_thread.join().unwrap();
+
+        assert!(log.at(index).unwrap().is_executed());
+        assert_eq!(index, log.last_executed());
+    }
+
+    #[test]
+    fn append_commit_execute_out_of_order() {
+        let store = Box::new(MemKVStore::new());
+        let log = Arc::new(Log::new(store));
+
+        let get = Command::Get(String::from(""));
+        let ballot = 0;
+        let index1 = 1;
+        let instance1 = Instance::new(ballot, index1, State::InProgress, get.clone());
+        let index2 = 2;
+        let instance2 = Instance::new(ballot, index2, State::InProgress, get.clone());
+        let index3 = 3;
+        let instance3 = Instance::new(ballot, index3, State::InProgress, get.clone());
+
+        let execute_thread = {
+            let log = Arc::clone(&log);
+            thread::spawn(move || {
+                log.execute();
+                log.execute();
+                log.execute();
+            })
+        };
+
+        log.append(instance1);
+        log.append(instance2);
+        log.append(instance3);
+
+        log.commit(index3);
+        log.commit(index2);
+        log.commit(index1);
+
+        execute_thread.join().unwrap();
+
+        assert!(log.at(index1).unwrap().is_executed());
+        assert!(log.at(index2).unwrap().is_executed());
+        assert!(log.at(index3).unwrap().is_executed());
+        assert_eq!(index3, log.last_executed());
+    }
+
+    #[test]
+    fn commit_until() {
+        let store = Box::new(MemKVStore::new());
+        let log = Arc::new(Log::new(store));
+
+        let get = Command::Get(String::from(""));
+        let ballot = 0;
+        let index1 = 1;
+        let instance1 = Instance::new(ballot, index1, State::InProgress, get.clone());
+        let index2 = 2;
+        let instance2 = Instance::new(ballot, index2, State::InProgress, get.clone());
+        let index3 = 3;
+        let instance3 = Instance::new(ballot, index3, State::InProgress, get.clone());
+
+        log.append(instance1);
+        log.append(instance2);
+        log.append(instance3);
+        log.commit_until(index2, ballot);
+
+        assert!(log.at(index1).unwrap().is_committed());
+        assert!(log.at(index2).unwrap().is_committed());
+        assert!(!log.at(index3).unwrap().is_committed());
+        assert!(log.is_executable());
+    }
+
+    #[test]
+    fn commit_until_higher_ballot() {
+        let store = Box::new(MemKVStore::new());
+        let log = Arc::new(Log::new(store));
+
+        let get = Command::Get(String::from(""));
+        let ballot = 0;
+        let index1 = 1;
+        let instance1 = Instance::new(ballot, index1, State::InProgress, get.clone());
+        let index2 = 2;
+        let instance2 = Instance::new(ballot, index2, State::InProgress, get.clone());
+        let index3 = 3;
+        let instance3 = Instance::new(ballot, index3, State::InProgress, get.clone());
+
+        log.append(instance1);
+        log.append(instance2);
+        log.append(instance3);
+        log.commit_until(index3, ballot + 1);
+
+        assert!(!log.at(index1).unwrap().is_committed());
+        assert!(!log.at(index2).unwrap().is_committed());
+        assert!(!log.at(index3).unwrap().is_committed());
+        assert!(!log.is_executable());
+    }
+
+    #[test]
+    #[should_panic(expected = "commit_until case 2")]
+    fn commit_until_case2() {
+        let store = Box::new(MemKVStore::new());
+        let log = Arc::new(Log::new(store));
+
+        let get = Command::Get(String::from(""));
+        let ballot = 5;
+        let index1 = 1;
+        let instance1 = Instance::new(ballot, index1, State::InProgress, get.clone());
+        let index2 = 2;
+        let instance2 = Instance::new(ballot, index2, State::InProgress, get.clone());
+        let index3 = 3;
+        let instance3 = Instance::new(ballot, index3, State::InProgress, get.clone());
+
+        log.append(instance1);
+        log.append(instance2);
+        log.append(instance3);
+        log.commit_until(index3, ballot - 1);
+    }
+
+    #[test]
+    fn commit_until_with_gap() {
+        let store = Box::new(MemKVStore::new());
+        let log = Arc::new(Log::new(store));
+
+        let get = Command::Get(String::from(""));
+        let ballot = 0;
+        let index1 = 1;
+        let instance1 = Instance::new(ballot, index1, State::InProgress, get.clone());
+        let index3 = 3;
+        let instance3 = Instance::new(ballot, index3, State::InProgress, get.clone());
+        let index4 = 4;
+        let instance4 = Instance::new(ballot, index4, State::InProgress, get.clone());
+
+        log.append(instance1);
+        log.append(instance3);
+        log.append(instance4);
+        log.commit_until(index4, ballot);
+
+        assert!(log.at(index1).unwrap().is_committed());
+        assert!(!log.at(index3).unwrap().is_committed());
+        assert!(!log.at(index4).unwrap().is_committed());
+    }
+
+    #[test]
+    fn append_commit_until_execute() {
+        let store = Box::new(MemKVStore::new());
+        let log = Arc::new(Log::new(store));
+
+        let get = Command::Get(String::from(""));
+        let ballot = 0;
+        let index1 = 1;
+        let instance1 = Instance::new(ballot, index1, State::InProgress, get.clone());
+        let index2 = 2;
+        let instance2 = Instance::new(ballot, index2, State::InProgress, get.clone());
+        let index3 = 3;
+        let instance3 = Instance::new(ballot, index3, State::InProgress, get.clone());
+
+        let execute_thread = {
+            let log = Arc::clone(&log);
+            thread::spawn(move || {
+                log.execute();
+                log.execute();
+                log.execute();
+            })
+        };
+
+        log.append(instance1);
+        log.append(instance2);
+        log.append(instance3);
+
+        log.commit_until(index3, ballot);
+
+        execute_thread.join().unwrap();
+
+        assert!(log.at(index1).unwrap().is_executed());
+        assert!(log.at(index2).unwrap().is_executed());
+        assert!(log.at(index3).unwrap().is_executed());
+        assert!(!log.is_executable());
+    }
+
+    #[test]
+    fn append_commit_until_execute_trim_until() {
+        let store = Box::new(MemKVStore::new());
+        let log = Arc::new(Log::new(store));
+
+        let get = Command::Get(String::from(""));
+        let ballot = 0;
+        let index1 = 1;
+        let instance1 = Instance::new(ballot, index1, State::InProgress, get.clone());
+        let index2 = 2;
+        let instance2 = Instance::new(ballot, index2, State::InProgress, get.clone());
+        let index3 = 3;
+        let instance3 = Instance::new(ballot, index3, State::InProgress, get.clone());
+
+        let execute_thread = {
+            let log = Arc::clone(&log);
+            thread::spawn(move || {
+                log.execute();
+                log.execute();
+                log.execute();
+            })
+        };
+
+        log.append(instance1);
+        log.append(instance2);
+        log.append(instance3);
+
+        log.commit_until(index3, ballot);
+        execute_thread.join().unwrap();
+
+        log.trim_until(index3);
+
+        assert_eq!(None, log.at(index1));
+        assert_eq!(None, log.at(index2));
+        assert_eq!(None, log.at(index3));
+        assert_eq!(index3, log.last_executed());
+        assert_eq!(index3, log.global_last_executed());
+        assert!(!log.is_executable());
+    }
+
+    #[test]
+    fn append_at_trimmed_index() {
+        let store = Box::new(MemKVStore::new());
+        let log = Arc::new(Log::new(store));
+
+        let get = Command::Get(String::from(""));
+        let ballot = 0;
+        let index1 = 1;
+        let instance1 = Instance::new(ballot, index1, State::InProgress, get.clone());
+        let index2 = 2;
+        let instance2 = Instance::new(ballot, index2, State::InProgress, get.clone());
+
+        let execute_thread = {
+            let log = Arc::clone(&log);
+            thread::spawn(move || {
+                log.execute();
+                log.execute();
+            })
+        };
+
+        log.append(instance1.clone());
+        log.append(instance2.clone());
+
+        log.commit_until(index2, ballot);
+        execute_thread.join().unwrap();
+
+        log.trim_until(index2);
+
+        assert_eq!(None, log.at(index1));
+        assert_eq!(None, log.at(index2));
+        assert_eq!(index2, log.last_executed());
+        assert_eq!(index2, log.global_last_executed());
+        assert!(!log.is_executable());
+
+        log.append(instance1);
+        log.append(instance2);
+
+        assert_eq!(None, log.at(index1));
+        assert_eq!(None, log.at(index2));
+    }
+
+    #[test]
+    fn instances() {
+        let store = Box::new(MemKVStore::new());
+        let log = Arc::new(Log::new(store));
+
+        let get = Command::Get(String::from(""));
+        let ballot = 0;
+        let index1 = 1;
+        let instance1 = Instance::new(ballot, index1, State::InProgress, get.clone());
+        let index2 = 2;
+        let instance2 = Instance::new(ballot, index2, State::InProgress, get.clone());
+        let index3 = 3;
+        let instance3 = Instance::new(ballot, index3, State::InProgress, get.clone());
+
+        let expected = vec![instance1.clone(), instance2.clone(), instance3.clone()];
+
+        let execute_thread = {
+            let log = Arc::clone(&log);
+            thread::spawn(move || {
+                log.execute();
+                log.execute();
+            })
+        };
+
+        log.append(instance1);
+        log.append(instance2);
+        log.append(instance3);
+
+        assert_eq!(expected, log.instances());
+
+        log.commit_until(index2, ballot);
+
+        execute_thread.join().unwrap();
+
+        log.trim_until(index2);
+
+        assert_eq!(&expected[index2 as usize..], log.instances());
+    }
+
+    #[test]
+    fn calling_stop_unblocks_executor() {
+        let store = Box::new(MemKVStore::new());
+        let log = Arc::new(Log::new(store));
+
+        let execute_thread = {
+            let log = Arc::clone(&log);
+            thread::spawn(move || {
+                let r = log.execute();
+                assert_eq!(None, r);
+            })
+        };
+        thread::yield_now();
+        log.stop();
+        execute_thread.join().unwrap();
     }
 }
