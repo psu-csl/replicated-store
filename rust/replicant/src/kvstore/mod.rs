@@ -17,7 +17,10 @@ pub trait KVStore {
 }
 
 impl Command {
-    pub fn execute(&self, store: &mut Box<dyn KVStore>) -> Result<Option<String>, &'static str> {
+    pub fn execute(
+        &self,
+        store: &mut Box<dyn KVStore + Sync + Send>,
+    ) -> Result<Option<String>, &'static str> {
         match self {
             Command::Get(key) => match store.get(&key) {
                 Some(value) => Ok(Some(value)),

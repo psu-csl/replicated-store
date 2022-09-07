@@ -52,7 +52,10 @@ impl Instance {
         self.state = State::Committed;
     }
 
-    fn execute(&mut self, store: &mut Box<dyn KVStore>) -> Result<Option<String>, &'static str> {
+    fn execute(
+        &mut self,
+        store: &mut Box<dyn KVStore + Sync + Send>,
+    ) -> Result<Option<String>, &'static str> {
         self.state = State::Executed;
         self.command.execute(store)
     }
@@ -66,16 +69,18 @@ struct MapLog {
     last_index: i64,
     last_executed: i64,
     global_last_executed: i64,
+    kv_store: Box<dyn KVStore + Sync + Send>,
 }
 
 impl MapLog {
-    fn new() -> Self {
+    fn new(kv_store: Box<dyn KVStore + Sync + Send>) -> Self {
         MapLog {
             map: HashMap::new(),
             running: true,
             last_index: 0,
             last_executed: 0,
             global_last_executed: 0,
+            kv_store: kv_store,
         }
     }
 
@@ -107,12 +112,12 @@ impl MapLog {
         }
     }
 
-    fn execute(&mut self, store: &mut Box<dyn KVStore>) -> LogResult {
+    fn execute(&mut self) -> LogResult {
         self.last_executed += 1;
         let it = self.map.get_mut(&self.last_executed);
         assert!(it.is_some());
         let instance = it.unwrap();
-        (instance.client_id, instance.execute(store))
+        (instance.client_id, instance.execute(&mut self.kv_store))
     }
 }
 
@@ -120,16 +125,14 @@ pub struct Log {
     log: Mutex<MapLog>,
     cv_executable: Condvar,
     cv_committable: Condvar,
-    kv_store: Box<dyn KVStore>,
 }
 
 impl Log {
-    pub fn new(kv_store: Box<dyn KVStore>) -> Self {
+    pub fn new(kv_store: Box<dyn KVStore + Sync + Send>) -> Self {
         Log {
-            log: Mutex::new(MapLog::new()),
+            log: Mutex::new(MapLog::new(kv_store)),
             cv_executable: Condvar::new(),
             cv_committable: Condvar::new(),
-            kv_store: kv_store,
         }
     }
 
@@ -184,7 +187,7 @@ impl Log {
         }
     }
 
-    fn execute(&mut self) -> Option<LogResult> {
+    fn execute(&self) -> Option<LogResult> {
         let mut log = self.log.lock().unwrap();
         while log.running && !log.is_executable() {
             log = self.cv_executable.wait(log).unwrap();
@@ -192,7 +195,7 @@ impl Log {
         if !log.running {
             return None;
         }
-        Some(log.execute(&mut self.kv_store))
+        Some(log.execute())
     }
 
     fn commit_until(&self, leader_last_executed: i64, ballot: i64) {
