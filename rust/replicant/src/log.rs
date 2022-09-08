@@ -273,7 +273,7 @@ mod tests {
 
     #[test]
     fn insert() {
-        let put = Command::Put(String::from(""), String::from(""));
+        let put = Command::put("", "");
         let index = 1;
         let ballot = 1;
         let instance1 = Instance::new(ballot, index, State::InProgress, put.clone());
@@ -288,8 +288,8 @@ mod tests {
 
     #[test]
     fn insert_update_in_progress() {
-        let put = Command::Put(String::from(""), String::from(""));
-        let del = Command::Del(String::from(""));
+        let put = Command::put("", "");
+        let del = Command::del("");
         let index = 1;
         let ballot = 1;
         let instance1 = Instance::new(ballot, index, State::InProgress, put.clone());
@@ -305,7 +305,7 @@ mod tests {
 
     #[test]
     fn insert_update_commited() {
-        let put = Command::Put(String::from(""), String::from(""));
+        let put = Command::put("", "");
         let index = 1;
         let ballot = 1;
         let instance1 = Instance::new(ballot, index, State::Committed, put.clone());
@@ -319,8 +319,8 @@ mod tests {
 
     #[test]
     fn insert_stale() {
-        let put = Command::Put(String::from(""), String::from(""));
-        let del = Command::Del(String::from(""));
+        let put = Command::put("", "");
+        let del = Command::del("");
         let index = 1;
         let ballot = 1;
         let instance1 = Instance::new(ballot, index, State::InProgress, put.clone());
@@ -337,8 +337,8 @@ mod tests {
     #[test]
     #[should_panic(expected = "insert case 2")]
     fn insert_case2_committed() {
-        let put = Command::Put(String::from(""), String::from(""));
-        let del = Command::Del(String::from(""));
+        let put = Command::put("", "");
+        let del = Command::del("");
         let index = 1;
         let ballot = 0;
         let instance1 = Instance::new(ballot, index, State::Committed, put);
@@ -353,8 +353,8 @@ mod tests {
     #[test]
     #[should_panic(expected = "insert case 2")]
     fn insert_case2_executed() {
-        let put = Command::Put(String::from(""), String::from(""));
-        let del = Command::Del(String::from(""));
+        let put = Command::put("", "");
+        let del = Command::del("");
         let index = 1;
         let ballot = 0;
         let instance1 = Instance::new(ballot, index, State::Executed, put);
@@ -369,8 +369,8 @@ mod tests {
     #[test]
     #[should_panic(expected = "insert case 3")]
     fn insert_case3() {
-        let put = Command::Put(String::from(""), String::from(""));
-        let del = Command::Del(String::from(""));
+        let put = Command::put("", "");
+        let del = Command::del("");
         let index = 1;
         let ballot = 0;
         let instance1 = Instance::new(ballot, index, State::InProgress, put);
@@ -387,7 +387,7 @@ mod tests {
         let store = Box::new(MemKVStore::new());
         let log = Log::new(store);
 
-        let get = Command::Get(String::from(""));
+        let get = Command::get("");
         let ballot = 0;
         let instance1 = Instance::new(
             ballot,
@@ -413,7 +413,7 @@ mod tests {
         let store = Box::new(MemKVStore::new());
         let log = Log::new(store);
 
-        let get = Command::Get(String::from(""));
+        let get = Command::get("");
         let ballot = 0;
         let index = 42;
         let instance = Instance::new(ballot, index, State::InProgress, get.clone());
@@ -428,7 +428,7 @@ mod tests {
         let store = Box::new(MemKVStore::new());
         let log = Log::new(store);
 
-        let get = Command::Get(String::from(""));
+        let get = Command::get("");
         let ballot = 0;
         let index = 42;
         let instance1 = Instance::new(ballot, index, State::InProgress, get.clone());
@@ -444,8 +444,8 @@ mod tests {
         let store = Box::new(MemKVStore::new());
         let log = Log::new(store);
 
-        let put = Command::Put(String::from(""), String::from(""));
-        let del = Command::Del(String::from(""));
+        let put = Command::put("", "");
+        let del = Command::del("");
         let index = 1;
         let lo_ballot = 0;
         let hi_ballot = 1;
@@ -463,8 +463,8 @@ mod tests {
         let store = Box::new(MemKVStore::new());
         let log = Log::new(store);
 
-        let put = Command::Put(String::from(""), String::from(""));
-        let del = Command::Del(String::from(""));
+        let put = Command::put("", "");
+        let del = Command::del("");
         let index = 1;
         let lo_ballot = 0;
         let hi_ballot = 1;
@@ -482,7 +482,7 @@ mod tests {
         let store = Box::new(MemKVStore::new());
         let log = Log::new(store);
 
-        let get = Command::Get(String::from(""));
+        let get = Command::get("");
         let ballot = 0;
         let index1 = 1;
         let index2 = 2;
@@ -513,7 +513,7 @@ mod tests {
         let store = Box::new(MemKVStore::new());
         let log = Arc::new(Log::new(store));
 
-        let get = Command::Get(String::from(""));
+        let get = Command::get("");
         let ballot = 0;
         let index = log.advance_last_index();
         let instance = Instance::new(ballot, index, State::InProgress, get);
@@ -536,7 +536,7 @@ mod tests {
         let store = Box::new(MemKVStore::new());
         let log = Arc::new(Log::new(store));
 
-        let get = Command::Get(String::from(""));
+        let get = Command::get("");
         let ballot = 0;
         let index = log.advance_last_index();
         let instance = Instance::new(ballot, index, State::InProgress, get);
@@ -561,7 +561,7 @@ mod tests {
         let store = Box::new(MemKVStore::new());
         let log = Arc::new(Log::new(store));
 
-        let get = Command::Get(String::from(""));
+        let get = Command::get("");
         let ballot = 0;
         let index1 = 1;
         let instance1 = Instance::new(ballot, index1, State::InProgress, get.clone());
@@ -600,7 +600,7 @@ mod tests {
         let store = Box::new(MemKVStore::new());
         let log = Arc::new(Log::new(store));
 
-        let get = Command::Get(String::from(""));
+        let get = Command::get("");
         let ballot = 0;
         let index1 = 1;
         let instance1 = Instance::new(ballot, index1, State::InProgress, get.clone());
@@ -625,7 +625,7 @@ mod tests {
         let store = Box::new(MemKVStore::new());
         let log = Arc::new(Log::new(store));
 
-        let get = Command::Get(String::from(""));
+        let get = Command::get("");
         let ballot = 0;
         let index1 = 1;
         let instance1 = Instance::new(ballot, index1, State::InProgress, get.clone());
@@ -651,7 +651,7 @@ mod tests {
         let store = Box::new(MemKVStore::new());
         let log = Arc::new(Log::new(store));
 
-        let get = Command::Get(String::from(""));
+        let get = Command::get("");
         let ballot = 5;
         let index1 = 1;
         let instance1 = Instance::new(ballot, index1, State::InProgress, get.clone());
@@ -671,7 +671,7 @@ mod tests {
         let store = Box::new(MemKVStore::new());
         let log = Arc::new(Log::new(store));
 
-        let get = Command::Get(String::from(""));
+        let get = Command::get("");
         let ballot = 0;
         let index1 = 1;
         let instance1 = Instance::new(ballot, index1, State::InProgress, get.clone());
@@ -695,7 +695,7 @@ mod tests {
         let store = Box::new(MemKVStore::new());
         let log = Arc::new(Log::new(store));
 
-        let get = Command::Get(String::from(""));
+        let get = Command::get("");
         let ballot = 0;
         let index1 = 1;
         let instance1 = Instance::new(ballot, index1, State::InProgress, get.clone());
@@ -732,7 +732,7 @@ mod tests {
         let store = Box::new(MemKVStore::new());
         let log = Arc::new(Log::new(store));
 
-        let get = Command::Get(String::from(""));
+        let get = Command::get("");
         let ballot = 0;
         let index1 = 1;
         let instance1 = Instance::new(ballot, index1, State::InProgress, get.clone());
@@ -772,7 +772,7 @@ mod tests {
         let store = Box::new(MemKVStore::new());
         let log = Arc::new(Log::new(store));
 
-        let get = Command::Get(String::from(""));
+        let get = Command::get("");
         let ballot = 0;
         let index1 = 1;
         let instance1 = Instance::new(ballot, index1, State::InProgress, get.clone());
@@ -813,7 +813,7 @@ mod tests {
         let store = Box::new(MemKVStore::new());
         let log = Arc::new(Log::new(store));
 
-        let get = Command::Get(String::from(""));
+        let get = Command::get("");
         let ballot = 0;
         let index1 = 1;
         let instance1 = Instance::new(ballot, index1, State::InProgress, get.clone());

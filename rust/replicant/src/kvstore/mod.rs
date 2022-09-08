@@ -3,11 +3,10 @@ pub mod memkvstore;
 pub const NOT_FOUND: &str = "key not found";
 pub const PUT_FAILED: &str = "put failed";
 
-#[derive(PartialEq, Debug, Clone)]
-pub enum Command {
-    Get(String),
-    Put(String, String),
-    Del(String),
+pub use multipaxos::{Command, CommandType};
+
+pub mod multipaxos {
+    tonic::include_proto!("multipaxos");
 }
 
 pub trait KVStore {
@@ -17,24 +16,48 @@ pub trait KVStore {
 }
 
 impl Command {
+    pub fn get(key: &str) -> Self {
+        Self {
+            r#type: CommandType::Get as i32,
+            key: key.to_string(),
+            value: String::from(""),
+        }
+    }
+
+    pub fn put(key: &str, value: &str) -> Self {
+        Self {
+            r#type: CommandType::Put as i32,
+            key: key.to_string(),
+            value: value.to_string(),
+        }
+    }
+
+    pub fn del(key: &str) -> Self {
+        Self {
+            r#type: CommandType::Del as i32,
+            key: key.to_string(),
+            value: String::from(""),
+        }
+    }
+
     pub fn execute(
         &self,
         store: &mut Box<dyn KVStore + Sync + Send>,
     ) -> Result<Option<String>, &'static str> {
-        match self {
-            Command::Get(key) => match store.get(&key) {
+        match CommandType::from_i32(self.r#type).unwrap() {
+            CommandType::Get => match store.get(&self.key) {
                 Some(value) => Ok(Some(value)),
                 None => Err(NOT_FOUND),
             },
-            Command::Put(key, value) => {
-                if store.put(&key, &value) {
+            CommandType::Put => {
+                if store.put(&self.key, &self.value) {
                     Ok(None)
                 } else {
                     Err(PUT_FAILED)
                 }
             }
-            Command::Del(key) => {
-                if store.del(&key) {
+            CommandType::Del => {
+                if store.del(&self.key) {
                     Ok(None)
                 } else {
                     Err(NOT_FOUND)

@@ -75,12 +75,12 @@ mod tests {
     fn execute() {
         let mut store: Box<dyn KVStore + Sync + Send> = Box::new(MemKVStore::new());
 
-        let get_key1 = Command::Get(KEY1.to_string());
-        let get_key2 = Command::Get(KEY2.to_string());
-        let del_key1 = Command::Del(KEY1.to_string());
-        let put_key1val1 = Command::Put(KEY1.to_string(), VAL1.to_string());
-        let put_key2val2 = Command::Put(KEY2.to_string(), VAL2.to_string());
-        let put_key1val2 = Command::Put(KEY1.to_string(), VAL2.to_string());
+        let get_key1 = Command::get(KEY1);
+        let get_key2 = Command::get(KEY2);
+        let del_key1 = Command::del(KEY1);
+        let put_key1val1 = Command::put(KEY1, VAL1);
+        let put_key2val2 = Command::put(KEY2, VAL2);
+        let put_key1val2 = Command::put(KEY1, VAL2);
 
         assert_eq!(Err(NOT_FOUND), get_key1.execute(&mut store));
 
