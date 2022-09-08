@@ -1,63 +1,60 @@
 use crate::kvstore::memkvstore::MemKVStore;
-use crate::kvstore::Command;
 use crate::kvstore::KVStore;
 use std::cmp;
 use std::collections::HashMap;
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 
-#[derive(PartialEq, Debug, Copy, Clone)]
-enum State {
-    InProgress,
-    Committed,
-    Executed,
-}
+use super::multipaxos::Command;
+use super::multipaxos::{Instance, InstanceState};
 
 type LogResult = (i64, Result<Option<String>, &'static str>);
 
-#[derive(PartialEq, Debug, Clone)]
-struct Instance {
-    ballot: i64,
-    index: i64,
-    state: State,
-    command: Command,
-    client_id: i64,
-}
-
 impl Instance {
-    fn new(ballot: i64, index: i64, state: State, command: Command) -> Instance {
-        let client_id = 0;
-        Instance {
-            index,
-            ballot,
-            state,
-            command,
-            client_id,
+    fn inprogress(ballot: i64, index: i64, command: &Command) -> Self {
+        Self::new(ballot, index, InstanceState::Inprogress, command)
+    }
+
+    fn committed(ballot: i64, index: i64, command: &Command) -> Self {
+        Self::new(ballot, index, InstanceState::Committed, command)
+    }
+
+    fn executed(ballot: i64, index: i64, command: &Command) -> Self {
+        Self::new(ballot, index, InstanceState::Executed, command)
+    }
+
+    fn new(ballot: i64, index: i64, state: InstanceState, command: &Command) -> Self {
+        Self {
+            ballot: ballot,
+            index: index,
+            client_id: 0,
+            state: state as i32,
+            command: Some(command.clone()),
         }
     }
 
     fn is_in_progress(&self) -> bool {
-        self.state == State::InProgress
+        self.state == InstanceState::Inprogress as i32
     }
 
     fn is_committed(&self) -> bool {
-        self.state == State::Committed
+        self.state == InstanceState::Committed as i32
     }
 
     fn is_executed(&self) -> bool {
-        self.state == State::Executed
+        self.state == InstanceState::Executed as i32
     }
 
     fn commit(&mut self) {
-        self.state = State::Committed;
+        self.state = InstanceState::Committed as i32
     }
 
     fn execute(
         &mut self,
         store: &mut Box<dyn KVStore + Sync + Send>,
     ) -> Result<Option<String>, &'static str> {
-        self.state = State::Executed;
-        self.command.execute(store)
+        self.state = InstanceState::Executed as i32;
+        self.command.as_ref().unwrap().execute(store)
     }
 }
 
@@ -276,13 +273,13 @@ mod tests {
         let put = Command::put("", "");
         let index = 1;
         let ballot = 1;
-        let instance1 = Instance::new(ballot, index, State::InProgress, put.clone());
+        let instance1 = Instance::inprogress(ballot, index, &put);
         let instance2 = instance1.clone();
         let store = Box::new(MemKVStore::new());
         let mut log = MapLog::new(store);
 
         assert!(log.insert(instance1));
-        assert_eq!(put, log.map[&index].command);
+        assert_eq!(put, *log.map[&index].command.as_ref().unwrap());
         assert!(!log.insert(instance2));
     }
 
@@ -292,15 +289,15 @@ mod tests {
         let del = Command::del("");
         let index = 1;
         let ballot = 1;
-        let instance1 = Instance::new(ballot, index, State::InProgress, put.clone());
-        let instance2 = Instance::new(ballot + 1, index, State::InProgress, del.clone());
+        let instance1 = Instance::inprogress(ballot, index, &put);
+        let instance2 = Instance::inprogress(ballot + 1, index, &del);
         let store = Box::new(MemKVStore::new());
         let mut log = MapLog::new(store);
 
         assert!(log.insert(instance1));
-        assert_eq!(put, log.map[&index].command);
+        assert_eq!(put, *log.map[&index].command.as_ref().unwrap());
         assert!(!log.insert(instance2));
-        assert_eq!(del, log.map[&index].command);
+        assert_eq!(del, *log.map[&index].command.as_ref().unwrap());
     }
 
     #[test]
@@ -308,8 +305,8 @@ mod tests {
         let put = Command::put("", "");
         let index = 1;
         let ballot = 1;
-        let instance1 = Instance::new(ballot, index, State::Committed, put.clone());
-        let instance2 = Instance::new(ballot + 1, index, State::InProgress, put);
+        let instance1 = Instance::committed(ballot, index, &put);
+        let instance2 = Instance::inprogress(ballot + 1, index, &put);
         let store = Box::new(MemKVStore::new());
         let mut log = MapLog::new(store);
 
@@ -323,15 +320,15 @@ mod tests {
         let del = Command::del("");
         let index = 1;
         let ballot = 1;
-        let instance1 = Instance::new(ballot, index, State::InProgress, put.clone());
-        let instance2 = Instance::new(ballot - 1, index, State::InProgress, del.clone());
+        let instance1 = Instance::inprogress(ballot, index, &put);
+        let instance2 = Instance::inprogress(ballot - 1, index, &del);
         let store = Box::new(MemKVStore::new());
         let mut log = MapLog::new(store);
 
         assert!(log.insert(instance1));
-        assert_eq!(put, log.map[&index].command);
+        assert_eq!(put, *log.map[&index].command.as_ref().unwrap());
         assert!(!log.insert(instance2));
-        assert_eq!(put, log.map[&index].command);
+        assert_eq!(put, *log.map[&index].command.as_ref().unwrap());
     }
 
     #[test]
@@ -341,8 +338,8 @@ mod tests {
         let del = Command::del("");
         let index = 1;
         let ballot = 0;
-        let instance1 = Instance::new(ballot, index, State::Committed, put);
-        let instance2 = Instance::new(ballot, index, State::InProgress, del);
+        let instance1 = Instance::committed(ballot, index, &put);
+        let instance2 = Instance::inprogress(ballot, index, &del);
         let store = Box::new(MemKVStore::new());
         let mut log = MapLog::new(store);
 
@@ -357,8 +354,8 @@ mod tests {
         let del = Command::del("");
         let index = 1;
         let ballot = 0;
-        let instance1 = Instance::new(ballot, index, State::Executed, put);
-        let instance2 = Instance::new(ballot, index, State::InProgress, del);
+        let instance1 = Instance::executed(ballot, index, &put);
+        let instance2 = Instance::inprogress(ballot, index, &del);
         let store = Box::new(MemKVStore::new());
         let mut log = MapLog::new(store);
 
@@ -373,8 +370,8 @@ mod tests {
         let del = Command::del("");
         let index = 1;
         let ballot = 0;
-        let instance1 = Instance::new(ballot, index, State::InProgress, put);
-        let instance2 = Instance::new(ballot, index, State::InProgress, del);
+        let instance1 = Instance::inprogress(ballot, index, &put);
+        let instance2 = Instance::inprogress(ballot, index, &del);
         let store = Box::new(MemKVStore::new());
         let mut log = MapLog::new(store);
 
@@ -389,18 +386,8 @@ mod tests {
 
         let get = Command::get("");
         let ballot = 0;
-        let instance1 = Instance::new(
-            ballot,
-            log.advance_last_index(),
-            State::InProgress,
-            get.clone(),
-        );
-        let instance2 = Instance::new(
-            ballot,
-            log.advance_last_index(),
-            State::InProgress,
-            get.clone(),
-        );
+        let instance1 = Instance::inprogress(ballot, log.advance_last_index(), &get);
+        let instance2 = Instance::inprogress(ballot, log.advance_last_index(), &get);
 
         log.append(instance1);
         log.append(instance2);
@@ -416,7 +403,7 @@ mod tests {
         let get = Command::get("");
         let ballot = 0;
         let index = 42;
-        let instance = Instance::new(ballot, index, State::InProgress, get.clone());
+        let instance = Instance::inprogress(ballot, index, &get);
 
         log.append(instance);
         assert_eq!(index, log.at(index).unwrap().index);
@@ -431,8 +418,8 @@ mod tests {
         let get = Command::get("");
         let ballot = 0;
         let index = 42;
-        let instance1 = Instance::new(ballot, index, State::InProgress, get.clone());
-        let instance2 = Instance::new(ballot, index - 10, State::InProgress, get.clone());
+        let instance1 = Instance::inprogress(ballot, index, &get);
+        let instance2 = Instance::inprogress(ballot, index - 10, &get);
 
         log.append(instance1);
         log.append(instance2);
@@ -450,12 +437,12 @@ mod tests {
         let lo_ballot = 0;
         let hi_ballot = 1;
 
-        let instance1 = Instance::new(lo_ballot, index, State::InProgress, put.clone());
-        let instance2 = Instance::new(hi_ballot, index, State::InProgress, del.clone());
+        let instance1 = Instance::inprogress(lo_ballot, index, &put);
+        let instance2 = Instance::inprogress(hi_ballot, index, &del);
 
         log.append(instance1);
         log.append(instance2);
-        assert_eq!(del, log.at(index).unwrap().command);
+        assert_eq!(del, log.at(index).unwrap().command.unwrap());
     }
 
     #[test]
@@ -469,12 +456,12 @@ mod tests {
         let lo_ballot = 0;
         let hi_ballot = 1;
 
-        let instance1 = Instance::new(hi_ballot, index, State::InProgress, put.clone());
-        let instance2 = Instance::new(lo_ballot, index, State::InProgress, del.clone());
+        let instance1 = Instance::inprogress(hi_ballot, index, &put);
+        let instance2 = Instance::inprogress(lo_ballot, index, &del);
 
         log.append(instance1);
         log.append(instance2);
-        assert_eq!(put, log.at(index).unwrap().command);
+        assert_eq!(put, log.at(index).unwrap().command.unwrap());
     }
 
     #[test]
@@ -486,8 +473,8 @@ mod tests {
         let ballot = 0;
         let index1 = 1;
         let index2 = 2;
-        let instance1 = Instance::new(ballot, index1, State::InProgress, get.clone());
-        let instance2 = Instance::new(ballot, index2, State::InProgress, get.clone());
+        let instance1 = Instance::inprogress(ballot, index1, &get);
+        let instance2 = Instance::inprogress(ballot, index2, &get);
 
         log.append(instance1);
         log.append(instance2);
@@ -516,7 +503,7 @@ mod tests {
         let get = Command::get("");
         let ballot = 0;
         let index = log.advance_last_index();
-        let instance = Instance::new(ballot, index, State::InProgress, get);
+        let instance = Instance::inprogress(ballot, index, &get);
 
         let commit_thread = {
             let log = Arc::clone(&log);
@@ -539,7 +526,7 @@ mod tests {
         let get = Command::get("");
         let ballot = 0;
         let index = log.advance_last_index();
-        let instance = Instance::new(ballot, index, State::InProgress, get);
+        let instance = Instance::inprogress(ballot, index, &get);
 
         let execute_thread = {
             let log = Arc::clone(&log);
@@ -564,11 +551,11 @@ mod tests {
         let get = Command::get("");
         let ballot = 0;
         let index1 = 1;
-        let instance1 = Instance::new(ballot, index1, State::InProgress, get.clone());
+        let instance1 = Instance::inprogress(ballot, index1, &get);
         let index2 = 2;
-        let instance2 = Instance::new(ballot, index2, State::InProgress, get.clone());
+        let instance2 = Instance::inprogress(ballot, index2, &get);
         let index3 = 3;
-        let instance3 = Instance::new(ballot, index3, State::InProgress, get.clone());
+        let instance3 = Instance::inprogress(ballot, index3, &get);
 
         let execute_thread = {
             let log = Arc::clone(&log);
@@ -603,11 +590,11 @@ mod tests {
         let get = Command::get("");
         let ballot = 0;
         let index1 = 1;
-        let instance1 = Instance::new(ballot, index1, State::InProgress, get.clone());
+        let instance1 = Instance::inprogress(ballot, index1, &get);
         let index2 = 2;
-        let instance2 = Instance::new(ballot, index2, State::InProgress, get.clone());
+        let instance2 = Instance::inprogress(ballot, index2, &get);
         let index3 = 3;
-        let instance3 = Instance::new(ballot, index3, State::InProgress, get.clone());
+        let instance3 = Instance::inprogress(ballot, index3, &get);
 
         log.append(instance1);
         log.append(instance2);
@@ -628,11 +615,11 @@ mod tests {
         let get = Command::get("");
         let ballot = 0;
         let index1 = 1;
-        let instance1 = Instance::new(ballot, index1, State::InProgress, get.clone());
+        let instance1 = Instance::inprogress(ballot, index1, &get);
         let index2 = 2;
-        let instance2 = Instance::new(ballot, index2, State::InProgress, get.clone());
+        let instance2 = Instance::inprogress(ballot, index2, &get);
         let index3 = 3;
-        let instance3 = Instance::new(ballot, index3, State::InProgress, get.clone());
+        let instance3 = Instance::inprogress(ballot, index3, &get);
 
         log.append(instance1);
         log.append(instance2);
@@ -654,11 +641,11 @@ mod tests {
         let get = Command::get("");
         let ballot = 5;
         let index1 = 1;
-        let instance1 = Instance::new(ballot, index1, State::InProgress, get.clone());
+        let instance1 = Instance::inprogress(ballot, index1, &get);
         let index2 = 2;
-        let instance2 = Instance::new(ballot, index2, State::InProgress, get.clone());
+        let instance2 = Instance::inprogress(ballot, index2, &get);
         let index3 = 3;
-        let instance3 = Instance::new(ballot, index3, State::InProgress, get.clone());
+        let instance3 = Instance::inprogress(ballot, index3, &get);
 
         log.append(instance1);
         log.append(instance2);
@@ -674,11 +661,11 @@ mod tests {
         let get = Command::get("");
         let ballot = 0;
         let index1 = 1;
-        let instance1 = Instance::new(ballot, index1, State::InProgress, get.clone());
+        let instance1 = Instance::inprogress(ballot, index1, &get);
         let index3 = 3;
-        let instance3 = Instance::new(ballot, index3, State::InProgress, get.clone());
+        let instance3 = Instance::inprogress(ballot, index3, &get);
         let index4 = 4;
-        let instance4 = Instance::new(ballot, index4, State::InProgress, get.clone());
+        let instance4 = Instance::inprogress(ballot, index4, &get);
 
         log.append(instance1);
         log.append(instance3);
@@ -698,11 +685,11 @@ mod tests {
         let get = Command::get("");
         let ballot = 0;
         let index1 = 1;
-        let instance1 = Instance::new(ballot, index1, State::InProgress, get.clone());
+        let instance1 = Instance::inprogress(ballot, index1, &get);
         let index2 = 2;
-        let instance2 = Instance::new(ballot, index2, State::InProgress, get.clone());
+        let instance2 = Instance::inprogress(ballot, index2, &get);
         let index3 = 3;
-        let instance3 = Instance::new(ballot, index3, State::InProgress, get.clone());
+        let instance3 = Instance::inprogress(ballot, index3, &get);
 
         let execute_thread = {
             let log = Arc::clone(&log);
@@ -735,11 +722,11 @@ mod tests {
         let get = Command::get("");
         let ballot = 0;
         let index1 = 1;
-        let instance1 = Instance::new(ballot, index1, State::InProgress, get.clone());
+        let instance1 = Instance::inprogress(ballot, index1, &get);
         let index2 = 2;
-        let instance2 = Instance::new(ballot, index2, State::InProgress, get.clone());
+        let instance2 = Instance::inprogress(ballot, index2, &get);
         let index3 = 3;
-        let instance3 = Instance::new(ballot, index3, State::InProgress, get.clone());
+        let instance3 = Instance::inprogress(ballot, index3, &get);
 
         let execute_thread = {
             let log = Arc::clone(&log);
@@ -775,9 +762,9 @@ mod tests {
         let get = Command::get("");
         let ballot = 0;
         let index1 = 1;
-        let instance1 = Instance::new(ballot, index1, State::InProgress, get.clone());
+        let instance1 = Instance::inprogress(ballot, index1, &get);
         let index2 = 2;
-        let instance2 = Instance::new(ballot, index2, State::InProgress, get.clone());
+        let instance2 = Instance::inprogress(ballot, index2, &get);
 
         let execute_thread = {
             let log = Arc::clone(&log);
@@ -816,11 +803,11 @@ mod tests {
         let get = Command::get("");
         let ballot = 0;
         let index1 = 1;
-        let instance1 = Instance::new(ballot, index1, State::InProgress, get.clone());
+        let instance1 = Instance::inprogress(ballot, index1, &get);
         let index2 = 2;
-        let instance2 = Instance::new(ballot, index2, State::InProgress, get.clone());
+        let instance2 = Instance::inprogress(ballot, index2, &get);
         let index3 = 3;
-        let instance3 = Instance::new(ballot, index3, State::InProgress, get.clone());
+        let instance3 = Instance::inprogress(ballot, index3, &get);
 
         let expected = vec![instance1.clone(), instance2.clone(), instance3.clone()];
 

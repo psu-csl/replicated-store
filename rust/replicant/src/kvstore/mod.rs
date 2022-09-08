@@ -3,11 +3,7 @@ pub mod memkvstore;
 pub const NOT_FOUND: &str = "key not found";
 pub const PUT_FAILED: &str = "put failed";
 
-pub use multipaxos::{Command, CommandType};
-
-pub mod multipaxos {
-    tonic::include_proto!("multipaxos");
-}
+use super::multipaxos::{Command, CommandType};
 
 pub trait KVStore {
     fn get(&self, key: &str) -> Option<String>;
