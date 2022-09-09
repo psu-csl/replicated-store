@@ -17,7 +17,7 @@ func DefaultConfig(id int64, n int) Config {
 
 	config := Config{
 		Id:             id,
-		CommitInterval: 300,
+		CommitInterval: 3000,
 		CommitDelta:    10,
 		Peers:          peers,
 	}
