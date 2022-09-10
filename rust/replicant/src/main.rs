@@ -3,7 +3,7 @@ mod log;
 mod multipaxos;
 
 use kvstore::memkvstore::MemKVStore;
-use log::Log;
+use crate::log::Log;
 
 fn main() {
     let store = Box::new(MemKVStore::new());

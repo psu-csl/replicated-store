@@ -1,9 +1,8 @@
 use super::log::Log;
 use crate::kvstore::memkvstore::MemKVStore;
-use crate::kvstore::KVStore;
-use rand::Rng;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Condvar, Mutex};
+use log::debug;
 
 tonic::include_proto!("multipaxos");
 
@@ -43,6 +42,7 @@ impl MultiPaxos {
             cv_follower: Condvar::new(),
         }
     }
+
     fn next_ballot(&self) -> i64 {
         let state = self.state.lock().unwrap();
         let mut next_ballot = state.ballot;
@@ -66,8 +66,13 @@ mod tests {
         peers
     }
 
+    fn init() {
+        let _ = env_logger::builder().is_test(true).try_init();
+    }
+
     #[test]
     fn next_ballot() {
+        init();
         let store = Box::new(MemKVStore::new());
         let peers = make_peers(Arc::new(Log::new(store)));
 
