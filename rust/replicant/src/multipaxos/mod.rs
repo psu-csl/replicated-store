@@ -50,6 +50,15 @@ impl MultiPaxos {
         next_ballot = (next_ballot & !ID_BITS) | self.id;
         next_ballot
     }
+
+    fn become_leader(&mut self, next_ballot: i64) {
+        let mut state = self.state.lock().unwrap();
+        debug!("{} became a leader: ballot: {} -> {}",
+               self.id, state.ballot, next_ballot);
+        state.ballot = next_ballot;
+        *self.ready.get_mut() = false;
+        self.cv_leader.notify_one();
+    }
 }
 
 #[cfg(test)]
