@@ -2,6 +2,7 @@ package replicantv2;
 
 import ch.qos.logback.classic.Logger;
 import command.Command;
+import command.Command.CommandType;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandler.Sharable;
 import io.netty.channel.ChannelHandlerContext;
@@ -32,6 +33,37 @@ public class ClientHandler extends SimpleChannelInboundHandler<String> {
     this.multiPaxos = multiPaxos;
   }
 
+  public static Command parse(String request) {
+
+    if (request == null) {
+      return null;
+    }
+    String[] tokens = request.split(" ");//"\\s+");
+    String command = tokens[0];
+    String key = tokens[1];
+    Command res = new Command();
+    res.setKey(key);
+    switch (command) {
+      case "get":
+        res.setCommandType(CommandType.Get);
+        break;
+      case "del":
+        res.setCommandType(CommandType.Del);
+        break;
+      case "put":
+        res.setCommandType(CommandType.Put);
+        String value = tokens[2];
+        if (value == null) {
+          return null;
+        }
+        res.setValue(value);
+        break;
+      default:
+        return null;
+    }
+    return res;
+  }
+
   private long nextClientId() {
     var id = nextClientId;
     nextClientId += numPeers;
@@ -45,28 +77,20 @@ public class ClientHandler extends SimpleChannelInboundHandler<String> {
     channels.put(id, ctx.channel());
   }
 
+
   @Override
   public void channelRead0(ChannelHandlerContext ctx, String msg) {
     logger.info("raw msg: " + msg);
-    KVRequest kvRequest;
-    try {
-      kvRequest = objectMapper.readValue(msg, KVRequest.class);
-    } catch (IOException e) {
-      logger.error("couldn't parse msg: " + e.getMessage());
-      ctx.channel().writeAndFlush("bad command");
-      return;
-    }
-    logger.info("kvRequest: " + kvRequest);
-    var command = new Command(kvRequest.getCommandType(), kvRequest.getKey(), kvRequest.getValue());
+    var command = parse(msg);
     var r = multiPaxos.replicate(command, id);
     if (r.type == MultiPaxosResultType.kRetry) {
-      ctx.channel().writeAndFlush("retry");
+      ctx.channel().writeAndFlush("retry\n");
     } else {
       assert r.type == MultiPaxosResultType.kSomeoneElseLeader;
-      ctx.channel().writeAndFlush("leader is ...");
+      ctx.channel().writeAndFlush("leader is ...\n");
     }
     // TODO: rm this; ycsb waits answer to send next command, verify it...
-    ctx.channel().writeAndFlush("ack " + msg);
+    //ctx.channel().writeAndFlush("ack " + msg);
   }
 
   public void respond(Long clientId, String value) {

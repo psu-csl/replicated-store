@@ -10,8 +10,13 @@ import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
+import io.netty.handler.codec.DelimiterBasedFrameDecoder;
+import io.netty.handler.codec.Delimiters;
+import io.netty.handler.codec.LineBasedFrameDecoder;
 import io.netty.handler.codec.string.StringDecoder;
 import io.netty.handler.codec.string.StringEncoder;
+import io.netty.handler.timeout.ReadTimeoutHandler;
+import io.netty.util.CharsetUtil;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import kvstore.KVStore;
@@ -66,8 +71,11 @@ public class Replicant {
           new ChannelInitializer<SocketChannel>() {
             @Override
             public void initChannel(SocketChannel ch) {
-              ch.pipeline().addLast(new StringDecoder());
-              ch.pipeline().addLast(new StringEncoder());
+              ch.pipeline().addLast("framer",
+                  new DelimiterBasedFrameDecoder(1024, Delimiters.lineDelimiter()));
+              ch.pipeline().addLast("decoder", new StringDecoder());
+              ch.pipeline().addLast("encoder", new StringEncoder());
+              ch.pipeline().addLast("timeout", new ReadTimeoutHandler(5));
               ch.pipeline().addLast(clientHandler);
             }
           }).option(ChannelOption.SO_BACKLOG, 5).childOption(ChannelOption.SO_KEEPALIVE, true);
