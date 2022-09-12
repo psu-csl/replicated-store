@@ -5,7 +5,7 @@ import (
 	"github.com/psu-csl/replicated-store/go/consensus/multipaxos"
 	consensusLog "github.com/psu-csl/replicated-store/go/log"
 	"github.com/psu-csl/replicated-store/go/store"
-	"log"
+	logger "github.com/sirupsen/logrus"
 	"net"
 	"strconv"
 	"strings"
@@ -62,9 +62,9 @@ func (r *Replicant) StartServer() {
 
 	listener, err := net.Listen("tcp", ":" + strconv.Itoa(port))
 	if err != nil {
-		log.Fatalf("listener error: %v", err)
+		logger.Fatalf("listener error: %v", err)
 	}
-	log.Printf("replicant %v starting server at port %v\n", r.id, port)
+	logger.Infof("replicant %v starting server at port %v\n", r.id, port)
 	r.listener = listener
 	r.AcceptClient()
 }
@@ -78,7 +78,7 @@ func (r *Replicant) AcceptClient() {
 	for {
 		conn, err := r.listener.Accept()
 		if err != nil {
-			log.Println(err)
+			logger.Error(err)
 			break
 		}
 		r.clientManager.Start(conn)

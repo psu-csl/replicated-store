@@ -5,9 +5,9 @@ import (
 	"github.com/psu-csl/replicated-store/go/config"
 	pb "github.com/psu-csl/replicated-store/go/consensus/multipaxos/comm"
 	consensusLog "github.com/psu-csl/replicated-store/go/log"
+	logger "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
-	"log"
 	"math/rand"
 	"net"
 	"sync"
@@ -175,7 +175,7 @@ func (p *Multipaxos) PrepareThread() {
 		for atomic.LoadUint32(&p.prepareThreadRunning) == 1 {
 			p.sleepForRandomInterval()
 			if p.receivedCommit() {
-				log.Printf("%v receivedCommit true\n", p.id)
+				logger.Infof("%v receivedCommit true\n", p.id)
 				continue
 			}
 			nextBallot := p.NextBallot()
@@ -384,7 +384,7 @@ func (p *Multipaxos) Prepare(ctx context.Context,
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	log.Printf("%v received prepare from %v\n", p.id, request.GetSender())
+	logger.Infof("%v received prepare from %v\n", p.id, request.GetSender())
 	if request.GetBallot() > p.ballot {
 		p.BecomeFollower(request.GetBallot())
 		logSlice := p.log.InstancesSinceGlobalLastExecuted()
@@ -427,7 +427,7 @@ func (p *Multipaxos) Commit(ctx context.Context,
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	log.Printf("%v received commit from %v\n", p.id, request.GetSender())
+	logger.Infof("%v received commit from %v\n", p.id, request.GetSender())
 	response := &pb.CommitResponse{}
 	if request.GetBallot() >= p.ballot {
 		atomic.StoreInt32(&p.commitReceived, 1)
@@ -458,7 +458,7 @@ func (p *Multipaxos) BecomeLeader(nextBallot int64) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	log.Printf("%v became a leader: ballot: %v -> %v\n", p.id, p.ballot,
+	logger.Infof("%v became a leader: ballot: %v -> %v\n", p.id, p.ballot,
 		nextBallot)
 	p.ballot = nextBallot
 	atomic.StoreInt32(&p.ready, 0)
@@ -469,7 +469,7 @@ func (p *Multipaxos) BecomeFollower(nextBallot int64) {
 	prevLeader := Leader(p.ballot)
 	nextLeader := Leader(nextBallot)
 	if nextLeader != p.id && (prevLeader == p.id || prevLeader == MaxNumPeers) {
-		log.Printf("%v became a follower: ballot: %v -> %v\n", p.id,
+		logger.Infof("%v became a follower: ballot: %v -> %v\n", p.id,
 			p.ballot, nextBallot)
 		p.cvFollower.Signal()
 	}
@@ -510,7 +510,7 @@ func (p *Multipaxos) sleepForCommitInterval() {
 func (p *Multipaxos) sleepForRandomInterval() {
 	sleepTime := p.CommitInterval + p.CommitInterval / 2 +
 		rand.Int63n(p.CommitInterval / 2)
-	log.Println(sleepTime)
+	logger.Debug(sleepTime)
 	time.Sleep(time.Duration(sleepTime) * time.Millisecond)
 }
 

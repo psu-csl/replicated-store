@@ -4,7 +4,7 @@ import (
 	"github.com/golang/protobuf/proto"
 	pb "github.com/psu-csl/replicated-store/go/consensus/multipaxos/comm"
 	"github.com/psu-csl/replicated-store/go/store"
-	"log"
+	logger "github.com/sirupsen/logrus"
 	"sync"
 )
 
@@ -42,7 +42,7 @@ func Insert(insertLog map[int64]*pb.Instance, instance *pb.Instance) bool {
 	// Case 2
 	if IsCommitted(insertLog[i]) || IsExecuted(insertLog[i]) {
 		if !IsEqualCommand(insertLog[i].GetCommand(), instance.GetCommand()) {
-			log.Panicf("case 2 violation\n")
+			logger.Panicf("case 2 violation\n")
 		}
 		return false
 	}
@@ -55,7 +55,7 @@ func Insert(insertLog map[int64]*pb.Instance, instance *pb.Instance) bool {
 
 	if insertLog[i].GetBallot() == instance.GetBallot() {
 		if !IsEqualCommand(insertLog[i].GetCommand(), instance.GetCommand()) {
-			log.Panicf("case 3 violation\n")
+			logger.Panicf("case 3 violation\n")
 		}
 	}
 	return false
@@ -144,7 +144,7 @@ func (l *Log) Append(inst *pb.Instance) {
 
 func (l *Log) Commit(index int64) {
 	if index <= 0 {
-		log.Panicf("Index %v < 0\n", index)
+		logger.Panicf("Index %v < 0\n", index)
 	}
 
 	l.mu.Lock()
@@ -178,7 +178,7 @@ func (l *Log) Execute() (int64, *store.KVResult) {
 
 	inst, ok := l.log[l.lastExecuted+ 1]
 	if !ok {
-		log.Panicf("Instance at Index %v empty\n", l.lastExecuted+ 1)
+		logger.Panicf("Instance at Index %v empty\n", l.lastExecuted+ 1)
 	}
 	result := store.Execute(inst.GetCommand(), l.store)
 	inst.State = pb.InstanceState_EXECUTED
@@ -188,10 +188,10 @@ func (l *Log) Execute() (int64, *store.KVResult) {
 
 func (l *Log) CommitUntil(leaderLastExecuted int64, ballot int64) {
 	if leaderLastExecuted < 0 {
-		log.Panic("invalid leader_last_executed in commit_until")
+		logger.Panic("invalid leader_last_executed in commit_until")
 	}
 	if ballot < 0 {
-		log.Panic("invalid ballot in commit_until")
+		logger.Panic("invalid ballot in commit_until")
 	}
 
 	l.mu.Lock()
@@ -222,7 +222,7 @@ func (l *Log) TrimUntil(leaderGlobalLastExecuted int64) {
 		l.globalLastExecuted += 1
 		instance, ok := l.log[l.globalLastExecuted]
 		if !ok || !IsExecuted(instance) {
-			log.Panicf("Not Executed at Index %d\n", l.globalLastExecuted)
+			logger.Panicf("Not Executed at Index %d\n", l.globalLastExecuted)
 		}
 		delete(l.log, l.globalLastExecuted)
 	}
