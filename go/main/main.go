@@ -14,16 +14,23 @@ func main() {
 	const numPeers = 3
 	id := flag.Int64("id", 0, "peer id")
 	debug := flag.Bool("d", false, "enable debug logging")
+	configPath := flag.String("c", "config/config.json", "config path")
 	flag.Parse()
 
+	var cfg config.Config
 	if *debug {
 		logger.SetLevel(logger.InfoLevel)
+		cfg = config.DefaultConfig(*id, numPeers)
 	} else {
 		logger.SetLevel(logger.ErrorLevel)
+		var err error
+		cfg, err = config.LoadConfig(*id, *configPath)
+		if err != nil {
+			logger.Panic(err)
+		}
 	}
 
-	config := config.DefaultConfig(*id, numPeers)
-	replicant := replicant.NewReplicant(config)
+	replicant := replicant.NewReplicant(cfg)
 
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, syscall.SIGINT, syscall.SIGTERM)

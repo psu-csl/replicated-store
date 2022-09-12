@@ -1,12 +1,15 @@
 package config
 
-import "strconv"
+import (
+	"encoding/json"
+	"os"
+	"strconv"
+)
 
 type Config struct {
 	Id             int64
 	Peers          []string
 	CommitInterval int64
-	CommitDelta    int64
 }
 
 func DefaultConfig(id int64, n int) Config {
@@ -18,8 +21,22 @@ func DefaultConfig(id int64, n int) Config {
 	config := Config{
 		Id:             id,
 		CommitInterval: 3000,
-		CommitDelta:    10,
 		Peers:          peers,
 	}
 	return config
+}
+
+func LoadConfig(id int64, configPath string) (Config, error) {
+	var config Config
+	file, err := os.Open(configPath)
+	if err != nil {
+		return config, err
+	}
+	decoder := json.NewDecoder(file)
+	err = decoder.Decode(&config)
+	if err != nil {
+		return config, err
+	}
+	config.Id = id
+	return config, nil
 }
