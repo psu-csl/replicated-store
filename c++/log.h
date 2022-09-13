@@ -27,7 +27,8 @@ bool operator==(multipaxos::Instance const& a, multipaxos::Instance const& b);
 
 class Log {
  public:
-  explicit Log(kvstore::KVStore* kv_store) : kv_store_(kv_store) {}
+  explicit Log(std::unique_ptr<kvstore::KVStore> kv_store)
+      : kv_store_(std::move(kv_store)) {}
   Log(Log const& log) = delete;
   Log& operator=(Log const& log) = delete;
   Log(Log&& log) = delete;
@@ -72,7 +73,7 @@ class Log {
 
  private:
   bool running_ = true;
-  kvstore::KVStore* kv_store_;
+  std::unique_ptr<kvstore::KVStore> kv_store_;
   log_map_t log_;
   int64_t last_index_ = 0;
   int64_t last_executed_ = 0;

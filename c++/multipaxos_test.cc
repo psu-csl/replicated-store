@@ -94,14 +94,12 @@ class MultiPaxosTest : public testing::Test {
   MultiPaxosTest() {
     for (auto id = 0; id < kNumPeers; ++id) {
       auto config = json::parse(MakeConfig(id, kNumPeers));
-      auto store = std::make_unique<kvstore::MemKVStore>();
-      auto log = std::make_unique<Log>(store.get());
+      auto log = std::make_unique<Log>(std::make_unique<kvstore::MemKVStore>());
       auto peer = std::make_unique<MultiPaxos>(log.get(), config);
 
       configs_.push_back(config);
       logs_.push_back(std::move(log));
       peers_.push_back(std::move(peer));
-      stores_.push_back(std::move(store));
     }
   }
 

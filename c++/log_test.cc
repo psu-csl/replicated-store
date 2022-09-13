@@ -19,10 +19,9 @@ using multipaxos::InstanceState::INPROGRESS;
 
 class LogTest : public testing::Test {
  public:
-  LogTest() : log_(&store_) {}
+  LogTest() : log_(std::make_unique<kvstore::MemKVStore>()) {}
 
  protected:
-  kvstore::MemKVStore store_;
   Log log_;
 };
 
