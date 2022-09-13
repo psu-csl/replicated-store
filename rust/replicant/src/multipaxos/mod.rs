@@ -1,6 +1,8 @@
 use super::log::Log;
 use crate::kvstore::memkvstore::MemKVStore;
 use log::debug;
+use rand::distributions::{Distribution, Uniform};
+use rand::rngs::ThreadRng;
 use serde_json::json;
 use serde_json::Value as json;
 use std::sync::atomic::AtomicBool;
@@ -15,7 +17,9 @@ struct MultiPaxos {
     log: Arc<Log>,
     id: i64,
     commit_received: AtomicBool,
-    commit_interval: i64,
+    commit_interval: u64,
+    rng: ThreadRng,
+    dist: Uniform<u64>,
     prepare_thread_running: AtomicBool,
     commit_thread_running: AtomicBool,
     cv_leader: Condvar,
@@ -46,13 +50,16 @@ fn is_someone_else_leader(ballot: i64, id: i64) -> bool {
 
 impl MultiPaxos {
     fn new(log: Arc<Log>, config: &json) -> Self {
+        let ci = config["commit_interval"].as_u64().unwrap();
         Self {
             ready: AtomicBool::new(false),
             state: Mutex::new(State::default()),
             log: log,
             id: config["id"].as_i64().unwrap(),
             commit_received: AtomicBool::new(false),
-            commit_interval: config["commit_interval"].as_i64().unwrap(),
+            commit_interval: ci,
+            rng: rand::thread_rng(),
+            dist: Uniform::new(0, ci / 2),
             prepare_thread_running: AtomicBool::new(false),
             commit_thread_running: AtomicBool::new(false),
             cv_leader: Condvar::new(),
@@ -109,6 +116,16 @@ impl MultiPaxos {
         while *self.prepare_thread_running.get_mut() && is_leader(state.ballot, self.id) {
             state = self.cv_follower.wait(state).unwrap();
         }
+    }
+
+    fn sleep_for_commit_interval(&self) {
+        thread::sleep(time::Duration::from_millis(self.commit_interval));
+    }
+
+    fn sleep_for_random_interval(&mut self) {
+        let sleep_time =
+            self.commit_interval + self.commit_interval / 2 + self.dist.sample(&mut self.rng);
+        thread::sleep(time::Duration::from_millis(sleep_time));
     }
 }
 
