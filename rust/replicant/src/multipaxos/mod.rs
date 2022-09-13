@@ -1,8 +1,9 @@
 use super::log::Log;
 use crate::kvstore::memkvstore::MemKVStore;
+use log::debug;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Condvar, Mutex};
-use log::debug;
+use std::{thread, time};
 
 tonic::include_proto!("multipaxos");
 
@@ -28,12 +29,24 @@ const ID_BITS: i64 = 0xff;
 const ROUND_INCREMENT: i64 = ID_BITS + 1;
 const MAX_NUM_PEERS: i64 = 0xf;
 
+fn leader(ballot: i64) -> i64 {
+    ballot & ID_BITS
+}
+
+fn is_leader(ballot: i64, id: i64) -> bool {
+    leader(ballot) == id
+}
+
+fn is_someone_else_leader(ballot: i64, id: i64) -> bool {
+    !is_leader(ballot, id) && leader(ballot) < MAX_NUM_PEERS
+}
+
 impl MultiPaxos {
     fn new(id: i64, log: Arc<Log>) -> Self {
         Self {
             ready: AtomicBool::new(false),
-            commit_received: AtomicBool::new(false),
             prepare_thread_running: AtomicBool::new(false),
+            commit_received: AtomicBool::new(false),
             commit_thread_running: AtomicBool::new(false),
             id: id,
             log: log,
@@ -53,11 +66,45 @@ impl MultiPaxos {
 
     fn become_leader(&mut self, next_ballot: i64) {
         let mut state = self.state.lock().unwrap();
-        debug!("{} became a leader: ballot: {} -> {}",
-               self.id, state.ballot, next_ballot);
+        debug!(
+            "{} became a leader: ballot: {} -> {}",
+            self.id, state.ballot, next_ballot
+        );
         state.ballot = next_ballot;
         *self.ready.get_mut() = false;
         self.cv_leader.notify_one();
+    }
+
+    fn become_follower(&self, state: &mut State, next_ballot: i64) {
+        let prev_leader = leader(state.ballot);
+        let next_leader = leader(next_ballot);
+        if next_leader != self.id && (prev_leader == self.id || prev_leader == MAX_NUM_PEERS) {
+            debug!(
+                "{} became a follower: ballot: {} -> {}",
+                self.id, state.ballot, next_ballot
+            );
+            self.cv_follower.notify_one();
+        }
+        state.ballot = next_ballot;
+    }
+
+    fn ballot(&mut self) -> (i64, bool) {
+        let state = self.state.lock().unwrap();
+        (state.ballot, *self.ready.get_mut())
+    }
+
+    fn wait_until_leader(&mut self) {
+        let mut state = self.state.lock().unwrap();
+        while *self.commit_thread_running.get_mut() && !is_leader(state.ballot, self.id) {
+            state = self.cv_leader.wait(state).unwrap();
+        }
+    }
+
+    fn wait_until_follower(&mut self) {
+        let mut state = self.state.lock().unwrap();
+        while *self.prepare_thread_running.get_mut() && is_leader(state.ballot, self.id) {
+            state = self.cv_follower.wait(state).unwrap();
+        }
     }
 }
 
