@@ -1,12 +1,18 @@
 package paxos;
 
 import java.util.List;
+import org.codehaus.jackson.annotate.JsonIgnore;
+import org.codehaus.jackson.annotate.JsonProperty;
 
 public class Configuration {
 
+  @JsonIgnore
   private long id;
+  @JsonProperty("commit_interval")
   private long commitInterval;
+  @JsonProperty("threadpool_size")
   private int threadPoolSize;
+  @JsonProperty("peers")
   private List<String> peers;
 
   public long getId() {

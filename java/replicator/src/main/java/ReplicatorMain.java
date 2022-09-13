@@ -1,30 +1,34 @@
+import java.io.File;
 import java.io.IOException;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
-import kvstore.KVStore;
-import kvstore.MemKVStore;
-import paxos.DummyPaxos;
-import replicant.ReplicantTCP;
+import org.codehaus.jackson.map.ObjectMapper;
+import paxos.Configuration;
+import replicantv2.Replicant;
 
 public class ReplicatorMain {
 
-  public static void main(String[] args) throws IOException {
+  public static void main(String[] args) {
 
-    KVStore kvStore = new MemKVStore();
-    DummyPaxos paxos = new DummyPaxos(kvStore);
-    int tpSize = 10;
+    if (args.length != 2) {
+      System.err.println("Correct usage: [id] [path to config.json]");
+      System.exit(1);
+    }
+    int id = Integer.parseInt(args[0]);
+    String path = args[1];
 
-    ThreadPoolExecutor threadPool = new ThreadPoolExecutor(tpSize, tpSize, 50000L,
-        TimeUnit.MILLISECONDS,
+    ObjectMapper objectMapper = new ObjectMapper();
+    Configuration config = null;
+    try {
+      config = objectMapper.readValue(
+          new File(path),
+          Configuration.class);
+    } catch (IOException e) {
+      System.err.println(e.getMessage());
+      System.err.println("Couldn't parse config.json");
+      System.exit(1);
+    }
+    assert id < config.getPeers().size();
 
-        new LinkedBlockingQueue<>());
-    //Replicant server = new Replicant(8888, paxos, kvStore, threadPool);
-    ReplicantTCP server = new ReplicantTCP(8888, paxos, kvStore, threadPool);
-    server.startServer(8888, paxos, kvStore, threadPool);
-
-    System.out.println("Server ready at 8888 and waiting....");
-    // Log log = new Log();
-    //System.out.println(log.getLastIndex());
+    var replicant = new Replicant(config);
+    replicant.start();
   }
 }
