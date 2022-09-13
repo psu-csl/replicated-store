@@ -121,7 +121,7 @@ mod tests {
     fn make_config(id: i64, num_peers: i64) -> json {
         let mut peers = Vec::new();
         for i in 0..num_peers {
-            peers.push(format!(r#"127.0.0.1{}000"#, i));
+            peers.push(format!("127.0.0.1:1{}000", i));
         }
         json!({
             "id": id,
