@@ -131,27 +131,35 @@ mod tests {
         })
     }
 
-    fn make_peers(log: Arc<Log>) -> Vec<MultiPaxos> {
-        let mut peers = vec![];
-        for id in 0..NUM_PEERS {
-            peers.push(MultiPaxos::new(log.clone(), &make_config(id, NUM_PEERS)));
-        }
-        peers
+    #[derive(Default)]
+    struct TestState {
+        configs: Vec<json>,
+        logs: Vec<Arc<Log>>,
+        peers: Vec<MultiPaxos>,
     }
 
-    fn init() {
+    fn init() -> TestState {
         let _ = env_logger::builder().is_test(true).try_init();
+        let mut state = TestState::default();
+        for id in 0..NUM_PEERS {
+            let config = make_config(id, NUM_PEERS);
+            let log = Arc::new(Log::new(Box::new(MemKVStore::new())));
+            let peer = MultiPaxos::new(log.clone(), &config);
+
+            state.configs.push(config);
+            state.logs.push(log);
+            state.peers.push(peer);
+        }
+        state
     }
 
     #[test]
     fn next_ballot() {
-        init();
-        let store = Box::new(MemKVStore::new());
-        let peers = make_peers(Arc::new(Log::new(store)));
+        let state = init();
 
         for id in 0..NUM_PEERS {
             let ballot = id + ROUND_INCREMENT;
-            assert_eq!(ballot, peers[id as usize].next_ballot())
+            assert_eq!(ballot, state.peers[id as usize].next_ballot());
         }
     }
 }
