@@ -1,6 +1,8 @@
 use super::log::Log;
 use crate::kvstore::memkvstore::MemKVStore;
 use log::debug;
+use serde_json::json;
+use serde_json::Value as json;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Condvar, Mutex};
 use std::{thread, time};
@@ -9,12 +11,13 @@ tonic::include_proto!("multipaxos");
 
 struct MultiPaxos {
     ready: AtomicBool,
+    state: Mutex<State>,
+    log: Arc<Log>,
+    id: i64,
     commit_received: AtomicBool,
+    commit_interval: i64,
     prepare_thread_running: AtomicBool,
     commit_thread_running: AtomicBool,
-    id: i64,
-    log: Arc<Log>,
-    state: Mutex<State>,
     cv_leader: Condvar,
     cv_follower: Condvar,
 }
@@ -42,15 +45,16 @@ fn is_someone_else_leader(ballot: i64, id: i64) -> bool {
 }
 
 impl MultiPaxos {
-    fn new(id: i64, log: Arc<Log>) -> Self {
+    fn new(log: Arc<Log>, config: &json) -> Self {
         Self {
             ready: AtomicBool::new(false),
-            prepare_thread_running: AtomicBool::new(false),
-            commit_received: AtomicBool::new(false),
-            commit_thread_running: AtomicBool::new(false),
-            id: id,
-            log: log,
             state: Mutex::new(State::default()),
+            log: log,
+            id: config["id"].as_i64().unwrap(),
+            commit_received: AtomicBool::new(false),
+            commit_interval: config["commit_interval"].as_i64().unwrap(),
+            prepare_thread_running: AtomicBool::new(false),
+            commit_thread_running: AtomicBool::new(false),
             cv_leader: Condvar::new(),
             cv_follower: Condvar::new(),
         }
@@ -114,10 +118,23 @@ mod tests {
 
     pub const NUM_PEERS: i64 = 3;
 
+    fn make_config(id: i64, num_peers: i64) -> json {
+        let mut peers = Vec::new();
+        for i in 0..num_peers {
+            peers.push(format!(r#"127.0.0.1{}000"#, i));
+        }
+        json!({
+            "id": id,
+            "threadpool_size": 8,
+            "commit_interval": 300,
+            "peers": peers
+        })
+    }
+
     fn make_peers(log: Arc<Log>) -> Vec<MultiPaxos> {
         let mut peers = vec![];
         for id in 0..NUM_PEERS {
-            peers.push(MultiPaxos::new(id, log.clone()));
+            peers.push(MultiPaxos::new(log.clone(), &make_config(id, NUM_PEERS)));
         }
         peers
     }
