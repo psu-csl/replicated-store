@@ -123,8 +123,7 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
   }
 
   bool ReceivedCommit() {
-    bool t = true;
-    return std::atomic_compare_exchange_strong(&commit_received_, &t, false);
+    return commit_received_.exchange(false);
   }
 
   void Start();
