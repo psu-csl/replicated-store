@@ -5,7 +5,7 @@ use rand::distributions::{Distribution, Uniform};
 use rand::rngs::ThreadRng;
 use serde_json::json;
 use serde_json::Value as json;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::{thread, time};
 
@@ -126,6 +126,10 @@ impl MultiPaxos {
         let sleep_time =
             self.commit_interval + self.commit_interval / 2 + self.dist.sample(&mut self.rng);
         thread::sleep(time::Duration::from_millis(sleep_time));
+    }
+
+    fn received_commit(&self) -> bool {
+        self.commit_received.swap(false, Ordering::Relaxed)
     }
 }
 
