@@ -51,6 +51,12 @@ fn is_someone_else_leader(ballot: i64, id: i64) -> bool {
     !is_leader(ballot, id) && leader(ballot) < MAX_NUM_PEERS
 }
 
+enum ResultType {
+    Ok,
+    Retry,
+    SomeoneElseLeader(i64),
+}
+
 impl MultiPaxos {
     pub fn new(log: Log, config: &json) -> Self {
         Self {
@@ -122,6 +128,25 @@ impl MultiPaxos {
             .store(false, Ordering::Relaxed);
         self.multi_paxos.cv_leader.notify_one();
         self.commit_thread.take().unwrap().join().unwrap();
+    }
+
+    pub fn replicate(&self, command: Command, client_id: i64) -> ResultType {
+        let (ballot, ready) = self.multi_paxos.ballot();
+        if is_leader(ballot, self.multi_paxos.id) {
+            if ready {
+                return self.multi_paxos.run_accept_phase(
+                    ballot,
+                    self.multi_paxos.log.advance_last_index(),
+                    command,
+                    client_id,
+                );
+            }
+            return ResultType::Retry;
+        }
+        if is_someone_else_leader(ballot, self.multi_paxos.id) {
+            return ResultType::SomeoneElseLeader(leader(ballot));
+        }
+        return ResultType::Retry;
     }
 }
 
@@ -251,6 +276,16 @@ impl MultiPaxosInner {
 
     fn run_prepare_phase(&self, ballot: i64) -> Option<MapLog> {
         None
+    }
+
+    fn run_accept_phase(
+        &self,
+        ballot: i64,
+        index: i64,
+        command: Command,
+        client_id: i64,
+    ) -> ResultType {
+        ResultType::Ok
     }
 
     fn run_commit_phase(&self, ballot: i64, global_last_executed: i64) -> i64 {
