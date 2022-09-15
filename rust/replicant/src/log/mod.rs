@@ -255,6 +255,10 @@ impl Log {
 mod tests {
     use super::*;
 
+    fn make_commands() -> (Command, Command, Command) {
+        (Command::get(""), Command::put("", ""), Command::del(""))
+    }
+
     #[test]
     fn constructor() {
         let log = Log::new(Box::new(MemKVStore::new()));
@@ -270,12 +274,12 @@ mod tests {
 
     #[test]
     fn insert() {
-        let put = Command::put("", "");
+        let mut log = LogInner::new(Box::new(MemKVStore::new()));
+        let (_, put, _) = make_commands();
         let index = 1;
         let ballot = 1;
         let instance1 = Instance::inprogress(ballot, index, &put);
         let instance2 = instance1.clone();
-        let mut log = LogInner::new(Box::new(MemKVStore::new()));
 
         assert!(log.insert(instance1));
         assert_eq!(put, *log.map[&index].command.as_ref().unwrap());
@@ -284,13 +288,12 @@ mod tests {
 
     #[test]
     fn insert_update_in_progress() {
-        let put = Command::put("", "");
-        let del = Command::del("");
+        let mut log = LogInner::new(Box::new(MemKVStore::new()));
+        let (_, put, del) = make_commands();
         let index = 1;
         let ballot = 1;
         let instance1 = Instance::inprogress(ballot, index, &put);
         let instance2 = Instance::inprogress(ballot + 1, index, &del);
-        let mut log = LogInner::new(Box::new(MemKVStore::new()));
 
         assert!(log.insert(instance1));
         assert_eq!(put, *log.map[&index].command.as_ref().unwrap());
@@ -300,12 +303,12 @@ mod tests {
 
     #[test]
     fn insert_update_commited() {
-        let put = Command::put("", "");
+        let mut log = LogInner::new(Box::new(MemKVStore::new()));
+        let (_, put, _) = make_commands();
         let index = 1;
         let ballot = 1;
         let instance1 = Instance::committed(ballot, index, &put);
         let instance2 = Instance::inprogress(ballot + 1, index, &put);
-        let mut log = LogInner::new(Box::new(MemKVStore::new()));
 
         assert!(log.insert(instance1));
         assert!(!log.insert(instance2));
@@ -313,13 +316,12 @@ mod tests {
 
     #[test]
     fn insert_stale() {
-        let put = Command::put("", "");
-        let del = Command::del("");
+        let mut log = LogInner::new(Box::new(MemKVStore::new()));
+        let (_, put, del) = make_commands();
         let index = 1;
         let ballot = 1;
         let instance1 = Instance::inprogress(ballot, index, &put);
         let instance2 = Instance::inprogress(ballot - 1, index, &del);
-        let mut log = LogInner::new(Box::new(MemKVStore::new()));
 
         assert!(log.insert(instance1));
         assert_eq!(put, *log.map[&index].command.as_ref().unwrap());
@@ -330,13 +332,12 @@ mod tests {
     #[test]
     #[should_panic(expected = "insert case 2")]
     fn insert_case2_committed() {
-        let put = Command::put("", "");
-        let del = Command::del("");
+        let mut log = LogInner::new(Box::new(MemKVStore::new()));
+        let (_, put, del) = make_commands();
         let index = 1;
         let ballot = 0;
         let instance1 = Instance::committed(ballot, index, &put);
         let instance2 = Instance::inprogress(ballot, index, &del);
-        let mut log = LogInner::new(Box::new(MemKVStore::new()));
 
         assert!(log.insert(instance1));
         log.insert(instance2);
@@ -345,13 +346,12 @@ mod tests {
     #[test]
     #[should_panic(expected = "insert case 2")]
     fn insert_case2_executed() {
-        let put = Command::put("", "");
-        let del = Command::del("");
+        let mut log = LogInner::new(Box::new(MemKVStore::new()));
+        let (_, put, del) = make_commands();
         let index = 1;
         let ballot = 0;
         let instance1 = Instance::executed(ballot, index, &put);
         let instance2 = Instance::inprogress(ballot, index, &del);
-        let mut log = LogInner::new(Box::new(MemKVStore::new()));
 
         assert!(log.insert(instance1));
         log.insert(instance2);
@@ -360,13 +360,12 @@ mod tests {
     #[test]
     #[should_panic(expected = "insert case 3")]
     fn insert_case3() {
-        let put = Command::put("", "");
-        let del = Command::del("");
+        let mut log = LogInner::new(Box::new(MemKVStore::new()));
+        let (_, put, del) = make_commands();
         let index = 1;
         let ballot = 0;
         let instance1 = Instance::inprogress(ballot, index, &put);
         let instance2 = Instance::inprogress(ballot, index, &del);
-        let mut log = LogInner::new(Box::new(MemKVStore::new()));
 
         assert!(log.insert(instance1));
         log.insert(instance2);
@@ -375,8 +374,7 @@ mod tests {
     #[test]
     fn append() {
         let log = Log::new(Box::new(MemKVStore::new()));
-
-        let get = Command::get("");
+        let (get, _, _) = make_commands();
         let ballot = 0;
         let instance1 = Instance::inprogress(ballot, log.advance_last_index(), &get);
         let instance2 = Instance::inprogress(ballot, log.advance_last_index(), &get);
@@ -390,8 +388,7 @@ mod tests {
     #[test]
     fn append_with_gap() {
         let log = Log::new(Box::new(MemKVStore::new()));
-
-        let get = Command::get("");
+        let (get, _, _) = make_commands();
         let ballot = 0;
         let index = 42;
         let instance = Instance::inprogress(ballot, index, &get);
@@ -404,8 +401,7 @@ mod tests {
     #[test]
     fn append_fill_gaps() {
         let log = Log::new(Box::new(MemKVStore::new()));
-
-        let get = Command::get("");
+        let (get, _, _) = make_commands();
         let ballot = 0;
         let index = 42;
         let instance1 = Instance::inprogress(ballot, index, &get);
@@ -419,13 +415,10 @@ mod tests {
     #[test]
     fn append_high_ballot_override() {
         let log = Log::new(Box::new(MemKVStore::new()));
-
-        let put = Command::put("", "");
-        let del = Command::del("");
+        let (_, put, del) = make_commands();
         let index = 1;
         let lo_ballot = 0;
         let hi_ballot = 1;
-
         let instance1 = Instance::inprogress(lo_ballot, index, &put);
         let instance2 = Instance::inprogress(hi_ballot, index, &del);
 
@@ -437,13 +430,10 @@ mod tests {
     #[test]
     fn append_low_ballot_no_effect() {
         let log = Log::new(Box::new(MemKVStore::new()));
-
-        let put = Command::put("", "");
-        let del = Command::del("");
+        let (_, put, del) = make_commands();
         let index = 1;
         let lo_ballot = 0;
         let hi_ballot = 1;
-
         let instance1 = Instance::inprogress(hi_ballot, index, &put);
         let instance2 = Instance::inprogress(lo_ballot, index, &del);
 
@@ -455,8 +445,7 @@ mod tests {
     #[test]
     fn commit() {
         let log = Log::new(Box::new(MemKVStore::new()));
-
-        let get = Command::get("");
+        let (get, _, _) = make_commands();
         let ballot = 0;
         let index1 = 1;
         let index2 = 2;
@@ -485,8 +474,7 @@ mod tests {
     #[test]
     fn commit_before_append() {
         let log = Arc::new(Log::new(Box::new(MemKVStore::new())));
-
-        let get = Command::get("");
+        let (get, _, _) = make_commands();
         let ballot = 0;
         let index = log.advance_last_index();
         let instance = Instance::inprogress(ballot, index, &get);
@@ -507,8 +495,7 @@ mod tests {
     #[test]
     fn append_commit_execute() {
         let log = Arc::new(Log::new(Box::new(MemKVStore::new())));
-
-        let get = Command::get("");
+        let (get, _, _) = make_commands();
         let ballot = 0;
         let index = log.advance_last_index();
         let instance = Instance::inprogress(ballot, index, &get);
@@ -531,8 +518,7 @@ mod tests {
     #[test]
     fn append_commit_execute_out_of_order() {
         let log = Arc::new(Log::new(Box::new(MemKVStore::new())));
-
-        let get = Command::get("");
+        let (get, _, _) = make_commands();
         let ballot = 0;
         let index1 = 1;
         let instance1 = Instance::inprogress(ballot, index1, &get);
@@ -569,8 +555,7 @@ mod tests {
     #[test]
     fn commit_until() {
         let log = Arc::new(Log::new(Box::new(MemKVStore::new())));
-
-        let get = Command::get("");
+        let (get, _, _) = make_commands();
         let ballot = 0;
         let index1 = 1;
         let instance1 = Instance::inprogress(ballot, index1, &get);
@@ -593,8 +578,7 @@ mod tests {
     #[test]
     fn commit_until_higher_ballot() {
         let log = Arc::new(Log::new(Box::new(MemKVStore::new())));
-
-        let get = Command::get("");
+        let (get, _, _) = make_commands();
         let ballot = 0;
         let index1 = 1;
         let instance1 = Instance::inprogress(ballot, index1, &get);
@@ -618,8 +602,7 @@ mod tests {
     #[should_panic(expected = "commit_until case 2")]
     fn commit_until_case2() {
         let log = Arc::new(Log::new(Box::new(MemKVStore::new())));
-
-        let get = Command::get("");
+        let (get, _, _) = make_commands();
         let ballot = 5;
         let index1 = 1;
         let instance1 = Instance::inprogress(ballot, index1, &get);
@@ -637,8 +620,7 @@ mod tests {
     #[test]
     fn commit_until_with_gap() {
         let log = Arc::new(Log::new(Box::new(MemKVStore::new())));
-
-        let get = Command::get("");
+        let (get, _, _) = make_commands();
         let ballot = 0;
         let index1 = 1;
         let instance1 = Instance::inprogress(ballot, index1, &get);
@@ -660,8 +642,7 @@ mod tests {
     #[test]
     fn append_commit_until_execute() {
         let log = Arc::new(Log::new(Box::new(MemKVStore::new())));
-
-        let get = Command::get("");
+        let (get, _, _) = make_commands();
         let ballot = 0;
         let index1 = 1;
         let instance1 = Instance::inprogress(ballot, index1, &get);
@@ -696,8 +677,7 @@ mod tests {
     #[test]
     fn append_commit_until_execute_trim_until() {
         let log = Arc::new(Log::new(Box::new(MemKVStore::new())));
-
-        let get = Command::get("");
+        let (get, _, _) = make_commands();
         let ballot = 0;
         let index1 = 1;
         let instance1 = Instance::inprogress(ballot, index1, &get);
@@ -735,8 +715,7 @@ mod tests {
     #[test]
     fn append_at_trimmed_index() {
         let log = Arc::new(Log::new(Box::new(MemKVStore::new())));
-
-        let get = Command::get("");
+        let (get, _, _) = make_commands();
         let ballot = 0;
         let index1 = 1;
         let instance1 = Instance::inprogress(ballot, index1, &get);
@@ -775,8 +754,7 @@ mod tests {
     #[test]
     fn instances() {
         let log = Arc::new(Log::new(Box::new(MemKVStore::new())));
-
-        let get = Command::get("");
+        let (get, _, _) = make_commands();
         let ballot = 0;
         let index1 = 1;
         let instance1 = Instance::inprogress(ballot, index1, &get);
