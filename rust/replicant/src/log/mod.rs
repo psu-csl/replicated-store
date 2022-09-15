@@ -257,8 +257,7 @@ mod tests {
 
     #[test]
     fn constructor() {
-        let store = Box::new(MemKVStore::new());
-        let log = Log::new(store);
+        let log = Log::new(Box::new(MemKVStore::new()));
 
         assert_eq!(0, log.last_executed());
         assert_eq!(0, log.global_last_executed());
@@ -276,8 +275,7 @@ mod tests {
         let ballot = 1;
         let instance1 = Instance::inprogress(ballot, index, &put);
         let instance2 = instance1.clone();
-        let store = Box::new(MemKVStore::new());
-        let mut log = LogInner::new(store);
+        let mut log = LogInner::new(Box::new(MemKVStore::new()));
 
         assert!(log.insert(instance1));
         assert_eq!(put, *log.map[&index].command.as_ref().unwrap());
@@ -292,8 +290,7 @@ mod tests {
         let ballot = 1;
         let instance1 = Instance::inprogress(ballot, index, &put);
         let instance2 = Instance::inprogress(ballot + 1, index, &del);
-        let store = Box::new(MemKVStore::new());
-        let mut log = LogInner::new(store);
+        let mut log = LogInner::new(Box::new(MemKVStore::new()));
 
         assert!(log.insert(instance1));
         assert_eq!(put, *log.map[&index].command.as_ref().unwrap());
@@ -308,8 +305,7 @@ mod tests {
         let ballot = 1;
         let instance1 = Instance::committed(ballot, index, &put);
         let instance2 = Instance::inprogress(ballot + 1, index, &put);
-        let store = Box::new(MemKVStore::new());
-        let mut log = LogInner::new(store);
+        let mut log = LogInner::new(Box::new(MemKVStore::new()));
 
         assert!(log.insert(instance1));
         assert!(!log.insert(instance2));
@@ -323,8 +319,7 @@ mod tests {
         let ballot = 1;
         let instance1 = Instance::inprogress(ballot, index, &put);
         let instance2 = Instance::inprogress(ballot - 1, index, &del);
-        let store = Box::new(MemKVStore::new());
-        let mut log = LogInner::new(store);
+        let mut log = LogInner::new(Box::new(MemKVStore::new()));
 
         assert!(log.insert(instance1));
         assert_eq!(put, *log.map[&index].command.as_ref().unwrap());
@@ -341,8 +336,7 @@ mod tests {
         let ballot = 0;
         let instance1 = Instance::committed(ballot, index, &put);
         let instance2 = Instance::inprogress(ballot, index, &del);
-        let store = Box::new(MemKVStore::new());
-        let mut log = LogInner::new(store);
+        let mut log = LogInner::new(Box::new(MemKVStore::new()));
 
         assert!(log.insert(instance1));
         log.insert(instance2);
@@ -357,8 +351,7 @@ mod tests {
         let ballot = 0;
         let instance1 = Instance::executed(ballot, index, &put);
         let instance2 = Instance::inprogress(ballot, index, &del);
-        let store = Box::new(MemKVStore::new());
-        let mut log = LogInner::new(store);
+        let mut log = LogInner::new(Box::new(MemKVStore::new()));
 
         assert!(log.insert(instance1));
         log.insert(instance2);
@@ -373,8 +366,7 @@ mod tests {
         let ballot = 0;
         let instance1 = Instance::inprogress(ballot, index, &put);
         let instance2 = Instance::inprogress(ballot, index, &del);
-        let store = Box::new(MemKVStore::new());
-        let mut log = LogInner::new(store);
+        let mut log = LogInner::new(Box::new(MemKVStore::new()));
 
         assert!(log.insert(instance1));
         log.insert(instance2);
@@ -382,8 +374,7 @@ mod tests {
 
     #[test]
     fn append() {
-        let store = Box::new(MemKVStore::new());
-        let log = Log::new(store);
+        let log = Log::new(Box::new(MemKVStore::new()));
 
         let get = Command::get("");
         let ballot = 0;
@@ -398,8 +389,7 @@ mod tests {
 
     #[test]
     fn append_with_gap() {
-        let store = Box::new(MemKVStore::new());
-        let log = Log::new(store);
+        let log = Log::new(Box::new(MemKVStore::new()));
 
         let get = Command::get("");
         let ballot = 0;
@@ -413,8 +403,7 @@ mod tests {
 
     #[test]
     fn append_fill_gaps() {
-        let store = Box::new(MemKVStore::new());
-        let log = Log::new(store);
+        let log = Log::new(Box::new(MemKVStore::new()));
 
         let get = Command::get("");
         let ballot = 0;
@@ -429,8 +418,7 @@ mod tests {
 
     #[test]
     fn append_high_ballot_override() {
-        let store = Box::new(MemKVStore::new());
-        let log = Log::new(store);
+        let log = Log::new(Box::new(MemKVStore::new()));
 
         let put = Command::put("", "");
         let del = Command::del("");
@@ -448,8 +436,7 @@ mod tests {
 
     #[test]
     fn append_low_ballot_no_effect() {
-        let store = Box::new(MemKVStore::new());
-        let log = Log::new(store);
+        let log = Log::new(Box::new(MemKVStore::new()));
 
         let put = Command::put("", "");
         let del = Command::del("");
@@ -467,8 +454,7 @@ mod tests {
 
     #[test]
     fn commit() {
-        let store = Box::new(MemKVStore::new());
-        let log = Log::new(store);
+        let log = Log::new(Box::new(MemKVStore::new()));
 
         let get = Command::get("");
         let ballot = 0;
@@ -498,8 +484,7 @@ mod tests {
 
     #[test]
     fn commit_before_append() {
-        let store = Box::new(MemKVStore::new());
-        let log = Arc::new(Log::new(store));
+        let log = Arc::new(Log::new(Box::new(MemKVStore::new())));
 
         let get = Command::get("");
         let ballot = 0;
@@ -521,8 +506,7 @@ mod tests {
 
     #[test]
     fn append_commit_execute() {
-        let store = Box::new(MemKVStore::new());
-        let log = Arc::new(Log::new(store));
+        let log = Arc::new(Log::new(Box::new(MemKVStore::new())));
 
         let get = Command::get("");
         let ballot = 0;
@@ -546,8 +530,7 @@ mod tests {
 
     #[test]
     fn append_commit_execute_out_of_order() {
-        let store = Box::new(MemKVStore::new());
-        let log = Arc::new(Log::new(store));
+        let log = Arc::new(Log::new(Box::new(MemKVStore::new())));
 
         let get = Command::get("");
         let ballot = 0;
@@ -585,8 +568,7 @@ mod tests {
 
     #[test]
     fn commit_until() {
-        let store = Box::new(MemKVStore::new());
-        let log = Arc::new(Log::new(store));
+        let log = Arc::new(Log::new(Box::new(MemKVStore::new())));
 
         let get = Command::get("");
         let ballot = 0;
@@ -610,8 +592,7 @@ mod tests {
 
     #[test]
     fn commit_until_higher_ballot() {
-        let store = Box::new(MemKVStore::new());
-        let log = Arc::new(Log::new(store));
+        let log = Arc::new(Log::new(Box::new(MemKVStore::new())));
 
         let get = Command::get("");
         let ballot = 0;
@@ -636,8 +617,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "commit_until case 2")]
     fn commit_until_case2() {
-        let store = Box::new(MemKVStore::new());
-        let log = Arc::new(Log::new(store));
+        let log = Arc::new(Log::new(Box::new(MemKVStore::new())));
 
         let get = Command::get("");
         let ballot = 5;
@@ -656,8 +636,7 @@ mod tests {
 
     #[test]
     fn commit_until_with_gap() {
-        let store = Box::new(MemKVStore::new());
-        let log = Arc::new(Log::new(store));
+        let log = Arc::new(Log::new(Box::new(MemKVStore::new())));
 
         let get = Command::get("");
         let ballot = 0;
@@ -680,8 +659,7 @@ mod tests {
 
     #[test]
     fn append_commit_until_execute() {
-        let store = Box::new(MemKVStore::new());
-        let log = Arc::new(Log::new(store));
+        let log = Arc::new(Log::new(Box::new(MemKVStore::new())));
 
         let get = Command::get("");
         let ballot = 0;
@@ -717,8 +695,7 @@ mod tests {
 
     #[test]
     fn append_commit_until_execute_trim_until() {
-        let store = Box::new(MemKVStore::new());
-        let log = Arc::new(Log::new(store));
+        let log = Arc::new(Log::new(Box::new(MemKVStore::new())));
 
         let get = Command::get("");
         let ballot = 0;
@@ -757,8 +734,7 @@ mod tests {
 
     #[test]
     fn append_at_trimmed_index() {
-        let store = Box::new(MemKVStore::new());
-        let log = Arc::new(Log::new(store));
+        let log = Arc::new(Log::new(Box::new(MemKVStore::new())));
 
         let get = Command::get("");
         let ballot = 0;
@@ -798,8 +774,7 @@ mod tests {
 
     #[test]
     fn instances() {
-        let store = Box::new(MemKVStore::new());
-        let log = Arc::new(Log::new(store));
+        let log = Arc::new(Log::new(Box::new(MemKVStore::new())));
 
         let get = Command::get("");
         let ballot = 0;
@@ -837,8 +812,7 @@ mod tests {
 
     #[test]
     fn calling_stop_unblocks_executor() {
-        let store = Box::new(MemKVStore::new());
-        let log = Arc::new(Log::new(store));
+        let log = Arc::new(Log::new(Box::new(MemKVStore::new())));
 
         let execute_thread = {
             let log = Arc::clone(&log);
