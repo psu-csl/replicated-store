@@ -60,7 +60,23 @@ impl MultiPaxos {
         }
     }
 
-    pub fn start_prepare_thread(&mut self) {
+    pub fn start(&mut self) {
+        self.start_prepare_thread();
+        self.start_commit_thread();
+        self.start_rpc_server();
+    }
+
+    pub fn stop(&mut self) {
+        self.stop_rpc_server();
+        self.stop_commit_thread();
+        self.stop_prepare_thread();
+    }
+
+    fn start_rpc_server(&mut self) {}
+
+    fn stop_rpc_server(&mut self) {}
+
+    fn start_prepare_thread(&mut self) {
         debug!("{} starting prepare thread", self.multi_paxos.id);
         self.multi_paxos
             .prepare_thread_running
@@ -71,7 +87,7 @@ impl MultiPaxos {
         }
     }
 
-    pub fn stop_prepare_thread(&mut self) {
+    fn stop_prepare_thread(&mut self) {
         debug!("{} stopping prepare thread", self.multi_paxos.id);
         assert!(self
             .multi_paxos
@@ -82,6 +98,30 @@ impl MultiPaxos {
             .store(false, Ordering::Relaxed);
         self.multi_paxos.cv_follower.notify_one();
         self.prepare_thread.take().unwrap().join().unwrap();
+    }
+
+    fn start_commit_thread(&mut self) {
+        debug!("{} starting commit thread", self.multi_paxos.id);
+        self.multi_paxos
+            .commit_thread_running
+            .store(true, Ordering::Relaxed);
+        self.commit_thread = {
+            let multi_paxos = self.multi_paxos.clone();
+            Some(std::thread::spawn(move || multi_paxos.commit_thread_fn()))
+        }
+    }
+
+    fn stop_commit_thread(&mut self) {
+        debug!("{} stopping commit thread", self.multi_paxos.id);
+        assert!(self
+            .multi_paxos
+            .commit_thread_running
+            .load(Ordering::Relaxed));
+        self.multi_paxos
+            .commit_thread_running
+            .store(false, Ordering::Relaxed);
+        self.multi_paxos.cv_leader.notify_one();
+        self.commit_thread.take().unwrap().join().unwrap();
     }
 }
 
@@ -194,8 +234,27 @@ impl MultiPaxosInner {
         }
     }
 
+    fn commit_thread_fn(&self) {
+        while self.commit_thread_running.load(Ordering::Relaxed) {
+            self.wait_until_leader();
+            let mut gle = self.log.global_last_executed();
+            while self.commit_thread_running.load(Ordering::Relaxed) {
+                let (ballot, ready) = self.ballot();
+                if !is_leader(ballot, self.id) {
+                    break;
+                }
+                gle = self.run_commit_phase(ballot, gle);
+                self.sleep_for_commit_interval();
+            }
+        }
+    }
+
     fn run_prepare_phase(&self, ballot: i64) -> Option<MapLog> {
         None
+    }
+
+    fn run_commit_phase(&self, ballot: i64, global_last_executed: i64) -> i64 {
+        0
     }
 
     fn replay(&self, ballot: i64, log: &MapLog) {}

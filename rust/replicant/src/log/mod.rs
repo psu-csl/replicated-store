@@ -139,7 +139,7 @@ impl Log {
         log.last_executed
     }
 
-    fn global_last_executed(&self) -> i64 {
+    pub fn global_last_executed(&self) -> i64 {
         let log = self.log.lock().unwrap();
         log.global_last_executed
     }

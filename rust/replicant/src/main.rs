@@ -26,7 +26,7 @@ fn main() {
     let log = Log::new(Box::new(MemKVStore::new()));
     let mut mp = MultiPaxos::new(log, &config);
     debug!("starting...");
-    mp.start_prepare_thread();
+    mp.start();
     thread::sleep(time::Duration::from_millis(4000));
-    mp.stop_prepare_thread();
+    mp.stop();
 }
