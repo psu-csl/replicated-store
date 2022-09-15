@@ -118,7 +118,9 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
   }
 
   void SleepForRandomInterval() {
-    auto sleep_time = commit_interval_ + commit_interval_ / 2 + dist_(engine_);
+    auto ci = commit_interval_;
+    std::uniform_int_distribution<> dist(0, ci / 2);
+    auto sleep_time = ci + ci / 2 + dist(engine_);
     std::this_thread::sleep_for(std::chrono::milliseconds(sleep_time));
   }
 
@@ -172,7 +174,6 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
   std::atomic<bool> commit_received_;
   long commit_interval_;
   std::mt19937 engine_;
-  std::uniform_int_distribution<int> dist_;
   std::string port_;
   std::vector<rpc_peer_t> rpc_peers_;
   mutable std::mutex mu_;
