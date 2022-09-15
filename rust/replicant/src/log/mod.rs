@@ -59,19 +59,20 @@ impl Instance {
 }
 
 type VectorLog = Vec<Instance>;
+type MapLog = HashMap<i64, Instance>;
 
-struct MapLog {
+struct LogInner {
     running: bool,
-    map: HashMap<i64, Instance>,
+    map: MapLog,
     last_index: i64,
     last_executed: i64,
     global_last_executed: i64,
     kv_store: Box<dyn KVStore + Sync + Send>,
 }
 
-impl MapLog {
+impl LogInner {
     fn new(kv_store: Box<dyn KVStore + Sync + Send>) -> Self {
-        MapLog {
+        LogInner {
             map: HashMap::new(),
             running: true,
             last_index: 0,
@@ -119,7 +120,7 @@ impl MapLog {
 }
 
 pub struct Log {
-    log: Mutex<MapLog>,
+    log: Mutex<LogInner>,
     cv_executable: Condvar,
     cv_committable: Condvar,
 }
@@ -127,7 +128,7 @@ pub struct Log {
 impl Log {
     pub fn new(kv_store: Box<dyn KVStore + Sync + Send>) -> Self {
         Log {
-            log: Mutex::new(MapLog::new(kv_store)),
+            log: Mutex::new(LogInner::new(kv_store)),
             cv_executable: Condvar::new(),
             cv_committable: Condvar::new(),
         }
@@ -276,7 +277,7 @@ mod tests {
         let instance1 = Instance::inprogress(ballot, index, &put);
         let instance2 = instance1.clone();
         let store = Box::new(MemKVStore::new());
-        let mut log = MapLog::new(store);
+        let mut log = LogInner::new(store);
 
         assert!(log.insert(instance1));
         assert_eq!(put, *log.map[&index].command.as_ref().unwrap());
@@ -292,7 +293,7 @@ mod tests {
         let instance1 = Instance::inprogress(ballot, index, &put);
         let instance2 = Instance::inprogress(ballot + 1, index, &del);
         let store = Box::new(MemKVStore::new());
-        let mut log = MapLog::new(store);
+        let mut log = LogInner::new(store);
 
         assert!(log.insert(instance1));
         assert_eq!(put, *log.map[&index].command.as_ref().unwrap());
@@ -308,7 +309,7 @@ mod tests {
         let instance1 = Instance::committed(ballot, index, &put);
         let instance2 = Instance::inprogress(ballot + 1, index, &put);
         let store = Box::new(MemKVStore::new());
-        let mut log = MapLog::new(store);
+        let mut log = LogInner::new(store);
 
         assert!(log.insert(instance1));
         assert!(!log.insert(instance2));
@@ -323,7 +324,7 @@ mod tests {
         let instance1 = Instance::inprogress(ballot, index, &put);
         let instance2 = Instance::inprogress(ballot - 1, index, &del);
         let store = Box::new(MemKVStore::new());
-        let mut log = MapLog::new(store);
+        let mut log = LogInner::new(store);
 
         assert!(log.insert(instance1));
         assert_eq!(put, *log.map[&index].command.as_ref().unwrap());
@@ -341,7 +342,7 @@ mod tests {
         let instance1 = Instance::committed(ballot, index, &put);
         let instance2 = Instance::inprogress(ballot, index, &del);
         let store = Box::new(MemKVStore::new());
-        let mut log = MapLog::new(store);
+        let mut log = LogInner::new(store);
 
         assert!(log.insert(instance1));
         log.insert(instance2);
@@ -357,7 +358,7 @@ mod tests {
         let instance1 = Instance::executed(ballot, index, &put);
         let instance2 = Instance::inprogress(ballot, index, &del);
         let store = Box::new(MemKVStore::new());
-        let mut log = MapLog::new(store);
+        let mut log = LogInner::new(store);
 
         assert!(log.insert(instance1));
         log.insert(instance2);
@@ -373,7 +374,7 @@ mod tests {
         let instance1 = Instance::inprogress(ballot, index, &put);
         let instance2 = Instance::inprogress(ballot, index, &del);
         let store = Box::new(MemKVStore::new());
-        let mut log = MapLog::new(store);
+        let mut log = LogInner::new(store);
 
         assert!(log.insert(instance1));
         log.insert(instance2);
