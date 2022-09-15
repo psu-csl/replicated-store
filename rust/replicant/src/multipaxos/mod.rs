@@ -237,11 +237,6 @@ impl MultiPaxosInner {
         self.commit_received.swap(false, Ordering::Relaxed)
     }
 
-    fn start_prepare_thread(&self) {
-        debug!("{} starting prepare thread", self.id);
-        self.prepare_thread_running.store(true, Ordering::Relaxed);
-    }
-
     fn prepare_thread_fn(&self) {
         while self.prepare_thread_running.load(Ordering::Relaxed) {
             self.wait_until_follower();
