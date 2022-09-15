@@ -58,8 +58,8 @@ impl Instance {
     }
 }
 
-type VectorLog = Vec<Instance>;
-type MapLog = HashMap<i64, Instance>;
+pub type VectorLog = Vec<Instance>;
+pub type MapLog = HashMap<i64, Instance>;
 
 struct LogInner {
     running: bool,
