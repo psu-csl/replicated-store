@@ -144,7 +144,7 @@ impl Log {
         log.global_last_executed
     }
 
-    fn advance_last_index(&self) -> i64 {
+    pub fn advance_last_index(&self) -> i64 {
         let mut log = self.log.lock().unwrap();
         log.last_index += 1;
         log.last_index
