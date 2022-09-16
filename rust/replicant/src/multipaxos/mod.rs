@@ -8,7 +8,16 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::{thread, time};
 
-tonic::include_proto!("multipaxos");
+use rpc::multi_paxos_rpc_server::{MultiPaxosRpc, MultiPaxosRpcServer};
+use rpc::{AcceptRequest, AcceptResponse};
+use rpc::{Command, Instance};
+use rpc::{CommitRequest, CommitResponse};
+use rpc::{PrepareRequest, PrepareResponse};
+use tonic::{transport::Server, Code, Request, Response, Status};
+
+pub mod rpc {
+    tonic::include_proto!("multipaxos");
+}
 
 pub struct MultiPaxos {
     multi_paxos: Arc<MultiPaxosInner>,
@@ -33,6 +42,30 @@ struct MultiPaxosInner {
     commit_thread_running: AtomicBool,
     cv_leader: Condvar,
     cv_follower: Condvar,
+}
+
+#[tonic::async_trait]
+impl MultiPaxosRpc for MultiPaxosInner {
+    async fn prepare(
+        &self,
+        request: Request<PrepareRequest>,
+    ) -> Result<Response<PrepareResponse>, Status> {
+        Err(Status::new(Code::Unknown, ""))
+    }
+
+    async fn accept(
+        &self,
+        request: Request<AcceptRequest>,
+    ) -> Result<Response<AcceptResponse>, Status> {
+        Err(Status::new(Code::Unknown, ""))
+    }
+
+    async fn commit(
+        &self,
+        request: Request<CommitRequest>,
+    ) -> Result<Response<CommitResponse>, Status> {
+        Err(Status::new(Code::Unknown, ""))
+    }
 }
 
 const ID_BITS: i64 = 0xff;

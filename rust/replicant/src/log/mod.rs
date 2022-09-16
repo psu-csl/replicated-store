@@ -5,8 +5,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 
-use super::multipaxos::Command;
-use super::multipaxos::{Instance, InstanceState};
+use super::multipaxos::rpc::Command;
+use super::multipaxos::rpc::{Instance, InstanceState};
 
 type LogResult = (i64, Result<Option<String>, &'static str>);
 
