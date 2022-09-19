@@ -134,7 +134,7 @@ impl Log {
         }
     }
 
-    fn last_executed(&self) -> i64 {
+    pub fn last_executed(&self) -> i64 {
         let log = self.log.lock().unwrap();
         log.last_executed
     }
@@ -156,7 +156,7 @@ impl Log {
         self.cv_executable.notify_one();
     }
 
-    fn append(&self, instance: Instance) {
+    pub fn append(&self, instance: Instance) {
         let mut log = self.log.lock().unwrap();
         let i = instance.index;
         if i <= log.global_last_executed {
@@ -196,7 +196,7 @@ impl Log {
         Some(log.execute())
     }
 
-    fn commit_until(&self, leader_last_executed: i64, ballot: i64) {
+    pub fn commit_until(&self, leader_last_executed: i64, ballot: i64) {
         assert!(leader_last_executed >= 0, "invalid leader_last_executed");
         assert!(ballot >= 0, "invalid ballot");
 
@@ -217,7 +217,7 @@ impl Log {
         }
     }
 
-    fn trim_until(&self, leader_global_last_executed: i64) {
+    pub fn trim_until(&self, leader_global_last_executed: i64) {
         let mut log = &mut *self.log.lock().unwrap();
         while log.global_last_executed < leader_global_last_executed {
             log.global_last_executed += 1;
@@ -226,7 +226,7 @@ impl Log {
         }
     }
 
-    fn instances(&self) -> VectorLog {
+    pub fn instances(&self) -> VectorLog {
         let log = self.log.lock().unwrap();
         let mut instances: VectorLog = Vec::new();
         for i in log.global_last_executed + 1..=log.last_index {
