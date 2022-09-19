@@ -25,19 +25,14 @@ pub struct MultiPaxos {
     commit_thread: Option<thread::JoinHandle<()>>,
 }
 
-#[derive(Default)]
-struct AtomicState {
-    ballot: i64,
-    rpc_server_running: bool,
-}
-
 struct MultiPaxosInner {
-    atomic_state: Mutex<AtomicState>,
+    ballot: Mutex<i64>,
     ready: AtomicBool,
     log: Log,
     id: i64,
     commit_received: AtomicBool,
     commit_interval: u64,
+    port: String,
     prepare_thread_running: AtomicBool,
     commit_thread_running: AtomicBool,
     cv_leader: Condvar,
@@ -111,9 +106,13 @@ impl MultiPaxos {
         self.stop_prepare_thread();
     }
 
-    fn start_rpc_server(&mut self) {}
+    fn start_rpc_server(&mut self) {
+        debug!("{} starting rpc server at ", self.multi_paxos.port);
+    }
 
-    fn stop_rpc_server(&mut self) {}
+    fn stop_rpc_server(&mut self) {
+        debug!("{} stopping rpc server at ", self.multi_paxos.port);
+    }
 
     fn start_prepare_thread(&mut self) {
         debug!("{} starting prepare thread", self.multi_paxos.id);
@@ -186,13 +185,15 @@ impl MultiPaxos {
 impl MultiPaxosInner {
     fn new(log: Log, config: &json) -> Self {
         let ci = config["commit_interval"].as_u64().unwrap();
+        let id = config["id"].as_i64().unwrap();
         Self {
-            atomic_state: Mutex::new(AtomicState::default()),
+            ballot: Mutex::new(0),
             ready: AtomicBool::new(false),
             log: log,
             id: config["id"].as_i64().unwrap(),
             commit_received: AtomicBool::new(false),
             commit_interval: ci,
+            port: config["peers"][id as usize].to_string(),
             prepare_thread_running: AtomicBool::new(false),
             commit_thread_running: AtomicBool::new(false),
             cv_leader: Condvar::new(),
@@ -201,57 +202,53 @@ impl MultiPaxosInner {
     }
 
     fn next_ballot(&self) -> i64 {
-        let atomic_state = self.atomic_state.lock().unwrap();
-        let mut next_ballot = atomic_state.ballot;
+        let ballot = self.ballot.lock().unwrap();
+        let mut next_ballot = *ballot;
         next_ballot += ROUND_INCREMENT;
         next_ballot = (next_ballot & !ID_BITS) | self.id;
         next_ballot
     }
 
     fn become_leader(&self, next_ballot: i64) {
-        let mut atomic_state = self.atomic_state.lock().unwrap();
+        let mut ballot = self.ballot.lock().unwrap();
         debug!(
             "{} became a leader: ballot: {} -> {}",
-            self.id, atomic_state.ballot, next_ballot
+            self.id, *ballot, next_ballot
         );
-        atomic_state.ballot = next_ballot;
+        *ballot = next_ballot;
         self.ready.store(false, Ordering::Relaxed);
         self.cv_leader.notify_one();
     }
 
-    fn become_follower(&self, atomic_state: &mut AtomicState, next_ballot: i64) {
-        let prev_leader = leader(atomic_state.ballot);
+    fn become_follower(&self, ballot: &mut i64, next_ballot: i64) {
+        let prev_leader = leader(*ballot);
         let next_leader = leader(next_ballot);
         if next_leader != self.id && (prev_leader == self.id || prev_leader == MAX_NUM_PEERS) {
             debug!(
                 "{} became a follower: ballot: {} -> {}",
-                self.id, atomic_state.ballot, next_ballot
+                self.id, *ballot, next_ballot
             );
             self.cv_follower.notify_one();
         }
-        atomic_state.ballot = next_ballot;
+        *ballot = next_ballot;
     }
 
     fn ballot(&self) -> (i64, bool) {
-        let atomic_state = self.atomic_state.lock().unwrap();
-        (atomic_state.ballot, self.ready.load(Ordering::Relaxed))
+        let ballot = self.ballot.lock().unwrap();
+        (*ballot, self.ready.load(Ordering::Relaxed))
     }
 
     fn wait_until_leader(&self) {
-        let mut atomic_state = self.atomic_state.lock().unwrap();
-        while self.commit_thread_running.load(Ordering::Relaxed)
-            && !is_leader(atomic_state.ballot, self.id)
-        {
-            atomic_state = self.cv_leader.wait(atomic_state).unwrap();
+        let mut ballot = self.ballot.lock().unwrap();
+        while self.commit_thread_running.load(Ordering::Relaxed) && !is_leader(*ballot, self.id) {
+            ballot = self.cv_leader.wait(ballot).unwrap();
         }
     }
 
     fn wait_until_follower(&self) {
-        let mut atomic_state = self.atomic_state.lock().unwrap();
-        while self.prepare_thread_running.load(Ordering::Relaxed)
-            && is_leader(atomic_state.ballot, self.id)
-        {
-            atomic_state = self.cv_follower.wait(atomic_state).unwrap();
+        let mut ballot = self.ballot.lock().unwrap();
+        while self.prepare_thread_running.load(Ordering::Relaxed) && is_leader(*ballot, self.id) {
+            ballot = self.cv_follower.wait(ballot).unwrap();
         }
     }
 
