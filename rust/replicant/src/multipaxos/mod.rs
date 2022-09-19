@@ -2,18 +2,18 @@ use super::log::{Log, MapLog};
 use crate::kvstore::memkvstore::MemKVStore;
 use log::debug;
 use rand::distributions::{Distribution, Uniform};
+use rpc::multi_paxos_rpc_server::{MultiPaxosRpc, MultiPaxosRpcServer};
+use rpc::Command;
+use rpc::ResponseType;
+use rpc::{AcceptRequest, AcceptResponse};
+use rpc::{CommitRequest, CommitResponse};
+use rpc::{PrepareRequest, PrepareResponse};
 use serde_json::json;
 use serde_json::Value as json;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::{thread, time};
-
-use rpc::multi_paxos_rpc_server::{MultiPaxosRpc, MultiPaxosRpcServer};
-use rpc::{AcceptRequest, AcceptResponse};
-use rpc::{Command, Instance};
-use rpc::{CommitRequest, CommitResponse};
-use rpc::{PrepareRequest, PrepareResponse};
-use tonic::{transport::Server, Code, Request, Response, Status};
+use tonic::{transport::Server, Request, Response, Status};
 
 pub mod rpc {
     tonic::include_proto!("multipaxos");
@@ -45,21 +45,72 @@ impl MultiPaxosRpc for MultiPaxosInner {
         &self,
         request: Request<PrepareRequest>,
     ) -> Result<Response<PrepareResponse>, Status> {
-        Err(Status::new(Code::Unknown, ""))
+        let request = request.into_inner();
+        debug!("{} <--prepare-- ", request.sender);
+
+        let mut ballot = self.ballot.lock().unwrap();
+        if request.ballot > *ballot {
+            self.become_follower(&mut *ballot, request.ballot);
+            return Ok(Response::new(PrepareResponse {
+                r#type: ResponseType::Ok as i32,
+                ballot: *ballot,
+                instances: self.log.instances(),
+            }));
+        }
+        Ok(Response::new(PrepareResponse {
+            r#type: ResponseType::Reject as i32,
+            ballot: *ballot,
+            instances: vec![],
+        }))
     }
 
     async fn accept(
         &self,
         request: Request<AcceptRequest>,
     ) -> Result<Response<AcceptResponse>, Status> {
-        Err(Status::new(Code::Unknown, ""))
+        let request = request.into_inner();
+        debug!("{} <--accept---", request.sender);
+
+        let instance = request.instance.unwrap();
+        let mut ballot = self.ballot.lock().unwrap();
+        if instance.ballot >= *ballot {
+            self.become_follower(&mut *ballot, instance.ballot);
+            self.log.append(instance);
+            return Ok(Response::new(AcceptResponse {
+                r#type: ResponseType::Ok as i32,
+                ballot: *ballot,
+            }));
+        }
+        Ok(Response::new(AcceptResponse {
+            r#type: ResponseType::Reject as i32,
+            ballot: *ballot,
+        }))
     }
 
     async fn commit(
         &self,
         request: Request<CommitRequest>,
     ) -> Result<Response<CommitResponse>, Status> {
-        Err(Status::new(Code::Unknown, ""))
+        let request = request.into_inner();
+        debug!("{} <--commit---", request.sender);
+
+        let mut ballot = self.ballot.lock().unwrap();
+        if request.ballot >= *ballot {
+            self.commit_received.store(true, Ordering::Relaxed);
+            self.become_follower(&mut *ballot, request.ballot);
+            self.log.commit_until(request.last_executed, request.ballot);
+            self.log.trim_until(request.global_last_executed);
+            return Ok(Response::new(CommitResponse {
+                r#type: ResponseType::Ok as i32,
+                ballot: *ballot,
+                last_executed: self.log.last_executed(),
+            }));
+        }
+        Ok(Response::new(CommitResponse {
+            r#type: ResponseType::Reject as i32,
+            ballot: *ballot,
+            last_executed: 0,
+        }))
     }
 }
 
