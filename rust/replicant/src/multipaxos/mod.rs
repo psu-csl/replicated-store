@@ -264,7 +264,7 @@ impl MultiPaxos {
 
 impl MultiPaxosInner {
     fn new(log: Log, config: &json) -> Self {
-        let ci = config["commit_interval"].as_u64().unwrap();
+        let commit_interval = config["commit_interval"].as_u64().unwrap();
         let id = config["id"].as_i64().unwrap();
         let port = config["peers"][id as usize]
             .as_str()
@@ -277,7 +277,7 @@ impl MultiPaxosInner {
             log: log,
             id: id,
             commit_received: AtomicBool::new(false),
-            commit_interval: ci,
+            commit_interval: commit_interval,
             port: port,
             prepare_thread_running: AtomicBool::new(false),
             commit_thread_running: AtomicBool::new(false),
