@@ -23,7 +23,12 @@ impl Instance {
         Self::new(ballot, index, InstanceState::Executed, command)
     }
 
-    fn new(ballot: i64, index: i64, state: InstanceState, command: &Command) -> Self {
+    fn new(
+        ballot: i64,
+        index: i64,
+        state: InstanceState,
+        command: &Command,
+    ) -> Self {
         Self {
             ballot: ballot,
             index: index,
@@ -376,8 +381,10 @@ mod tests {
         let log = Log::new(Box::new(MemKVStore::new()));
         let (get, _, _) = make_commands();
         let ballot = 0;
-        let instance1 = Instance::inprogress(ballot, log.advance_last_index(), &get);
-        let instance2 = Instance::inprogress(ballot, log.advance_last_index(), &get);
+        let instance1 =
+            Instance::inprogress(ballot, log.advance_last_index(), &get);
+        let instance2 =
+            Instance::inprogress(ballot, log.advance_last_index(), &get);
 
         log.append(instance1);
         log.append(instance2);
@@ -763,7 +770,8 @@ mod tests {
         let index3 = 3;
         let instance3 = Instance::inprogress(ballot, index3, &get);
 
-        let expected = vec![instance1.clone(), instance2.clone(), instance3.clone()];
+        let expected =
+            vec![instance1.clone(), instance2.clone(), instance3.clone()];
 
         let execute_thread = {
             let log = Arc::clone(&log);

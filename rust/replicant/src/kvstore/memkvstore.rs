@@ -73,7 +73,8 @@ mod tests {
 
     #[test]
     fn execute() {
-        let mut store: Box<dyn KVStore + Sync + Send> = Box::new(MemKVStore::new());
+        let mut store: Box<dyn KVStore + Sync + Send> =
+            Box::new(MemKVStore::new());
 
         let get_key1 = Command::get(KEY1);
         let get_key2 = Command::get(KEY2);

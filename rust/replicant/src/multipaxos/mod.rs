@@ -75,8 +75,10 @@ impl MultiPaxosInner {
             .unwrap()
             .parse()
             .unwrap();
+
         let mut rpc_peers = Vec::new();
-        for (id, port) in config["peers"].as_array().unwrap().iter().enumerate() {
+        for (id, port) in config["peers"].as_array().unwrap().iter().enumerate()
+        {
             let port = format!("http://{}", port.as_str().unwrap());
             let channel = Endpoint::from_shared(port).unwrap().connect_lazy();
             rpc_peers.push(RpcPeer {
@@ -122,7 +124,9 @@ impl MultiPaxosInner {
     fn become_follower(&self, ballot: &mut i64, next_ballot: i64) {
         let prev_leader = leader(*ballot);
         let next_leader = leader(next_ballot);
-        if next_leader != self.id && (prev_leader == self.id || prev_leader == MAX_NUM_PEERS) {
+        if next_leader != self.id
+            && (prev_leader == self.id || prev_leader == MAX_NUM_PEERS)
+        {
             debug!(
                 "{} became a follower: ballot: {} -> {}",
                 self.id, *ballot, next_ballot
@@ -139,14 +143,18 @@ impl MultiPaxosInner {
 
     fn wait_until_leader(&self) {
         let mut ballot = self.ballot.lock().unwrap();
-        while self.commit_thread_running.load(Ordering::Relaxed) && !is_leader(*ballot, self.id) {
+        while self.commit_thread_running.load(Ordering::Relaxed)
+            && !is_leader(*ballot, self.id)
+        {
             ballot = self.cv_leader.wait(ballot).unwrap();
         }
     }
 
     fn wait_until_follower(&self) {
         let mut ballot = self.ballot.lock().unwrap();
-        while self.prepare_thread_running.load(Ordering::Relaxed) && is_leader(*ballot, self.id) {
+        while self.prepare_thread_running.load(Ordering::Relaxed)
+            && is_leader(*ballot, self.id)
+        {
             ballot = self.cv_follower.wait(ballot).unwrap();
         }
     }
@@ -337,7 +345,8 @@ impl MultiPaxos {
         self.rpc_server_tx.replace(tx);
 
         let port = self.multi_paxos.port;
-        let service = MultiPaxosRpcServer::new(RpcWrapper(Arc::clone(&self.multi_paxos)));
+        let service =
+            MultiPaxosRpcServer::new(RpcWrapper(Arc::clone(&self.multi_paxos)));
         tokio::spawn(async move {
             Server::builder()
                 .add_service(service)
@@ -468,7 +477,10 @@ mod tests {
 
         for id in 0..NUM_PEERS {
             let ballot = id + ROUND_INCREMENT;
-            assert_eq!(ballot, state.peers[id as usize].multi_paxos.next_ballot());
+            assert_eq!(
+                ballot,
+                state.peers[id as usize].multi_paxos.next_ballot()
+            );
         }
     }
 }
