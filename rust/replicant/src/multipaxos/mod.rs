@@ -374,7 +374,7 @@ impl MultiPaxosInner {
             self.wait_until_leader();
             let mut gle = self.log.global_last_executed();
             while self.commit_thread_running.load(Ordering::Relaxed) {
-                let (ballot, ready) = self.ballot();
+                let (ballot, _) = self.ballot();
                 if !is_leader(ballot, self.id) {
                     break;
                 }
