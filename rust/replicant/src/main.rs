@@ -26,7 +26,6 @@ async fn main() {
 
     let log = Log::new(Box::new(MemKVStore::new()));
     let mut mp = MultiPaxos::new(log, &config);
-    debug!("starting...");
     mp.start();
     thread::sleep(time::Duration::from_millis(1000));
     mp.stop();

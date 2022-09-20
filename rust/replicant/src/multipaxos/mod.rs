@@ -17,7 +17,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::{thread, time};
 use tokio::sync::oneshot;
-use tonic::transport::{Channel, Server};
+use tonic::transport::{Channel, Endpoint, Server};
 use tonic::{Request, Response, Status};
 
 pub mod rpc {
@@ -46,6 +46,11 @@ enum ResultType {
     SomeoneElseLeader(i64),
 }
 
+struct RpcPeer {
+    id: i64,
+    stub: MultiPaxosRpcClient<Channel>,
+}
+
 struct MultiPaxosInner {
     ballot: Mutex<i64>,
     ready: AtomicBool,
@@ -54,7 +59,7 @@ struct MultiPaxosInner {
     commit_received: AtomicBool,
     commit_interval: u64,
     port: SocketAddr,
-    rpc_peers: Vec<MultiPaxosRpcClient<Channel>>,
+    rpc_peers: Vec<RpcPeer>,
     prepare_thread_running: AtomicBool,
     commit_thread_running: AtomicBool,
     cv_leader: Condvar,
@@ -70,7 +75,15 @@ impl MultiPaxosInner {
             .unwrap()
             .parse()
             .unwrap();
-        let rpc_peers = Vec::new();
+        let mut rpc_peers = Vec::new();
+        for (id, port) in config["peers"].as_array().unwrap().iter().enumerate() {
+            let port = format!("http://{}", port.as_str().unwrap());
+            let channel = Endpoint::from_shared(port).unwrap().connect_lazy();
+            rpc_peers.push(RpcPeer {
+                id: id as i64,
+                stub: MultiPaxosRpcClient::new(channel),
+            });
+        }
         Self {
             ballot: Mutex::new(0),
             ready: AtomicBool::new(false),
@@ -79,7 +92,7 @@ impl MultiPaxosInner {
             commit_received: AtomicBool::new(false),
             commit_interval: commit_interval,
             port: port,
-            rpc_peers: rpc_peers,
+            rpc_peers: Vec::new(),
             prepare_thread_running: AtomicBool::new(false),
             commit_thread_running: AtomicBool::new(false),
             cv_leader: Condvar::new(),
@@ -295,7 +308,7 @@ pub struct MultiPaxos {
 impl MultiPaxos {
     pub fn new(log: Log, config: &json) -> Self {
         Self {
-            multi_paxos: Arc::new(MultiPaxosInner::new(log, config)),
+            multi_paxos: Arc::new(MultiPaxosInner::new(log, &config)),
             rpc_server_tx: None,
             prepare_thread: None,
             commit_thread: None,
