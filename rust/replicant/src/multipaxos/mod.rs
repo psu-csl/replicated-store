@@ -462,8 +462,8 @@ mod tests {
         state
     }
 
-    #[test]
-    fn next_ballot() {
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn next_ballot() {
         let state = init();
 
         for id in 0..NUM_PEERS {
