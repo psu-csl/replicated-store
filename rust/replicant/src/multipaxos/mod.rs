@@ -43,10 +43,10 @@ struct MultiPaxosInner {
     cv_follower: Condvar,
 }
 
-struct MultiPaxosWrapper(Arc<MultiPaxosInner>);
+struct RpcWrapper(Arc<MultiPaxosInner>);
 
 #[tonic::async_trait]
-impl MultiPaxosRpc for MultiPaxosWrapper {
+impl MultiPaxosRpc for RpcWrapper {
     async fn prepare(
         &self,
         request: Request<PrepareRequest>,
@@ -176,7 +176,7 @@ impl MultiPaxos {
         self.rpc_server_tx.replace(tx);
 
         let port = self.multi_paxos.port;
-        let service = MultiPaxosRpcServer::new(MultiPaxosWrapper(Arc::clone(&self.multi_paxos)));
+        let service = MultiPaxosRpcServer::new(RpcWrapper(Arc::clone(&self.multi_paxos)));
         tokio::spawn(async move {
             Server::builder()
                 .add_service(service)
