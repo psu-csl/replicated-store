@@ -1,5 +1,6 @@
 use super::log::{Log, MapLog};
 use crate::kvstore::memkvstore::MemKVStore;
+use futures_util::FutureExt;
 use log::debug;
 use rand::distributions::{Distribution, Uniform};
 use rpc::multi_paxos_rpc_server::{MultiPaxosRpc, MultiPaxosRpcServer};
@@ -10,9 +11,11 @@ use rpc::{CommitRequest, CommitResponse};
 use rpc::{PrepareRequest, PrepareResponse};
 use serde_json::json;
 use serde_json::Value as json;
+use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::{thread, time};
+use tokio::sync::oneshot;
 use tonic::{transport::Server, Request, Response, Status};
 
 pub mod rpc {
@@ -21,6 +24,7 @@ pub mod rpc {
 
 pub struct MultiPaxos {
     multi_paxos: Arc<MultiPaxosInner>,
+    rpc_server_tx: Option<oneshot::Sender<()>>,
     prepare_thread: Option<thread::JoinHandle<()>>,
     commit_thread: Option<thread::JoinHandle<()>>,
 }
@@ -32,15 +36,17 @@ struct MultiPaxosInner {
     id: i64,
     commit_received: AtomicBool,
     commit_interval: u64,
-    port: String,
+    port: SocketAddr,
     prepare_thread_running: AtomicBool,
     commit_thread_running: AtomicBool,
     cv_leader: Condvar,
     cv_follower: Condvar,
 }
 
+struct MultiPaxosWrapper(Arc<MultiPaxosInner>);
+
 #[tonic::async_trait]
-impl MultiPaxosRpc for MultiPaxosInner {
+impl MultiPaxosRpc for MultiPaxosWrapper {
     async fn prepare(
         &self,
         request: Request<PrepareRequest>,
@@ -48,13 +54,13 @@ impl MultiPaxosRpc for MultiPaxosInner {
         let request = request.into_inner();
         debug!("{} <--prepare-- ", request.sender);
 
-        let mut ballot = self.ballot.lock().unwrap();
+        let mut ballot = self.0.ballot.lock().unwrap();
         if request.ballot > *ballot {
-            self.become_follower(&mut *ballot, request.ballot);
+            self.0.become_follower(&mut *ballot, request.ballot);
             return Ok(Response::new(PrepareResponse {
                 r#type: ResponseType::Ok as i32,
                 ballot: *ballot,
-                instances: self.log.instances(),
+                instances: self.0.log.instances(),
             }));
         }
         Ok(Response::new(PrepareResponse {
@@ -72,10 +78,10 @@ impl MultiPaxosRpc for MultiPaxosInner {
         debug!("{} <--accept---", request.sender);
 
         let instance = request.instance.unwrap();
-        let mut ballot = self.ballot.lock().unwrap();
+        let mut ballot = self.0.ballot.lock().unwrap();
         if instance.ballot >= *ballot {
-            self.become_follower(&mut *ballot, instance.ballot);
-            self.log.append(instance);
+            self.0.become_follower(&mut *ballot, instance.ballot);
+            self.0.log.append(instance);
             return Ok(Response::new(AcceptResponse {
                 r#type: ResponseType::Ok as i32,
                 ballot: *ballot,
@@ -94,16 +100,18 @@ impl MultiPaxosRpc for MultiPaxosInner {
         let request = request.into_inner();
         debug!("{} <--commit---", request.sender);
 
-        let mut ballot = self.ballot.lock().unwrap();
+        let mut ballot = self.0.ballot.lock().unwrap();
         if request.ballot >= *ballot {
-            self.commit_received.store(true, Ordering::Relaxed);
-            self.become_follower(&mut *ballot, request.ballot);
-            self.log.commit_until(request.last_executed, request.ballot);
-            self.log.trim_until(request.global_last_executed);
+            self.0.commit_received.store(true, Ordering::Relaxed);
+            self.0.become_follower(&mut *ballot, request.ballot);
+            self.0
+                .log
+                .commit_until(request.last_executed, request.ballot);
+            self.0.log.trim_until(request.global_last_executed);
             return Ok(Response::new(CommitResponse {
                 r#type: ResponseType::Ok as i32,
                 ballot: *ballot,
-                last_executed: self.log.last_executed(),
+                last_executed: self.0.log.last_executed(),
             }));
         }
         Ok(Response::new(CommitResponse {
@@ -140,6 +148,7 @@ impl MultiPaxos {
     pub fn new(log: Log, config: &json) -> Self {
         Self {
             multi_paxos: Arc::new(MultiPaxosInner::new(log, config)),
+            rpc_server_tx: None,
             prepare_thread: None,
             commit_thread: None,
         }
@@ -158,11 +167,31 @@ impl MultiPaxos {
     }
 
     fn start_rpc_server(&mut self) {
-        debug!("{} starting rpc server at ", self.multi_paxos.port);
+        debug!(
+            "{} starting rpc server at {}",
+            self.multi_paxos.id, self.multi_paxos.port
+        );
+
+        let (tx, rx) = oneshot::channel();
+        self.rpc_server_tx.replace(tx);
+
+        let port = self.multi_paxos.port;
+        let service = MultiPaxosRpcServer::new(MultiPaxosWrapper(Arc::clone(&self.multi_paxos)));
+        tokio::spawn(async move {
+            Server::builder()
+                .add_service(service)
+                .serve_with_shutdown(port, rx.map(drop))
+                .await
+                .unwrap();
+        });
     }
 
     fn stop_rpc_server(&mut self) {
-        debug!("{} stopping rpc server at ", self.multi_paxos.port);
+        debug!(
+            "{} stopping rpc server at {}",
+            self.multi_paxos.id, self.multi_paxos.port
+        );
+        self.rpc_server_tx.take().unwrap().send(()).unwrap();
     }
 
     fn start_prepare_thread(&mut self) {
@@ -237,14 +266,19 @@ impl MultiPaxosInner {
     fn new(log: Log, config: &json) -> Self {
         let ci = config["commit_interval"].as_u64().unwrap();
         let id = config["id"].as_i64().unwrap();
+        let port = config["peers"][id as usize]
+            .as_str()
+            .unwrap()
+            .parse()
+            .unwrap();
         Self {
             ballot: Mutex::new(0),
             ready: AtomicBool::new(false),
             log: log,
-            id: config["id"].as_i64().unwrap(),
+            id: id,
             commit_received: AtomicBool::new(false),
             commit_interval: ci,
-            port: config["peers"][id as usize].to_string(),
+            port: port,
             prepare_thread_running: AtomicBool::new(false),
             commit_thread_running: AtomicBool::new(false),
             cv_leader: Condvar::new(),

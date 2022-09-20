@@ -9,7 +9,8 @@ use kvstore::memkvstore::MemKVStore;
 use multipaxos::MultiPaxos;
 use std::{thread, time};
 
-fn main() {
+#[tokio::main]
+async fn main() {
     env_logger::init();
 
     let str = r#"{
@@ -27,6 +28,6 @@ fn main() {
     let mut mp = MultiPaxos::new(log, &config);
     debug!("starting...");
     mp.start();
-    thread::sleep(time::Duration::from_millis(4000));
+    thread::sleep(time::Duration::from_millis(1000));
     mp.stop();
 }
