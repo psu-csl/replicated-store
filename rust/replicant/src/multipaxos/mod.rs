@@ -61,7 +61,7 @@ struct MultiPaxosInner {
     commit_received: AtomicBool,
     commit_interval: u64,
     port: SocketAddr,
-    rpc_peers: Vec<RpcPeer>,
+    rpc_peers: Mutex<Vec<RpcPeer>>,
     prepare_thread_running: AtomicBool,
     commit_thread_running: AtomicBool,
     cv_leader: Condvar,
@@ -96,7 +96,7 @@ impl MultiPaxosInner {
             commit_received: AtomicBool::new(false),
             commit_interval: commit_interval,
             port: port,
-            rpc_peers: Vec::new(),
+            rpc_peers: Mutex::new(Vec::new()),
             prepare_thread_running: AtomicBool::new(false),
             commit_thread_running: AtomicBool::new(false),
             cv_leader: Condvar::new(),
@@ -176,7 +176,7 @@ impl MultiPaxosInner {
         self.commit_received.swap(false, Ordering::Relaxed)
     }
 
-    fn prepare_thread_fn(&mut self) {
+    fn prepare_thread_fn(&self) {
         while self.prepare_thread_running.load(Ordering::Relaxed) {
             self.wait_until_follower();
             while self.prepare_thread_running.load(Ordering::Relaxed) {
@@ -208,15 +208,20 @@ impl MultiPaxosInner {
         }
     }
 
-    fn run_prepare_phase(&mut self, ballot: i64) -> Option<MapLog> {
+    fn run_prepare_phase(&self, ballot: i64) -> Option<MapLog> {
         let mut responses = FuturesUnordered::new();
-        for peer in self.rpc_peers.iter_mut() {
-            let request = Request::new(PrepareRequest {
-                ballot: ballot,
-                sender: self.id,
-            });
-            responses.push(peer.stub.prepare(request));
-            debug!("{} sent prepare request to {}", self.id, peer.id);
+        let num_peers;
+        {
+            let mut peers = self.rpc_peers.lock().unwrap();
+            num_peers = peers.len();
+            for peer in peers.iter_mut() {
+                let request = Request::new(PrepareRequest {
+                    ballot: ballot,
+                    sender: self.id,
+                });
+                responses.push(peer.stub.prepare(request));
+                debug!("{} sent prepare request to {}", self.id, peer.id);
+            }
         }
         let mut num_oks = 0;
         let mut logs = Vec::new();
@@ -243,7 +248,7 @@ impl MultiPaxosInner {
                     }
                     Err(_) => (),
                 }
-                if num_oks > self.rpc_peers.len() / 2 {
+                if num_oks > num_peers / 2 {
                     return Some(logs);
                 }
             }
