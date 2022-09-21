@@ -209,19 +209,16 @@ impl MultiPaxosInner {
     }
 
     fn run_prepare_phase(&self, ballot: i64) -> Option<MapLog> {
+        let mut peers = self.rpc_peers.lock().unwrap();
+        let num_peers = peers.len();
         let mut responses = FuturesUnordered::new();
-        let num_peers;
-        {
-            let mut peers = self.rpc_peers.lock().unwrap();
-            num_peers = peers.len();
-            for peer in peers.iter_mut() {
-                let request = Request::new(PrepareRequest {
-                    ballot: ballot,
-                    sender: self.id,
-                });
-                responses.push(peer.stub.prepare(request));
-                debug!("{} sent prepare request to {}", self.id, peer.id);
-            }
+        for peer in peers.iter_mut() {
+            let request = Request::new(PrepareRequest {
+                ballot: ballot,
+                sender: self.id,
+            });
+            responses.push(peer.stub.prepare(request));
+            debug!("{} sent prepare request to {}", self.id, peer.id);
         }
         let mut num_oks = 0;
         let mut logs = Vec::new();
