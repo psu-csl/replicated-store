@@ -11,16 +11,31 @@ use super::multipaxos::rpc::{Instance, InstanceState};
 type LogResult = (i64, Result<Option<String>, &'static str>);
 
 impl Instance {
-    fn inprogress(ballot: i64, index: i64, command: &Command) -> Self {
-        Self::new(ballot, index, InstanceState::Inprogress, command)
+    fn inprogress(
+        ballot: i64,
+        index: i64,
+        command: &Command,
+        client_id: i64,
+    ) -> Self {
+        Self::new(ballot, index, InstanceState::Inprogress, command, client_id)
     }
 
-    fn committed(ballot: i64, index: i64, command: &Command) -> Self {
-        Self::new(ballot, index, InstanceState::Committed, command)
+    fn committed(
+        ballot: i64,
+        index: i64,
+        command: &Command,
+        client_id: i64,
+    ) -> Self {
+        Self::new(ballot, index, InstanceState::Committed, command, client_id)
     }
 
-    fn executed(ballot: i64, index: i64, command: &Command) -> Self {
-        Self::new(ballot, index, InstanceState::Executed, command)
+    fn executed(
+        ballot: i64,
+        index: i64,
+        command: &Command,
+        client_id: i64,
+    ) -> Self {
+        Self::new(ballot, index, InstanceState::Executed, command, client_id)
     }
 
     fn new(
@@ -28,11 +43,12 @@ impl Instance {
         index: i64,
         state: InstanceState,
         command: &Command,
+        client_id: i64,
     ) -> Self {
         Self {
             ballot: ballot,
             index: index,
-            client_id: 0,
+            client_id: client_id,
             state: state as i32,
             command: Some(command.clone()),
         }
@@ -287,7 +303,7 @@ mod tests {
         let (_, put, _) = make_commands();
         let index = 1;
         let ballot = 1;
-        let instance1 = Instance::inprogress(ballot, index, &put);
+        let instance1 = Instance::inprogress(ballot, index, &put, 0);
         let instance2 = instance1.clone();
 
         assert!(log.insert(instance1));
@@ -301,8 +317,8 @@ mod tests {
         let (_, put, del) = make_commands();
         let index = 1;
         let ballot = 1;
-        let instance1 = Instance::inprogress(ballot, index, &put);
-        let instance2 = Instance::inprogress(ballot + 1, index, &del);
+        let instance1 = Instance::inprogress(ballot, index, &put, 0);
+        let instance2 = Instance::inprogress(ballot + 1, index, &del, 0);
 
         assert!(log.insert(instance1));
         assert_eq!(put, *log.map[&index].command.as_ref().unwrap());
@@ -316,8 +332,8 @@ mod tests {
         let (_, put, _) = make_commands();
         let index = 1;
         let ballot = 1;
-        let instance1 = Instance::committed(ballot, index, &put);
-        let instance2 = Instance::inprogress(ballot + 1, index, &put);
+        let instance1 = Instance::committed(ballot, index, &put, 0);
+        let instance2 = Instance::inprogress(ballot + 1, index, &put, 0);
 
         assert!(log.insert(instance1));
         assert!(!log.insert(instance2));
@@ -329,8 +345,8 @@ mod tests {
         let (_, put, del) = make_commands();
         let index = 1;
         let ballot = 1;
-        let instance1 = Instance::inprogress(ballot, index, &put);
-        let instance2 = Instance::inprogress(ballot - 1, index, &del);
+        let instance1 = Instance::inprogress(ballot, index, &put, 0);
+        let instance2 = Instance::inprogress(ballot - 1, index, &del, 0);
 
         assert!(log.insert(instance1));
         assert_eq!(put, *log.map[&index].command.as_ref().unwrap());
@@ -345,8 +361,8 @@ mod tests {
         let (_, put, del) = make_commands();
         let index = 1;
         let ballot = 0;
-        let instance1 = Instance::committed(ballot, index, &put);
-        let instance2 = Instance::inprogress(ballot, index, &del);
+        let instance1 = Instance::committed(ballot, index, &put, 0);
+        let instance2 = Instance::inprogress(ballot, index, &del, 0);
 
         assert!(log.insert(instance1));
         log.insert(instance2);
@@ -359,8 +375,8 @@ mod tests {
         let (_, put, del) = make_commands();
         let index = 1;
         let ballot = 0;
-        let instance1 = Instance::executed(ballot, index, &put);
-        let instance2 = Instance::inprogress(ballot, index, &del);
+        let instance1 = Instance::executed(ballot, index, &put, 0);
+        let instance2 = Instance::inprogress(ballot, index, &del, 0);
 
         assert!(log.insert(instance1));
         log.insert(instance2);
@@ -373,8 +389,8 @@ mod tests {
         let (_, put, del) = make_commands();
         let index = 1;
         let ballot = 0;
-        let instance1 = Instance::inprogress(ballot, index, &put);
-        let instance2 = Instance::inprogress(ballot, index, &del);
+        let instance1 = Instance::inprogress(ballot, index, &put, 0);
+        let instance2 = Instance::inprogress(ballot, index, &del, 0);
 
         assert!(log.insert(instance1));
         log.insert(instance2);
@@ -386,9 +402,9 @@ mod tests {
         let (get, _, _) = make_commands();
         let ballot = 0;
         let instance1 =
-            Instance::inprogress(ballot, log.advance_last_index(), &get);
+            Instance::inprogress(ballot, log.advance_last_index(), &get, 0);
         let instance2 =
-            Instance::inprogress(ballot, log.advance_last_index(), &get);
+            Instance::inprogress(ballot, log.advance_last_index(), &get, 0);
 
         log.append(instance1);
         log.append(instance2);
@@ -402,7 +418,7 @@ mod tests {
         let (get, _, _) = make_commands();
         let ballot = 0;
         let index = 42;
-        let instance = Instance::inprogress(ballot, index, &get);
+        let instance = Instance::inprogress(ballot, index, &get, 0);
 
         log.append(instance);
         assert_eq!(index, log.at(index).unwrap().index);
@@ -415,8 +431,8 @@ mod tests {
         let (get, _, _) = make_commands();
         let ballot = 0;
         let index = 42;
-        let instance1 = Instance::inprogress(ballot, index, &get);
-        let instance2 = Instance::inprogress(ballot, index - 10, &get);
+        let instance1 = Instance::inprogress(ballot, index, &get, 0);
+        let instance2 = Instance::inprogress(ballot, index - 10, &get, 0);
 
         log.append(instance1);
         log.append(instance2);
@@ -430,8 +446,8 @@ mod tests {
         let index = 1;
         let lo_ballot = 0;
         let hi_ballot = 1;
-        let instance1 = Instance::inprogress(lo_ballot, index, &put);
-        let instance2 = Instance::inprogress(hi_ballot, index, &del);
+        let instance1 = Instance::inprogress(lo_ballot, index, &put, 0);
+        let instance2 = Instance::inprogress(hi_ballot, index, &del, 0);
 
         log.append(instance1);
         log.append(instance2);
@@ -445,8 +461,8 @@ mod tests {
         let index = 1;
         let lo_ballot = 0;
         let hi_ballot = 1;
-        let instance1 = Instance::inprogress(hi_ballot, index, &put);
-        let instance2 = Instance::inprogress(lo_ballot, index, &del);
+        let instance1 = Instance::inprogress(hi_ballot, index, &put, 0);
+        let instance2 = Instance::inprogress(lo_ballot, index, &del, 0);
 
         log.append(instance1);
         log.append(instance2);
@@ -460,8 +476,8 @@ mod tests {
         let ballot = 0;
         let index1 = 1;
         let index2 = 2;
-        let instance1 = Instance::inprogress(ballot, index1, &get);
-        let instance2 = Instance::inprogress(ballot, index2, &get);
+        let instance1 = Instance::inprogress(ballot, index1, &get, 0);
+        let instance2 = Instance::inprogress(ballot, index2, &get, 0);
 
         log.append(instance1);
         log.append(instance2);
@@ -488,7 +504,7 @@ mod tests {
         let (get, _, _) = make_commands();
         let ballot = 0;
         let index = log.advance_last_index();
-        let instance = Instance::inprogress(ballot, index, &get);
+        let instance = Instance::inprogress(ballot, index, &get, 0);
 
         let commit_thread = {
             let log = Arc::clone(&log);
@@ -509,7 +525,7 @@ mod tests {
         let (get, _, _) = make_commands();
         let ballot = 0;
         let index = log.advance_last_index();
-        let instance = Instance::inprogress(ballot, index, &get);
+        let instance = Instance::inprogress(ballot, index, &get, 0);
 
         let execute_thread = {
             let log = Arc::clone(&log);
@@ -532,11 +548,11 @@ mod tests {
         let (get, _, _) = make_commands();
         let ballot = 0;
         let index1 = 1;
-        let instance1 = Instance::inprogress(ballot, index1, &get);
+        let instance1 = Instance::inprogress(ballot, index1, &get, 0);
         let index2 = 2;
-        let instance2 = Instance::inprogress(ballot, index2, &get);
+        let instance2 = Instance::inprogress(ballot, index2, &get, 0);
         let index3 = 3;
-        let instance3 = Instance::inprogress(ballot, index3, &get);
+        let instance3 = Instance::inprogress(ballot, index3, &get, 0);
 
         let execute_thread = {
             let log = Arc::clone(&log);
@@ -569,11 +585,11 @@ mod tests {
         let (get, _, _) = make_commands();
         let ballot = 0;
         let index1 = 1;
-        let instance1 = Instance::inprogress(ballot, index1, &get);
+        let instance1 = Instance::inprogress(ballot, index1, &get, 0);
         let index2 = 2;
-        let instance2 = Instance::inprogress(ballot, index2, &get);
+        let instance2 = Instance::inprogress(ballot, index2, &get, 0);
         let index3 = 3;
-        let instance3 = Instance::inprogress(ballot, index3, &get);
+        let instance3 = Instance::inprogress(ballot, index3, &get, 0);
 
         log.append(instance1);
         log.append(instance2);
@@ -592,11 +608,11 @@ mod tests {
         let (get, _, _) = make_commands();
         let ballot = 0;
         let index1 = 1;
-        let instance1 = Instance::inprogress(ballot, index1, &get);
+        let instance1 = Instance::inprogress(ballot, index1, &get, 0);
         let index2 = 2;
-        let instance2 = Instance::inprogress(ballot, index2, &get);
+        let instance2 = Instance::inprogress(ballot, index2, &get, 0);
         let index3 = 3;
-        let instance3 = Instance::inprogress(ballot, index3, &get);
+        let instance3 = Instance::inprogress(ballot, index3, &get, 0);
 
         log.append(instance1);
         log.append(instance2);
@@ -616,11 +632,11 @@ mod tests {
         let (get, _, _) = make_commands();
         let ballot = 5;
         let index1 = 1;
-        let instance1 = Instance::inprogress(ballot, index1, &get);
+        let instance1 = Instance::inprogress(ballot, index1, &get, 0);
         let index2 = 2;
-        let instance2 = Instance::inprogress(ballot, index2, &get);
+        let instance2 = Instance::inprogress(ballot, index2, &get, 0);
         let index3 = 3;
-        let instance3 = Instance::inprogress(ballot, index3, &get);
+        let instance3 = Instance::inprogress(ballot, index3, &get, 0);
 
         log.append(instance1);
         log.append(instance2);
@@ -634,11 +650,11 @@ mod tests {
         let (get, _, _) = make_commands();
         let ballot = 0;
         let index1 = 1;
-        let instance1 = Instance::inprogress(ballot, index1, &get);
+        let instance1 = Instance::inprogress(ballot, index1, &get, 0);
         let index3 = 3;
-        let instance3 = Instance::inprogress(ballot, index3, &get);
+        let instance3 = Instance::inprogress(ballot, index3, &get, 0);
         let index4 = 4;
-        let instance4 = Instance::inprogress(ballot, index4, &get);
+        let instance4 = Instance::inprogress(ballot, index4, &get, 0);
 
         log.append(instance1);
         log.append(instance3);
@@ -656,11 +672,11 @@ mod tests {
         let (get, _, _) = make_commands();
         let ballot = 0;
         let index1 = 1;
-        let instance1 = Instance::inprogress(ballot, index1, &get);
+        let instance1 = Instance::inprogress(ballot, index1, &get, 0);
         let index2 = 2;
-        let instance2 = Instance::inprogress(ballot, index2, &get);
+        let instance2 = Instance::inprogress(ballot, index2, &get, 0);
         let index3 = 3;
-        let instance3 = Instance::inprogress(ballot, index3, &get);
+        let instance3 = Instance::inprogress(ballot, index3, &get, 0);
 
         let execute_thread = {
             let log = Arc::clone(&log);
@@ -691,11 +707,11 @@ mod tests {
         let (get, _, _) = make_commands();
         let ballot = 0;
         let index1 = 1;
-        let instance1 = Instance::inprogress(ballot, index1, &get);
+        let instance1 = Instance::inprogress(ballot, index1, &get, 0);
         let index2 = 2;
-        let instance2 = Instance::inprogress(ballot, index2, &get);
+        let instance2 = Instance::inprogress(ballot, index2, &get, 0);
         let index3 = 3;
-        let instance3 = Instance::inprogress(ballot, index3, &get);
+        let instance3 = Instance::inprogress(ballot, index3, &get, 0);
 
         let execute_thread = {
             let log = Arc::clone(&log);
@@ -729,9 +745,9 @@ mod tests {
         let (get, _, _) = make_commands();
         let ballot = 0;
         let index1 = 1;
-        let instance1 = Instance::inprogress(ballot, index1, &get);
+        let instance1 = Instance::inprogress(ballot, index1, &get, 0);
         let index2 = 2;
-        let instance2 = Instance::inprogress(ballot, index2, &get);
+        let instance2 = Instance::inprogress(ballot, index2, &get, 0);
 
         let execute_thread = {
             let log = Arc::clone(&log);
@@ -768,11 +784,11 @@ mod tests {
         let (get, _, _) = make_commands();
         let ballot = 0;
         let index1 = 1;
-        let instance1 = Instance::inprogress(ballot, index1, &get);
+        let instance1 = Instance::inprogress(ballot, index1, &get, 0);
         let index2 = 2;
-        let instance2 = Instance::inprogress(ballot, index2, &get);
+        let instance2 = Instance::inprogress(ballot, index2, &get, 0);
         let index3 = 3;
-        let instance3 = Instance::inprogress(ballot, index3, &get);
+        let instance3 = Instance::inprogress(ballot, index3, &get, 0);
 
         let expected =
             vec![instance1.clone(), instance2.clone(), instance3.clone()];
