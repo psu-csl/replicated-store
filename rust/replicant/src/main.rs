@@ -1,5 +1,3 @@
-use ::log::debug;
-
 mod kvstore;
 mod log;
 mod multipaxos;

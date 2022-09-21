@@ -193,7 +193,7 @@ impl Log {
         }
     }
 
-    fn commit(&self, index: i64) {
+    pub fn commit(&self, index: i64) {
         assert!(index > 0, "invalid index");
         let mut log = self.log.lock().unwrap();
         let mut it = log.map.get_mut(&index);

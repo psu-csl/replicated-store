@@ -189,6 +189,7 @@ impl MultiPaxosInner {
                 if let Some(log) = self.run_prepare_phase(next_ballot) {
                     self.become_leader(next_ballot);
                     self.replay(next_ballot, log);
+                    break;
                 }
             }
         }
@@ -222,17 +223,19 @@ impl MultiPaxosInner {
             debug!("{} sent prepare request to {}", self.id, peer.id);
         }
         let mut num_oks = 0;
-        let mut logs = Vec::new();
+        let mut log = MapLog::new();
         let rt = Runtime::new().unwrap();
 
-        let result = rt.block_on(async {
+        rt.block_on(async {
             while let Some(response) = responses.next().await {
                 match response {
                     Ok(response) => {
                         let response = response.into_inner();
                         if response.r#type == ResponseType::Ok as i32 {
                             num_oks += 1;
-                            logs.push(response.instances);
+                            for instance in response.instances {
+                                insert(&mut log, instance);
+                            }
                         } else {
                             let mut ballot = self.ballot.lock().unwrap();
                             if response.ballot > *ballot {
@@ -240,29 +243,18 @@ impl MultiPaxosInner {
                                     &mut *ballot,
                                     response.ballot,
                                 );
-                                return None;
+                                break;
                             }
                         }
                     }
                     Err(_) => (),
                 }
                 if num_oks > num_peers / 2 {
-                    return Some(logs);
+                    return Some(log);
                 }
             }
             None
-        });
-
-        if let Some(logs) = result {
-            let mut merged_log = MapLog::new();
-            for log in logs {
-                for instance in log {
-                    insert(&mut merged_log, instance);
-                }
-            }
-            return Some(merged_log);
-        }
-        None
+        })
     }
 
     fn run_accept_phase(
@@ -289,6 +281,7 @@ impl MultiPaxosInner {
 
         let mut num_oks = 0;
         let rt = Runtime::new().unwrap();
+        let mut current_leader = self.id;
 
         rt.block_on(async {
             while let Some(response) = responses.next().await {
@@ -304,17 +297,20 @@ impl MultiPaxosInner {
                                     &mut *ballot,
                                     response.ballot,
                                 );
-                                return ResultType::SomeoneElseLeader(leader(
-                                    *ballot,
-                                ));
+                                current_leader = leader(*ballot);
+                                break;
                             }
                         }
                     }
                     Err(_) => (),
                 }
                 if num_oks > num_peers / 2 {
+                    self.log.commit(index);
                     return ResultType::Ok;
                 }
+            }
+            if current_leader != self.id {
+                return ResultType::SomeoneElseLeader(current_leader);
             }
             ResultType::Retry
         })
@@ -357,7 +353,7 @@ impl MultiPaxosInner {
                                     &mut *ballot,
                                     response.ballot,
                                 );
-                                return global_last_executed;
+                                break;
                             }
                         }
                     }
@@ -367,7 +363,7 @@ impl MultiPaxosInner {
                     return min_last_executed;
                 }
             }
-            return global_last_executed;
+            global_last_executed
         })
     }
 
