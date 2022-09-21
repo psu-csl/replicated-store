@@ -1,6 +1,8 @@
-use super::log::{Log, MapLog};
+use super::log::{insert, Log, MapLog};
 use crate::kvstore::memkvstore::MemKVStore;
+use futures_util::stream::FuturesUnordered;
 use futures_util::FutureExt;
+use futures_util::StreamExt;
 use log::debug;
 use rand::distributions::{Distribution, Uniform};
 use rpc::multi_paxos_rpc_client::MultiPaxosRpcClient;
@@ -174,7 +176,7 @@ impl MultiPaxosInner {
         self.commit_received.swap(false, Ordering::Relaxed)
     }
 
-    fn prepare_thread_fn(&self) {
+    fn prepare_thread_fn(&mut self) {
         while self.prepare_thread_running.load(Ordering::Relaxed) {
             self.wait_until_follower();
             while self.prepare_thread_running.load(Ordering::Relaxed) {
@@ -206,7 +208,56 @@ impl MultiPaxosInner {
         }
     }
 
-    fn run_prepare_phase(&self, ballot: i64) -> Option<MapLog> {
+    fn run_prepare_phase(&mut self, ballot: i64) -> Option<MapLog> {
+        let mut responses = FuturesUnordered::new();
+        for peer in self.rpc_peers.iter_mut() {
+            let request = Request::new(PrepareRequest {
+                ballot: ballot,
+                sender: self.id,
+            });
+            responses.push(peer.stub.prepare(request));
+            debug!("{} sent prepare request to {}", self.id, peer.id);
+        }
+        let mut num_oks = 0;
+        let mut logs = Vec::new();
+        use tokio::runtime::Runtime;
+        let rt = Runtime::new().unwrap();
+        let result = rt.block_on(async {
+            while let Some(response) = responses.next().await {
+                match response {
+                    Ok(response) => {
+                        let response = response.into_inner();
+                        if response.r#type == ResponseType::Ok as i32 {
+                            num_oks += 1;
+                            logs.push(response.instances);
+                        } else {
+                            let mut ballot = self.ballot.lock().unwrap();
+                            if response.ballot > *ballot {
+                                self.become_follower(
+                                    &mut *ballot,
+                                    response.ballot,
+                                );
+                                return None;
+                            }
+                        }
+                    }
+                    Err(_) => (),
+                }
+                if num_oks > self.rpc_peers.len() / 2 {
+                    return Some(logs);
+                }
+            }
+            None
+        });
+        if let Some(logs) = result {
+            let mut merged_log = MapLog::new();
+            for log in logs {
+                for instance in log {
+                    insert(&mut merged_log, instance);
+                }
+            }
+            return Some(merged_log);
+        }
         None
     }
 
