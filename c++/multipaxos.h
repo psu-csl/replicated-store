@@ -207,10 +207,10 @@ struct prepare_state_t {
 
 struct accept_state_t {
   explicit accept_state_t(int64_t leader)
-      : num_rpcs_(0), num_oks_(0), leader_(leader) {}
+      : num_rpcs_(0), num_oks_(0), current_leader_(leader) {}
   size_t num_rpcs_;
   size_t num_oks_;
-  int64_t leader_;
+  int64_t current_leader_;
   std::mutex mu_;
   std::condition_variable cv_;
 };

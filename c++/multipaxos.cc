@@ -241,7 +241,7 @@ Result MultiPaxos::RunAcceptPhase(int64_t ballot,
             std::scoped_lock lock(mu_);
             if (response.ballot() > ballot_) {
               BecomeFollower(response.ballot());
-              state->leader_ = Leader(ballot_);
+              state->current_leader_ = Leader(ballot_);
             }
           }
         }
@@ -251,15 +251,16 @@ Result MultiPaxos::RunAcceptPhase(int64_t ballot,
   }
   {
     std::unique_lock lock(state->mu_);
-    while (state->leader_ == id_ && state->num_oks_ <= rpc_peers_.size() / 2 &&
-           state->num_rpcs_ != rpc_peers_.size())
+    while (state->current_leader_ == id_
+           && state->num_oks_ <= rpc_peers_.size() / 2
+           && state->num_rpcs_ != rpc_peers_.size())
       state->cv_.wait(lock);
     if (state->num_oks_ > rpc_peers_.size() / 2) {
       log_->Commit(index);
       return Result{ResultType::kOk, std::nullopt};
     }
-    if (state->leader_ != id_)
-      return Result{ResultType::kSomeoneElseLeader, state->leader_};
+    if (state->current_leader_ != id_)
+      return Result{ResultType::kSomeoneElseLeader, state->current_leader_};
   }
   return Result{ResultType::kRetry, std::nullopt};
 }
