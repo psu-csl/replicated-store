@@ -164,7 +164,7 @@ void MultiPaxos::CommitThread() {
   }
 }
 
-std::optional<log_map_t> MultiPaxos::RunPreparePhase(int64_t ballot) {
+std::optional<map_log_t> MultiPaxos::RunPreparePhase(int64_t ballot) {
   auto state = std::make_shared<prepare_state_t>(id_);
 
   PrepareRequest request;
@@ -310,7 +310,7 @@ int64_t MultiPaxos::RunCommitPhase(int64_t ballot,
   return global_last_executed;
 }
 
-void MultiPaxos::Replay(int64_t ballot, log_map_t const& log) {
+void MultiPaxos::Replay(int64_t ballot, map_log_t const& log) {
   for (auto const& [index, instance] : log) {
     Result r = RunAcceptPhase(ballot, instance.index(), instance.command(),
                               instance.client_id());

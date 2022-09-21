@@ -145,14 +145,14 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
   void PrepareThread();
   void CommitThread();
 
-  std::optional<log_map_t> RunPreparePhase(int64_t ballot);
+  std::optional<map_log_t> RunPreparePhase(int64_t ballot);
   Result RunAcceptPhase(int64_t ballot,
                         int64_t index,
                         multipaxos::Command command,
                         int64_t client_id);
   int64_t RunCommitPhase(int64_t ballot, int64_t global_last_executed);
 
-  void Replay(int64_t ballot, log_map_t const& log);
+  void Replay(int64_t ballot, map_log_t const& log);
 
  private:
   grpc::Status Prepare(grpc::ServerContext*,
@@ -200,7 +200,7 @@ struct prepare_state_t {
   size_t num_rpcs_;
   size_t num_oks_;
   int64_t leader_;
-  log_map_t log_;
+  map_log_t log_;
   std::mutex mu_;
   std::condition_variable cv_;
 };
