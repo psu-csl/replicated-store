@@ -7,9 +7,8 @@ use log::debug;
 use rand::distributions::{Distribution, Uniform};
 use rpc::multi_paxos_rpc_client::MultiPaxosRpcClient;
 use rpc::multi_paxos_rpc_server::{MultiPaxosRpc, MultiPaxosRpcServer};
-use rpc::Command;
-use rpc::ResponseType;
 use rpc::{AcceptRequest, AcceptResponse};
+use rpc::{Command, Instance, ResponseType};
 use rpc::{CommitRequest, CommitResponse};
 use rpc::{PrepareRequest, PrepareResponse};
 use serde_json::json;
@@ -18,6 +17,7 @@ use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::{thread, time};
+use tokio::runtime::Runtime;
 use tokio::sync::oneshot;
 use tonic::transport::{Channel, Endpoint, Server};
 use tonic::{Request, Response, Status};
@@ -222,8 +222,8 @@ impl MultiPaxosInner {
         }
         let mut num_oks = 0;
         let mut logs = Vec::new();
-        use tokio::runtime::Runtime;
         let rt = Runtime::new().unwrap();
+
         let result = rt.block_on(async {
             while let Some(response) = responses.next().await {
                 match response {
@@ -251,6 +251,7 @@ impl MultiPaxosInner {
             }
             None
         });
+
         if let Some(logs) = result {
             let mut merged_log = MapLog::new();
             for log in logs {
@@ -267,10 +268,55 @@ impl MultiPaxosInner {
         &self,
         ballot: i64,
         index: i64,
-        command: Command,
+        command: &Command,
         client_id: i64,
     ) -> ResultType {
-        ResultType::Ok
+        let mut peers = self.rpc_peers.lock().unwrap();
+        let num_peers = peers.len();
+        let mut responses = FuturesUnordered::new();
+
+        for peer in peers.iter_mut() {
+            let request = Request::new(AcceptRequest {
+                instance: Some(Instance::inprogress(
+                    ballot, index, command, client_id,
+                )),
+                sender: self.id,
+            });
+            responses.push(peer.stub.accept(request));
+            debug!("{} sent accept request to {}", self.id, peer.id);
+        }
+
+        let mut num_oks = 0;
+        let rt = Runtime::new().unwrap();
+
+        rt.block_on(async {
+            while let Some(response) = responses.next().await {
+                match response {
+                    Ok(response) => {
+                        let response = response.into_inner();
+                        if response.r#type == ResponseType::Ok as i32 {
+                            num_oks += 1;
+                        } else {
+                            let mut ballot = self.ballot.lock().unwrap();
+                            if response.ballot > *ballot {
+                                self.become_follower(
+                                    &mut *ballot,
+                                    response.ballot,
+                                );
+                                return ResultType::SomeoneElseLeader(leader(
+                                    *ballot,
+                                ));
+                            }
+                        }
+                    }
+                    Err(_) => (),
+                }
+                if num_oks > num_peers / 2 {
+                    return ResultType::Ok;
+                }
+            }
+            ResultType::Retry
+        })
     }
 
     fn run_commit_phase(&self, ballot: i64, global_last_executed: i64) -> i64 {
@@ -465,7 +511,7 @@ impl MultiPaxos {
         self.commit_thread.take().unwrap().join().unwrap();
     }
 
-    pub fn replicate(&self, command: Command, client_id: i64) -> ResultType {
+    pub fn replicate(&self, command: &Command, client_id: i64) -> ResultType {
         let (ballot, ready) = self.multi_paxos.ballot();
         if is_leader(ballot, self.multi_paxos.id) {
             if ready {

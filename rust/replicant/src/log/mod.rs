@@ -11,7 +11,7 @@ use super::multipaxos::rpc::{Instance, InstanceState};
 type LogResult = (i64, Result<Option<String>, &'static str>);
 
 impl Instance {
-    fn inprogress(
+    pub fn inprogress(
         ballot: i64,
         index: i64,
         command: &Command,
