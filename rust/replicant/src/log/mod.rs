@@ -63,8 +63,29 @@ impl Instance {
     }
 }
 
-pub type VectorLog = Vec<Instance>;
+pub type VecLog = Vec<Instance>;
 pub type MapLog = HashMap<i64, Instance>;
+
+pub fn insert(map_log: &mut MapLog, instance: Instance) -> bool {
+    let it = map_log.get(&instance.index);
+    if let None = it {
+        map_log.insert(instance.index, instance);
+        return true;
+    }
+    let it = it.unwrap();
+    if it.is_committed() || it.is_executed() {
+        assert_eq!(it.command, instance.command, "insert case 2");
+        return false;
+    }
+    if instance.ballot > it.ballot {
+        map_log.insert(instance.index, instance);
+        return false;
+    }
+    if instance.ballot == it.ballot {
+        assert_eq!(it.command, instance.command, "insert case 3");
+    }
+    false
+}
 
 struct LogInner {
     running: bool,
@@ -88,24 +109,7 @@ impl LogInner {
     }
 
     fn insert(&mut self, instance: Instance) -> bool {
-        let it = self.map.get(&instance.index);
-        if let None = it {
-            self.map.insert(instance.index, instance);
-            return true;
-        }
-        let it = it.unwrap();
-        if it.is_committed() || it.is_executed() {
-            assert_eq!(it.command, instance.command, "insert case 2");
-            return false;
-        }
-        if instance.ballot > it.ballot {
-            self.map.insert(instance.index, instance);
-            return false;
-        }
-        if instance.ballot == it.ballot {
-            assert_eq!(it.command, instance.command, "insert case 3");
-        }
-        false
+        insert(&mut self.map, instance)
     }
 
     fn is_executable(&self) -> bool {
@@ -231,9 +235,9 @@ impl Log {
         }
     }
 
-    pub fn instances(&self) -> VectorLog {
+    pub fn instances(&self) -> VecLog {
         let log = self.log.lock().unwrap();
-        let mut instances: VectorLog = Vec::new();
+        let mut instances: VecLog = Vec::new();
         for i in log.global_last_executed + 1..=log.last_index {
             if let Some(instance) = log.map.get(&i) {
                 instances.push(instance.clone());
