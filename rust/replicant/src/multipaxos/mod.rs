@@ -42,6 +42,7 @@ fn is_someone_else_leader(ballot: i64, id: i64) -> bool {
     !is_leader(ballot, id) && leader(ballot) < MAX_NUM_PEERS
 }
 
+#[derive(PartialEq)]
 enum ResultType {
     Ok,
     Retry,
@@ -187,7 +188,7 @@ impl MultiPaxosInner {
                 let next_ballot = self.next_ballot();
                 if let Some(log) = self.run_prepare_phase(next_ballot) {
                     self.become_leader(next_ballot);
-                    self.replay(next_ballot, &log);
+                    self.replay(next_ballot, log);
                 }
             }
         }
@@ -370,7 +371,28 @@ impl MultiPaxosInner {
         })
     }
 
-    fn replay(&self, ballot: i64, log: &MapLog) {}
+    fn replay(&self, ballot: i64, log: MapLog) {
+        for (_, instance) in log {
+            let command = instance.command.unwrap();
+            let mut r;
+            loop {
+                r = self.run_accept_phase(
+                    ballot,
+                    instance.index,
+                    &command,
+                    instance.client_id,
+                );
+                if r != ResultType::Retry {
+                    break;
+                }
+            }
+            if let ResultType::SomeoneElseLeader(_) = r {
+                return;
+            }
+        }
+        self.ready.store(true, Ordering::Relaxed);
+        debug!("{} leader is ready to serve", self.id);
+    }
 }
 
 struct RpcWrapper(Arc<MultiPaxosInner>);
