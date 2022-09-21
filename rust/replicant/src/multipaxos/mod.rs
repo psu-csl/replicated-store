@@ -320,7 +320,54 @@ impl MultiPaxosInner {
     }
 
     fn run_commit_phase(&self, ballot: i64, global_last_executed: i64) -> i64 {
-        0
+        let mut peers = self.rpc_peers.lock().unwrap();
+        let num_peers = peers.len();
+        let mut responses = FuturesUnordered::new();
+        let mut min_last_executed = self.log.last_executed();
+
+        for peer in peers.iter_mut() {
+            let request = Request::new(CommitRequest {
+                ballot: ballot,
+                last_executed: min_last_executed,
+                global_last_executed: global_last_executed,
+                sender: self.id,
+            });
+            responses.push(peer.stub.commit(request));
+            debug!("{} sent commit request to {}", self.id, peer.id);
+        }
+
+        let mut num_oks = 0;
+        let rt = Runtime::new().unwrap();
+
+        rt.block_on(async {
+            while let Some(response) = responses.next().await {
+                match response {
+                    Ok(response) => {
+                        let response = response.into_inner();
+                        if response.r#type == ResponseType::Ok as i32 {
+                            num_oks += 1;
+                            if response.last_executed < min_last_executed {
+                                min_last_executed = response.last_executed;
+                            }
+                        } else {
+                            let mut ballot = self.ballot.lock().unwrap();
+                            if response.ballot > *ballot {
+                                self.become_follower(
+                                    &mut *ballot,
+                                    response.ballot,
+                                );
+                                return global_last_executed;
+                            }
+                        }
+                    }
+                    Err(_) => (),
+                }
+                if num_oks == num_peers {
+                    return min_last_executed;
+                }
+            }
+            return global_last_executed;
+        })
     }
 
     fn replay(&self, ballot: i64, log: &MapLog) {}
