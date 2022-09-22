@@ -20,6 +20,16 @@ impl Instance {
         Self::new(ballot, index, InstanceState::Inprogress, command, client_id)
     }
 
+    pub fn make(ballot: i64, index: i64) -> Self {
+        Self {
+            ballot: ballot,
+            index: index,
+            client_id: 0,
+            state: InstanceState::Inprogress as i32,
+            command: None,
+        }
+    }
+
     fn committed(
         ballot: i64,
         index: i64,
@@ -267,7 +277,7 @@ impl Log {
         log.is_executable()
     }
 
-    fn at(&self, index: i64) -> Option<Instance> {
+    pub fn at(&self, index: i64) -> Option<Instance> {
         let log = self.log.lock().unwrap();
         match log.map.get(&index) {
             Some(instance) => Some(instance.clone()),

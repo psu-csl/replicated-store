@@ -623,6 +623,11 @@ mod tests {
         })
     }
 
+    fn is_leader(peer: &MultiPaxos) -> bool {
+        let (ballot, _) = peer.multi_paxos.ballot();
+        super::is_leader(ballot, peer.multi_paxos.id)
+    }
+
     async fn send_prepare(
         stub: &mut MultiPaxosRpcClient<Channel>,
         ballot: i64,
@@ -632,6 +637,34 @@ mod tests {
             sender: 0,
         });
         let r = stub.prepare(request).await;
+        r.unwrap().into_inner()
+    }
+
+    async fn send_accept(
+        stub: &mut MultiPaxosRpcClient<Channel>,
+        instance: Instance,
+    ) -> AcceptResponse {
+        let request = Request::new(AcceptRequest {
+            instance: Some(instance),
+            sender: 0,
+        });
+        let r = stub.accept(request).await;
+        r.unwrap().into_inner()
+    }
+
+    async fn send_commit(
+        stub: &mut MultiPaxosRpcClient<Channel>,
+        ballot: i64,
+        last_executed: i64,
+        global_last_executed: i64,
+    ) -> CommitResponse {
+        let request = Request::new(CommitRequest {
+            ballot: ballot,
+            last_executed: last_executed,
+            global_last_executed: global_last_executed,
+            sender: 0,
+        });
+        let r = stub.commit(request).await;
         r.unwrap().into_inner()
     }
 
@@ -683,6 +716,19 @@ mod tests {
 
         let r = send_prepare(&mut stub, stale_ballot).await;
         assert_eq!(r.r#type, ResponseType::Reject as i32);
+        assert!(is_leader(&peer0));
+
+        let index = peer0.multi_paxos.log.advance_last_index();
+        let instance = Instance::make(stale_ballot, index);
+
+        let r = send_accept(&mut stub, instance).await;
+        assert_eq!(r.r#type, ResponseType::Reject as i32);
+        assert!(is_leader(&peer0));
+        assert_eq!(None, peer0.multi_paxos.log.at(index));
+
+        let r = send_commit(&mut stub, stale_ballot, 0, 0).await;
+        assert_eq!(r.r#type, ResponseType::Reject as i32);
+        assert!(is_leader(&peer0));
 
         peer0.stop_rpc_server();
     }
