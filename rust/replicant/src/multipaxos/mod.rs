@@ -1,5 +1,6 @@
 use super::log::{insert, Log, MapLog};
 use crate::kvstore::memkvstore::MemKVStore;
+use futures::executor::block_on;
 use futures_util::stream::FuturesUnordered;
 use futures_util::FutureExt;
 use futures_util::StreamExt;
@@ -17,8 +18,7 @@ use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::{thread, time};
-use tokio::runtime::Runtime;
-use tokio::sync::oneshot;
+use tokio::{sync::oneshot, task};
 use tonic::transport::{Channel, Endpoint, Server};
 use tonic::{Request, Response, Status};
 
@@ -69,6 +69,12 @@ struct MultiPaxosInner {
     cv_follower: Condvar,
 }
 
+fn make_stub(port: &json) -> MultiPaxosRpcClient<Channel> {
+    let address = format!("http://{}", port.as_str().unwrap());
+    let channel = Endpoint::from_shared(address).unwrap().connect_lazy();
+    MultiPaxosRpcClient::new(channel)
+}
+
 impl MultiPaxosInner {
     fn new(log: Log, config: &json) -> Self {
         let commit_interval = config["commit_interval"].as_u64().unwrap();
@@ -82,11 +88,9 @@ impl MultiPaxosInner {
         let mut rpc_peers = Vec::new();
         for (id, port) in config["peers"].as_array().unwrap().iter().enumerate()
         {
-            let port = format!("http://{}", port.as_str().unwrap());
-            let channel = Endpoint::from_shared(port).unwrap().connect_lazy();
             rpc_peers.push(RpcPeer {
                 id: id as i64,
-                stub: MultiPaxosRpcClient::new(channel),
+                stub: make_stub(port),
             });
         }
         Self {
@@ -224,9 +228,8 @@ impl MultiPaxosInner {
         }
         let mut num_oks = 0;
         let mut log = MapLog::new();
-        let rt = Runtime::new().unwrap();
 
-        rt.block_on(async {
+        block_on(async {
             while let Some(response) = responses.next().await {
                 match response {
                     Ok(response) => {
@@ -280,10 +283,9 @@ impl MultiPaxosInner {
         }
 
         let mut num_oks = 0;
-        let rt = Runtime::new().unwrap();
         let mut current_leader = self.id;
 
-        rt.block_on(async {
+        block_on(async {
             while let Some(response) = responses.next().await {
                 match response {
                     Ok(response) => {
@@ -334,9 +336,8 @@ impl MultiPaxosInner {
         }
 
         let mut num_oks = 0;
-        let rt = Runtime::new().unwrap();
 
-        rt.block_on(async {
+        block_on(async {
             while let Some(response) = responses.next().await {
                 match response {
                     Ok(response) => {
@@ -594,6 +595,14 @@ impl MultiPaxos {
         }
         return ResultType::Retry;
     }
+
+    fn next_ballot(&self) -> i64 {
+        self.multi_paxos.next_ballot()
+    }
+
+    fn become_leader(&self, next_ballot: i64) {
+        self.multi_paxos.become_leader(next_ballot);
+    }
 }
 
 #[cfg(test)]
@@ -615,36 +624,67 @@ mod tests {
         })
     }
 
-    #[derive(Default)]
-    struct TestState {
-        configs: Vec<json>,
-        peers: Vec<MultiPaxos>,
+    fn send_prepare(
+        stub: &mut MultiPaxosRpcClient<Channel>,
+        ballot: i64,
+    ) -> PrepareResponse {
+        let request = Request::new(PrepareRequest {
+            ballot: ballot,
+            sender: 0,
+        });
+        let r = block_on(stub.prepare(request));
+        r.unwrap().into_inner()
     }
 
-    fn init() -> TestState {
+    fn init() -> (json, MultiPaxos, MultiPaxos, MultiPaxos) {
         let _ = env_logger::builder().is_test(true).try_init();
-        let mut state = TestState::default();
-        for id in 0..NUM_PEERS {
-            let config = make_config(id, NUM_PEERS);
-            let log = Log::new(Box::new(MemKVStore::new()));
-            let peer = MultiPaxos::new(log, &config);
+        let config = make_config(0, NUM_PEERS);
+        let peer0 =
+            MultiPaxos::new(Log::new(Box::new(MemKVStore::new())), &config);
+        let peer1 = MultiPaxos::new(
+            Log::new(Box::new(MemKVStore::new())),
+            &make_config(1, NUM_PEERS),
+        );
+        let peer2 = MultiPaxos::new(
+            Log::new(Box::new(MemKVStore::new())),
+            &make_config(2, NUM_PEERS),
+        );
 
-            state.configs.push(config);
-            state.peers.push(peer);
-        }
-        state
+        (config, peer0, peer1, peer2)
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn next_ballot() {
-        let state = init();
+        let (_, peer0, peer1, peer2) = init();
 
-        for id in 0..NUM_PEERS {
-            let ballot = id + ROUND_INCREMENT;
-            assert_eq!(
-                ballot,
-                state.peers[id as usize].multi_paxos.next_ballot()
-            );
-        }
+        let id = 0;
+        let ballot = id + ROUND_INCREMENT;
+        assert_eq!(ballot, peer0.next_ballot());
+
+        let id = 1;
+        let ballot = id + ROUND_INCREMENT;
+        assert_eq!(ballot, peer1.next_ballot());
+
+        let id = 2;
+        let ballot = id + ROUND_INCREMENT;
+        assert_eq!(ballot, peer2.next_ballot());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn request_with_lower_ballot_ignored() {
+        let (config, mut peer0, peer1, _) = init();
+        let mut stub = make_stub(&config["peers"][0]);
+
+        peer0.start_rpc_server();
+
+        peer0.become_leader(peer0.next_ballot());
+        peer0.become_leader(peer0.next_ballot());
+
+        let stale_ballot = peer1.next_ballot();
+
+        let r = send_prepare(&mut stub, stale_ballot);
+        assert_eq!(r.r#type, ResponseType::Reject as i32);
+
+        peer0.stop_rpc_server();
     }
 }
