@@ -1,6 +1,5 @@
 use super::log::{insert, Log, MapLog};
 use crate::kvstore::memkvstore::MemKVStore;
-use futures::executor::block_on;
 use futures_util::stream::FuturesUnordered;
 use futures_util::FutureExt;
 use futures_util::StreamExt;
@@ -17,8 +16,8 @@ use serde_json::Value as json;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
-use std::{thread, time};
-use tokio::{sync::oneshot, task};
+use tokio::sync::oneshot;
+use tokio::time::{sleep, Duration};
 use tonic::transport::{Channel, Endpoint, Server};
 use tonic::{Request, Response, Status};
 
@@ -43,7 +42,7 @@ fn is_someone_else_leader(ballot: i64, id: i64) -> bool {
 }
 
 #[derive(PartialEq)]
-enum ResultType {
+pub enum ResultType {
     Ok,
     Retry,
     SomeoneElseLeader(i64),
@@ -51,7 +50,7 @@ enum ResultType {
 
 struct RpcPeer {
     id: i64,
-    stub: MultiPaxosRpcClient<Channel>,
+    stub: Arc<tokio::sync::Mutex<MultiPaxosRpcClient<Channel>>>,
 }
 
 struct MultiPaxosInner {
@@ -62,9 +61,9 @@ struct MultiPaxosInner {
     commit_received: AtomicBool,
     commit_interval: u64,
     port: SocketAddr,
-    rpc_peers: Mutex<Vec<RpcPeer>>,
-    prepare_thread_running: AtomicBool,
-    commit_thread_running: AtomicBool,
+    rpc_peers: Vec<RpcPeer>,
+    prepare_task_running: AtomicBool,
+    commit_task_running: AtomicBool,
     cv_leader: Condvar,
     cv_follower: Condvar,
 }
@@ -90,7 +89,7 @@ impl MultiPaxosInner {
         {
             rpc_peers.push(RpcPeer {
                 id: id as i64,
-                stub: make_stub(port),
+                stub: Arc::new(tokio::sync::Mutex::new(make_stub(port))),
             });
         }
         Self {
@@ -101,9 +100,9 @@ impl MultiPaxosInner {
             commit_received: AtomicBool::new(false),
             commit_interval: commit_interval,
             port: port,
-            rpc_peers: Mutex::new(Vec::new()),
-            prepare_thread_running: AtomicBool::new(false),
-            commit_thread_running: AtomicBool::new(false),
+            rpc_peers: rpc_peers,
+            prepare_task_running: AtomicBool::new(false),
+            commit_task_running: AtomicBool::new(false),
             cv_leader: Condvar::new(),
             cv_follower: Condvar::new(),
         }
@@ -150,7 +149,7 @@ impl MultiPaxosInner {
 
     fn wait_until_leader(&self) {
         let mut ballot = self.ballot.lock().unwrap();
-        while self.commit_thread_running.load(Ordering::Relaxed)
+        while self.commit_task_running.load(Ordering::Relaxed)
             && !is_leader(*ballot, self.id)
         {
             ballot = self.cv_leader.wait(ballot).unwrap();
@@ -159,226 +158,228 @@ impl MultiPaxosInner {
 
     fn wait_until_follower(&self) {
         let mut ballot = self.ballot.lock().unwrap();
-        while self.prepare_thread_running.load(Ordering::Relaxed)
+        while self.prepare_task_running.load(Ordering::Relaxed)
             && is_leader(*ballot, self.id)
         {
             ballot = self.cv_follower.wait(ballot).unwrap();
         }
     }
 
-    fn sleep_for_commit_interval(&self) {
-        thread::sleep(time::Duration::from_millis(self.commit_interval));
+    async fn sleep_for_commit_interval(&self) {
+        sleep(Duration::from_millis(self.commit_interval)).await;
     }
 
-    fn sleep_for_random_interval(&self) {
+    async fn sleep_for_random_interval(&self) {
         let ci = self.commit_interval as u64;
         let dist = Uniform::new(0, (ci / 2) as u64);
         let sleep_time = ci + ci / 2 + dist.sample(&mut rand::thread_rng());
-        thread::sleep(time::Duration::from_millis(sleep_time));
+        sleep(Duration::from_millis(sleep_time)).await;
     }
 
     fn received_commit(&self) -> bool {
         self.commit_received.swap(false, Ordering::Relaxed)
     }
 
-    fn prepare_thread_fn(&self) {
-        while self.prepare_thread_running.load(Ordering::Relaxed) {
+    async fn prepare_task_fn(&self) {
+        while self.prepare_task_running.load(Ordering::Relaxed) {
             self.wait_until_follower();
-            while self.prepare_thread_running.load(Ordering::Relaxed) {
-                self.sleep_for_random_interval();
+            while self.prepare_task_running.load(Ordering::Relaxed) {
+                self.sleep_for_random_interval().await;
                 if self.received_commit() {
                     continue;
                 }
                 let next_ballot = self.next_ballot();
-                if let Some(log) = self.run_prepare_phase(next_ballot) {
+                if let Some(log) = self.run_prepare_phase(next_ballot).await {
                     self.become_leader(next_ballot);
-                    self.replay(next_ballot, log);
+                    self.replay(next_ballot, log).await;
                     break;
                 }
             }
         }
     }
 
-    fn commit_thread_fn(&self) {
-        while self.commit_thread_running.load(Ordering::Relaxed) {
+    async fn commit_task_fn(&self) {
+        while self.commit_task_running.load(Ordering::Relaxed) {
             self.wait_until_leader();
             let mut gle = self.log.global_last_executed();
-            while self.commit_thread_running.load(Ordering::Relaxed) {
+            while self.commit_task_running.load(Ordering::Relaxed) {
                 let (ballot, _) = self.ballot();
                 if !is_leader(ballot, self.id) {
                     break;
                 }
-                gle = self.run_commit_phase(ballot, gle);
-                self.sleep_for_commit_interval();
+                gle = self.run_commit_phase(ballot, gle).await;
+                self.sleep_for_commit_interval().await;
             }
         }
     }
 
-    fn run_prepare_phase(&self, ballot: i64) -> Option<MapLog> {
-        let mut peers = self.rpc_peers.lock().unwrap();
-        let num_peers = peers.len();
+    async fn run_prepare_phase(&self, ballot: i64) -> Option<MapLog> {
+        let num_peers = self.rpc_peers.len();
         let mut responses = FuturesUnordered::new();
-        for peer in peers.iter_mut() {
+
+        for peer in self.rpc_peers.iter() {
             let request = Request::new(PrepareRequest {
                 ballot: ballot,
                 sender: self.id,
             });
-            responses.push(peer.stub.prepare(request));
+            let stub = Arc::clone(&peer.stub);
+            responses.push(async move {
+                let mut stub = stub.lock().await;
+                stub.prepare(request).await
+            });
             debug!("{} sent prepare request to {}", self.id, peer.id);
         }
+
         let mut num_oks = 0;
         let mut log = MapLog::new();
 
-        block_on(async {
-            while let Some(response) = responses.next().await {
-                match response {
-                    Ok(response) => {
-                        let response = response.into_inner();
-                        if response.r#type == ResponseType::Ok as i32 {
-                            num_oks += 1;
-                            for instance in response.instances {
-                                insert(&mut log, instance);
-                            }
-                        } else {
-                            let mut ballot = self.ballot.lock().unwrap();
-                            if response.ballot > *ballot {
-                                self.become_follower(
-                                    &mut *ballot,
-                                    response.ballot,
-                                );
-                                break;
-                            }
+        while let Some(response) = responses.next().await {
+            match response {
+                Ok(response) => {
+                    let response = response.into_inner();
+                    if response.r#type == ResponseType::Ok as i32 {
+                        num_oks += 1;
+                        for instance in response.instances {
+                            insert(&mut log, instance);
+                        }
+                    } else {
+                        let mut ballot = self.ballot.lock().unwrap();
+                        if response.ballot > *ballot {
+                            self.become_follower(&mut *ballot, response.ballot);
+                            break;
                         }
                     }
-                    Err(_) => (),
                 }
-                if num_oks > num_peers / 2 {
-                    return Some(log);
-                }
+                Err(_) => (),
             }
-            None
-        })
+            if num_oks > num_peers / 2 {
+                return Some(log);
+            }
+        }
+        None
     }
 
-    fn run_accept_phase(
+    async fn run_accept_phase(
         &self,
         ballot: i64,
         index: i64,
         command: &Command,
         client_id: i64,
     ) -> ResultType {
-        let mut peers = self.rpc_peers.lock().unwrap();
-        let num_peers = peers.len();
+        let num_peers = self.rpc_peers.len();
         let mut responses = FuturesUnordered::new();
 
-        for peer in peers.iter_mut() {
+        for peer in self.rpc_peers.iter() {
             let request = Request::new(AcceptRequest {
                 instance: Some(Instance::inprogress(
                     ballot, index, command, client_id,
                 )),
                 sender: self.id,
             });
-            responses.push(peer.stub.accept(request));
+            let stub = Arc::clone(&peer.stub);
+            responses.push(async move {
+                let mut stub = stub.lock().await;
+                stub.accept(request).await
+            });
             debug!("{} sent accept request to {}", self.id, peer.id);
         }
 
         let mut num_oks = 0;
         let mut current_leader = self.id;
 
-        block_on(async {
-            while let Some(response) = responses.next().await {
-                match response {
-                    Ok(response) => {
-                        let response = response.into_inner();
-                        if response.r#type == ResponseType::Ok as i32 {
-                            num_oks += 1;
-                        } else {
-                            let mut ballot = self.ballot.lock().unwrap();
-                            if response.ballot > *ballot {
-                                self.become_follower(
-                                    &mut *ballot,
-                                    response.ballot,
-                                );
-                                current_leader = leader(*ballot);
-                                break;
-                            }
+        while let Some(response) = responses.next().await {
+            match response {
+                Ok(response) => {
+                    let response = response.into_inner();
+                    if response.r#type == ResponseType::Ok as i32 {
+                        num_oks += 1;
+                    } else {
+                        let mut ballot = self.ballot.lock().unwrap();
+                        if response.ballot > *ballot {
+                            self.become_follower(&mut *ballot, response.ballot);
+                            current_leader = leader(*ballot);
+                            break;
                         }
                     }
-                    Err(_) => (),
                 }
-                if num_oks > num_peers / 2 {
-                    self.log.commit(index);
-                    return ResultType::Ok;
-                }
+                Err(_) => (),
             }
-            if current_leader != self.id {
-                return ResultType::SomeoneElseLeader(current_leader);
+            if num_oks > num_peers / 2 {
+                self.log.commit(index);
+                return ResultType::Ok;
             }
-            ResultType::Retry
-        })
+        }
+        if current_leader != self.id {
+            return ResultType::SomeoneElseLeader(current_leader);
+        }
+        ResultType::Retry
     }
 
-    fn run_commit_phase(&self, ballot: i64, global_last_executed: i64) -> i64 {
-        let mut peers = self.rpc_peers.lock().unwrap();
-        let num_peers = peers.len();
+    async fn run_commit_phase(
+        &self,
+        ballot: i64,
+        global_last_executed: i64,
+    ) -> i64 {
+        let num_peers = self.rpc_peers.len();
         let mut responses = FuturesUnordered::new();
         let mut min_last_executed = self.log.last_executed();
 
-        for peer in peers.iter_mut() {
+        for peer in self.rpc_peers.iter() {
             let request = Request::new(CommitRequest {
                 ballot: ballot,
                 last_executed: min_last_executed,
                 global_last_executed: global_last_executed,
                 sender: self.id,
             });
-            responses.push(peer.stub.commit(request));
+            let stub = Arc::clone(&peer.stub);
+            responses.push(async move {
+                let mut stub = stub.lock().await;
+                stub.commit(request).await
+            });
             debug!("{} sent commit request to {}", self.id, peer.id);
         }
 
         let mut num_oks = 0;
 
-        block_on(async {
-            while let Some(response) = responses.next().await {
-                match response {
-                    Ok(response) => {
-                        let response = response.into_inner();
-                        if response.r#type == ResponseType::Ok as i32 {
-                            num_oks += 1;
-                            if response.last_executed < min_last_executed {
-                                min_last_executed = response.last_executed;
-                            }
-                        } else {
-                            let mut ballot = self.ballot.lock().unwrap();
-                            if response.ballot > *ballot {
-                                self.become_follower(
-                                    &mut *ballot,
-                                    response.ballot,
-                                );
-                                break;
-                            }
+        while let Some(response) = responses.next().await {
+            match response {
+                Ok(response) => {
+                    let response = response.into_inner();
+                    if response.r#type == ResponseType::Ok as i32 {
+                        num_oks += 1;
+                        if response.last_executed < min_last_executed {
+                            min_last_executed = response.last_executed;
+                        }
+                    } else {
+                        let mut ballot = self.ballot.lock().unwrap();
+                        if response.ballot > *ballot {
+                            self.become_follower(&mut *ballot, response.ballot);
+                            break;
                         }
                     }
-                    Err(_) => (),
                 }
-                if num_oks == num_peers {
-                    return min_last_executed;
-                }
+                Err(_) => (),
             }
-            global_last_executed
-        })
+            if num_oks == num_peers {
+                return min_last_executed;
+            }
+        }
+        global_last_executed
     }
 
-    fn replay(&self, ballot: i64, log: MapLog) {
+    async fn replay(&self, ballot: i64, log: MapLog) {
         for (_, instance) in log {
             let command = instance.command.unwrap();
             let mut r;
             loop {
-                r = self.run_accept_phase(
-                    ballot,
-                    instance.index,
-                    &command,
-                    instance.client_id,
-                );
+                r = self
+                    .run_accept_phase(
+                        ballot,
+                        instance.index,
+                        &command,
+                        instance.client_id,
+                    )
+                    .await;
                 if r != ResultType::Retry {
                     break;
                 }
@@ -474,8 +475,6 @@ impl MultiPaxosRpc for RpcWrapper {
 pub struct MultiPaxos {
     multi_paxos: Arc<MultiPaxosInner>,
     rpc_server_tx: Option<oneshot::Sender<()>>,
-    prepare_thread: Option<thread::JoinHandle<()>>,
-    commit_thread: Option<thread::JoinHandle<()>>,
 }
 
 impl MultiPaxos {
@@ -483,21 +482,19 @@ impl MultiPaxos {
         Self {
             multi_paxos: Arc::new(MultiPaxosInner::new(log, &config)),
             rpc_server_tx: None,
-            prepare_thread: None,
-            commit_thread: None,
         }
     }
 
     pub fn start(&mut self) {
-        self.start_prepare_thread();
-        self.start_commit_thread();
+        self.start_prepare_task();
+        self.start_commit_task();
         self.start_rpc_server();
     }
 
     pub fn stop(&mut self) {
         self.stop_rpc_server();
-        self.stop_commit_thread();
-        self.stop_prepare_thread();
+        self.stop_commit_task();
+        self.stop_prepare_task();
     }
 
     fn start_rpc_server(&mut self) {
@@ -529,64 +526,66 @@ impl MultiPaxos {
         self.rpc_server_tx.take().unwrap().send(()).unwrap();
     }
 
-    fn start_prepare_thread(&mut self) {
-        debug!("{} starting prepare thread", self.multi_paxos.id);
+    fn start_prepare_task(&mut self) {
+        debug!("{} starting prepare task", self.multi_paxos.id);
         self.multi_paxos
-            .prepare_thread_running
+            .prepare_task_running
             .store(true, Ordering::Relaxed);
-        self.prepare_thread = {
-            let multi_paxos = self.multi_paxos.clone();
-            Some(std::thread::spawn(move || multi_paxos.prepare_thread_fn()))
-        }
+        let multi_paxos = self.multi_paxos.clone();
+        tokio::spawn(async move {
+            multi_paxos.prepare_task_fn().await;
+        });
     }
 
-    fn stop_prepare_thread(&mut self) {
-        debug!("{} stopping prepare thread", self.multi_paxos.id);
+    fn stop_prepare_task(&mut self) {
+        debug!("{} stopping prepare task", self.multi_paxos.id);
         assert!(self
             .multi_paxos
-            .prepare_thread_running
+            .prepare_task_running
             .load(Ordering::Relaxed));
         self.multi_paxos
-            .prepare_thread_running
+            .prepare_task_running
             .store(false, Ordering::Relaxed);
         self.multi_paxos.cv_follower.notify_one();
-        self.prepare_thread.take().unwrap().join().unwrap();
     }
 
-    fn start_commit_thread(&mut self) {
-        debug!("{} starting commit thread", self.multi_paxos.id);
+    fn start_commit_task(&mut self) {
+        debug!("{} starting commit task", self.multi_paxos.id);
         self.multi_paxos
-            .commit_thread_running
+            .commit_task_running
             .store(true, Ordering::Relaxed);
-        self.commit_thread = {
-            let multi_paxos = self.multi_paxos.clone();
-            Some(std::thread::spawn(move || multi_paxos.commit_thread_fn()))
-        }
+        let multi_paxos = self.multi_paxos.clone();
+        tokio::spawn(async move {
+            multi_paxos.commit_task_fn().await;
+        });
     }
 
-    fn stop_commit_thread(&mut self) {
-        debug!("{} stopping commit thread", self.multi_paxos.id);
-        assert!(self
-            .multi_paxos
-            .commit_thread_running
-            .load(Ordering::Relaxed));
+    fn stop_commit_task(&mut self) {
+        debug!("{} stopping commit task", self.multi_paxos.id);
+        assert!(self.multi_paxos.commit_task_running.load(Ordering::Relaxed));
         self.multi_paxos
-            .commit_thread_running
+            .commit_task_running
             .store(false, Ordering::Relaxed);
         self.multi_paxos.cv_leader.notify_one();
-        self.commit_thread.take().unwrap().join().unwrap();
     }
 
-    pub fn replicate(&self, command: &Command, client_id: i64) -> ResultType {
+    pub async fn replicate(
+        &self,
+        command: &Command,
+        client_id: i64,
+    ) -> ResultType {
         let (ballot, ready) = self.multi_paxos.ballot();
         if is_leader(ballot, self.multi_paxos.id) {
             if ready {
-                return self.multi_paxos.run_accept_phase(
-                    ballot,
-                    self.multi_paxos.log.advance_last_index(),
-                    command,
-                    client_id,
-                );
+                return self
+                    .multi_paxos
+                    .run_accept_phase(
+                        ballot,
+                        self.multi_paxos.log.advance_last_index(),
+                        command,
+                        client_id,
+                    )
+                    .await;
             }
             return ResultType::Retry;
         }
@@ -624,7 +623,7 @@ mod tests {
         })
     }
 
-    fn send_prepare(
+    async fn send_prepare(
         stub: &mut MultiPaxosRpcClient<Channel>,
         ballot: i64,
     ) -> PrepareResponse {
@@ -632,7 +631,7 @@ mod tests {
             ballot: ballot,
             sender: 0,
         });
-        let r = block_on(stub.prepare(request));
+        let r = stub.prepare(request).await;
         r.unwrap().into_inner()
     }
 
@@ -682,7 +681,7 @@ mod tests {
 
         let stale_ballot = peer1.next_ballot();
 
-        let r = send_prepare(&mut stub, stale_ballot);
+        let r = send_prepare(&mut stub, stale_ballot).await;
         assert_eq!(r.r#type, ResponseType::Reject as i32);
 
         peer0.stop_rpc_server();
