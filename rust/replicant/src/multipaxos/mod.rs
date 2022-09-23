@@ -3,7 +3,7 @@ use crate::kvstore::memkvstore::MemKVStore;
 use futures_util::stream::FuturesUnordered;
 use futures_util::FutureExt;
 use futures_util::StreamExt;
-use log::debug;
+use log::info;
 use rand::distributions::{Distribution, Uniform};
 use rpc::multi_paxos_rpc_client::MultiPaxosRpcClient;
 use rpc::multi_paxos_rpc_server::{MultiPaxosRpc, MultiPaxosRpcServer};
@@ -118,7 +118,7 @@ impl MultiPaxosInner {
 
     fn become_leader(&self, next_ballot: i64) {
         let mut ballot = self.ballot.lock().unwrap();
-        debug!(
+        info!(
             "{} became a leader: ballot: {} -> {}",
             self.id, *ballot, next_ballot
         );
@@ -133,7 +133,7 @@ impl MultiPaxosInner {
         if next_leader != self.id
             && (prev_leader == self.id || prev_leader == MAX_NUM_PEERS)
         {
-            debug!(
+            info!(
                 "{} became a follower: ballot: {} -> {}",
                 self.id, *ballot, next_ballot
             );
@@ -227,7 +227,7 @@ impl MultiPaxosInner {
                 let mut stub = stub.lock().await;
                 stub.prepare(request).await
             });
-            debug!("{} sent prepare request to {}", self.id, peer.id);
+            info!("{} sent prepare request to {}", self.id, peer.id);
         }
 
         let mut num_oks = 0;
@@ -281,7 +281,7 @@ impl MultiPaxosInner {
                 let mut stub = stub.lock().await;
                 stub.accept(request).await
             });
-            debug!("{} sent accept request to {}", self.id, peer.id);
+            info!("{} sent accept request to {}", self.id, peer.id);
         }
 
         let mut num_oks = 0;
@@ -336,7 +336,7 @@ impl MultiPaxosInner {
                 let mut stub = stub.lock().await;
                 stub.commit(request).await
             });
-            debug!("{} sent commit request to {}", self.id, peer.id);
+            info!("{} sent commit request to {}", self.id, peer.id);
         }
 
         let mut num_oks = 0;
@@ -389,7 +389,7 @@ impl MultiPaxosInner {
             }
         }
         self.ready.store(true, Ordering::Relaxed);
-        debug!("{} leader is ready to serve", self.id);
+        info!("{} leader is ready to serve", self.id);
     }
 }
 
@@ -402,7 +402,7 @@ impl MultiPaxosRpc for RpcWrapper {
         request: Request<PrepareRequest>,
     ) -> Result<Response<PrepareResponse>, Status> {
         let request = request.into_inner();
-        debug!("{} <--prepare-- ", request.sender);
+        info!("{} <--prepare-- ", self.0.id, request.sender);
 
         let mut ballot = self.0.ballot.lock().unwrap();
         if request.ballot > *ballot {
@@ -425,7 +425,7 @@ impl MultiPaxosRpc for RpcWrapper {
         request: Request<AcceptRequest>,
     ) -> Result<Response<AcceptResponse>, Status> {
         let request = request.into_inner();
-        debug!("{} <--accept---", request.sender);
+        info!("{} <--accept--- {}", self.0.id, request.sender);
 
         let instance = request.instance.unwrap();
         let mut ballot = self.0.ballot.lock().unwrap();
@@ -448,7 +448,7 @@ impl MultiPaxosRpc for RpcWrapper {
         request: Request<CommitRequest>,
     ) -> Result<Response<CommitResponse>, Status> {
         let request = request.into_inner();
-        debug!("{} <--commit---", request.sender);
+        info!("{} <--commit--- {}", self.0.id, request.sender);
 
         let mut ballot = self.0.ballot.lock().unwrap();
         if request.ballot >= *ballot {
@@ -498,7 +498,7 @@ impl MultiPaxos {
     }
 
     fn start_rpc_server(&mut self) {
-        debug!(
+        info!(
             "{} starting rpc server at {}",
             self.multi_paxos.id, self.multi_paxos.port
         );
@@ -519,7 +519,7 @@ impl MultiPaxos {
     }
 
     fn stop_rpc_server(&mut self) {
-        debug!(
+        info!(
             "{} stopping rpc server at {}",
             self.multi_paxos.id, self.multi_paxos.port
         );
@@ -527,7 +527,7 @@ impl MultiPaxos {
     }
 
     fn start_prepare_task(&mut self) {
-        debug!("{} starting prepare task", self.multi_paxos.id);
+        info!("{} starting prepare task", self.multi_paxos.id);
         self.multi_paxos
             .prepare_task_running
             .store(true, Ordering::Relaxed);
@@ -538,7 +538,7 @@ impl MultiPaxos {
     }
 
     fn stop_prepare_task(&mut self) {
-        debug!("{} stopping prepare task", self.multi_paxos.id);
+        info!("{} stopping prepare task", self.multi_paxos.id);
         assert!(self
             .multi_paxos
             .prepare_task_running
@@ -550,7 +550,7 @@ impl MultiPaxos {
     }
 
     fn start_commit_task(&mut self) {
-        debug!("{} starting commit task", self.multi_paxos.id);
+        info!("{} starting commit task", self.multi_paxos.id);
         self.multi_paxos
             .commit_task_running
             .store(true, Ordering::Relaxed);
@@ -561,7 +561,7 @@ impl MultiPaxos {
     }
 
     fn stop_commit_task(&mut self) {
-        debug!("{} stopping commit task", self.multi_paxos.id);
+        info!("{} stopping commit task", self.multi_paxos.id);
         assert!(self.multi_paxos.commit_task_running.load(Ordering::Relaxed));
         self.multi_paxos
             .commit_task_running
