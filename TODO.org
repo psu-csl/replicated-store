@@ -2,7 +2,11 @@
 
 * TODO
 ** Rust
-   - consider using scoped threads https://doc.rust-lang.org/stable/std/thread/fn.scope.html
+   - given that most of the stuff will run on a single thread, measure CPU
+     utilization and spawn tasks for each replicate call if necessary
+   - currently we're using tokio mutexes when doing rpc calls, which are slower
+     than standard mutexes; perhaps we should restructure so that each task
+     has its own endpoints, so that we don't need to acquire mutexes
 ** Java
 *** avoid class duplication
     - currently we have both proto generated and custom implementations for
