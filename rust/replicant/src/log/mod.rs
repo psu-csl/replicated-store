@@ -64,11 +64,11 @@ impl Instance {
         }
     }
 
-    fn is_in_progress(&self) -> bool {
+    pub fn is_inprogress(&self) -> bool {
         self.state == InstanceState::Inprogress as i32
     }
 
-    fn is_committed(&self) -> bool {
+    pub fn is_committed(&self) -> bool {
         self.state == InstanceState::Committed as i32
     }
 
@@ -212,7 +212,7 @@ impl Log {
             it = log.map.get_mut(&index);
         }
         let instance = it.unwrap();
-        if instance.is_in_progress() {
+        if instance.is_inprogress() {
             instance.commit();
         }
         if log.is_executable() {
@@ -322,7 +322,7 @@ mod tests {
     }
 
     #[test]
-    fn insert_update_in_progress() {
+    fn insert_update_inprogress() {
         let mut log = LogInner::new(Box::new(MemKVStore::new()));
         let (_, put, del) = make_commands();
         let index = 1;
@@ -491,13 +491,13 @@ mod tests {
 
         log.append(instance1);
         log.append(instance2);
-        assert!(log.at(index1).unwrap().is_in_progress());
-        assert!(log.at(index2).unwrap().is_in_progress());
+        assert!(log.at(index1).unwrap().is_inprogress());
+        assert!(log.at(index2).unwrap().is_inprogress());
         assert!(!log.is_executable());
 
         log.commit(index2);
 
-        assert!(log.at(index1).unwrap().is_in_progress());
+        assert!(log.at(index1).unwrap().is_inprogress());
         assert!(log.at(index2).unwrap().is_committed());
         assert!(!log.is_executable());
 
