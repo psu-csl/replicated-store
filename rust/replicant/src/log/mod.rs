@@ -220,7 +220,7 @@ impl Log {
         }
     }
 
-    fn execute(&self) -> Option<LogResult> {
+    pub fn execute(&self) -> Option<LogResult> {
         let mut log = self.log.lock().unwrap();
         while log.running && !log.is_executable() {
             log = self.cv_executable.wait(log).unwrap();
