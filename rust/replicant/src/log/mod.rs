@@ -22,8 +22,8 @@ impl Instance {
 
     pub fn make(ballot: i64, index: i64) -> Self {
         Self {
-            ballot: ballot,
-            index: index,
+            ballot,
+            index,
             client_id: 0,
             state: InstanceState::Inprogress as i32,
             command: None,
@@ -56,9 +56,9 @@ impl Instance {
         client_id: i64,
     ) -> Self {
         Self {
-            ballot: ballot,
-            index: index,
-            client_id: client_id,
+            ballot,
+            index,
+            client_id,
             state: state as i32,
             command: Some(command.clone()),
         }
