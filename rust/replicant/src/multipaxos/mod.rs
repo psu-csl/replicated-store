@@ -607,6 +607,7 @@ impl MultiPaxos {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
 
     pub const NUM_PEERS: i64 = 3;
 
@@ -626,6 +627,11 @@ mod tests {
     fn is_leader(peer: &MultiPaxos) -> bool {
         let (ballot, _) = peer.multi_paxos.ballot();
         super::is_leader(ballot, peer.multi_paxos.id)
+    }
+
+    fn leader(peer: &MultiPaxos) -> i64 {
+        let (ballot, _) = peer.multi_paxos.ballot();
+        super::leader(ballot)
     }
 
     async fn send_prepare(
@@ -703,6 +709,7 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    #[serial]
     async fn request_with_lower_ballot_ignored() {
         let (config, mut peer0, peer1, _) = init();
         let mut stub = make_stub(&config["peers"][0]);
@@ -715,20 +722,57 @@ mod tests {
         let stale_ballot = peer1.next_ballot();
 
         let r = send_prepare(&mut stub, stale_ballot).await;
-        assert_eq!(r.r#type, ResponseType::Reject as i32);
+        assert_eq!(ResponseType::Reject as i32, r.r#type);
         assert!(is_leader(&peer0));
 
         let index = peer0.multi_paxos.log.advance_last_index();
         let instance = Instance::make(stale_ballot, index);
 
         let r = send_accept(&mut stub, instance).await;
-        assert_eq!(r.r#type, ResponseType::Reject as i32);
+        assert_eq!(ResponseType::Reject as i32, r.r#type);
         assert!(is_leader(&peer0));
         assert_eq!(None, peer0.multi_paxos.log.at(index));
 
         let r = send_commit(&mut stub, stale_ballot, 0, 0).await;
-        assert_eq!(r.r#type, ResponseType::Reject as i32);
+        assert_eq!(ResponseType::Reject as i32, r.r#type);
         assert!(is_leader(&peer0));
+
+        peer0.stop_rpc_server();
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    #[serial]
+    async fn request_with_higher_ballot_change_leader_to_follower() {
+        let (config, mut peer0, peer1, _) = init();
+        let mut stub = make_stub(&config["peers"][0]);
+
+        peer0.start_rpc_server();
+
+        peer0.become_leader(peer0.next_ballot());
+        assert!(is_leader(&peer0));
+
+        let r = send_prepare(&mut stub, peer1.next_ballot()).await;
+        assert_eq!(ResponseType::Ok as i32, r.r#type,);
+        assert!(!is_leader(&peer0));
+        assert_eq!(1, leader(&peer0));
+
+        peer1.become_leader(peer1.next_ballot());
+
+        peer0.become_leader(peer0.next_ballot());
+        assert!(is_leader(&peer0));
+        let index = peer0.multi_paxos.log.advance_last_index();
+        let instance = Instance::make(peer1.next_ballot(), index);
+        let r = send_accept(&mut stub, instance).await;
+        assert_eq!(ResponseType::Ok as i32, r.r#type);
+
+        peer1.become_leader(peer1.next_ballot());
+
+        peer0.become_leader(peer0.next_ballot());
+        assert!(is_leader(&peer0));
+        let r = send_commit(&mut stub, peer1.next_ballot(), 0, 0).await;
+        assert_eq!(ResponseType::Ok as i32, r.r#type);
+        assert!(!is_leader(&peer0));
+        assert_eq!(1, leader(&peer0));
 
         peer0.stop_rpc_server();
     }
