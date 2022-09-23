@@ -402,7 +402,7 @@ impl MultiPaxosRpc for RpcWrapper {
         request: Request<PrepareRequest>,
     ) -> Result<Response<PrepareResponse>, Status> {
         let request = request.into_inner();
-        info!("{} <--prepare-- ", self.0.id, request.sender);
+        info!("{} <--prepare-- {}", self.0.id, request.sender);
 
         let mut ballot = self.0.ballot.lock().unwrap();
         if request.ballot > *ballot {
