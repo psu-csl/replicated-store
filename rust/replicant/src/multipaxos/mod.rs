@@ -776,4 +776,40 @@ mod tests {
 
         peer0.stop_rpc_server();
     }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    #[serial]
+    async fn commit_commits_and_trims() {
+        let (config, mut peer0, _, _) = init();
+        let mut stub = make_stub(&config["peers"][0]);
+
+        peer0.start_rpc_server();
+
+        let ballot = peer0.next_ballot();
+        let index1 = peer0.multi_paxos.log.advance_last_index();
+        peer0.multi_paxos.log.append(Instance::make(ballot, index1));
+        let index2 = peer0.multi_paxos.log.advance_last_index();
+        peer0.multi_paxos.log.append(Instance::make(ballot, index2));
+        let index3 = peer0.multi_paxos.log.advance_last_index();
+        peer0.multi_paxos.log.append(Instance::make(ballot, index3));
+
+        let r = send_commit(&mut stub, ballot, index2, 0).await;
+        assert_eq!(ResponseType::Ok as i32, r.r#type);
+        assert_eq!(0, r.last_executed);
+        assert!(peer0.multi_paxos.log.at(index1).unwrap().is_committed());
+        assert!(peer0.multi_paxos.log.at(index2).unwrap().is_committed());
+        assert!(peer0.multi_paxos.log.at(index3).unwrap().is_inprogress());
+
+        peer0.multi_paxos.log.execute();
+        peer0.multi_paxos.log.execute();
+
+        let r = send_commit(&mut stub, ballot, index2, index2).await;
+        assert_eq!(ResponseType::Ok as i32, r.r#type);
+        assert_eq!(index2, r.last_executed);
+        assert_eq!(None, peer0.multi_paxos.log.at(index1));
+        assert_eq!(None, peer0.multi_paxos.log.at(index2));
+        assert!(peer0.multi_paxos.log.at(index3).unwrap().is_inprogress());
+
+        peer0.stop_rpc_server();
+    }
 }

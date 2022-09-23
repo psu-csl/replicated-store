@@ -26,7 +26,7 @@ impl Instance {
             index,
             client_id: 0,
             state: InstanceState::Inprogress as i32,
-            command: None,
+            command: Some(Command::get("")),
         }
     }
 
