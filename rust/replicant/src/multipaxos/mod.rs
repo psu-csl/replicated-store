@@ -1115,4 +1115,55 @@ mod tests {
         peer0.stop_rpc_server();
         peer1.stop_rpc_server();
     }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    #[serial]
+    async fn run_commit_phase() {
+        let (_, mut peer0, mut peer1, mut peer2) = init();
+
+        peer0.start_rpc_server();
+        peer1.start_rpc_server();
+
+        let peers = vec![&peer0, &peer1, &peer2];
+
+        let ballot = peer0.next_ballot();
+
+        for index in 1..=3 {
+            for peer in 0..NUM_PEERS {
+                if index == 3 && peer == 2 {
+                    continue;
+                }
+                let peer = peers[peer as usize];
+                peer.multi_paxos
+                    .log
+                    .append(Instance::committed_get(ballot, index));
+                peer.multi_paxos.log.execute();
+            }
+        }
+
+        let gle = 0;
+        let gle = peer0.multi_paxos.run_commit_phase(ballot, gle).await;
+        assert_eq!(0, gle);
+
+        peer2.start_rpc_server();
+
+        peer2
+            .multi_paxos
+            .log
+            .append(Instance::inprogress_get(ballot, 3));
+
+        sleep(Duration::from_secs(2)).await;
+
+        let gle = peer0.multi_paxos.run_commit_phase(ballot, gle).await;
+        assert_eq!(2, gle);
+
+        peer2.multi_paxos.log.execute();
+
+        let gle = peer0.multi_paxos.run_commit_phase(ballot, gle).await;
+        assert_eq!(3, gle);
+
+        peer0.stop_rpc_server();
+        peer1.stop_rpc_server();
+        peer2.stop_rpc_server();
+    }
 }

@@ -59,6 +59,16 @@ impl Instance {
         Self::new(ballot, index, InstanceState::Committed, command, client_id)
     }
 
+    pub fn committed_get(ballot: i64, index: i64) -> Self {
+        Self::new(
+            ballot,
+            index,
+            InstanceState::Committed,
+            &Command::get(""),
+            0,
+        )
+    }
+
     pub fn committed_del(ballot: i64, index: i64) -> Self {
         Self::new(
             ballot,
