@@ -1004,4 +1004,75 @@ mod tests {
         peer1.stop_rpc_server();
         peer2.stop_rpc_server();
     }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    #[serial]
+    async fn run_prepare_phase() {
+        let (_, mut peer0, mut peer1, _) = init();
+
+        peer0.start_rpc_server();
+
+        let peer0_ballot = peer0.next_ballot();
+        peer0.become_leader(peer0_ballot);
+        let peer1_ballot = peer1.next_ballot();
+        peer1.become_leader(peer1_ballot);
+
+        let index1 = 1;
+        let i1 = Instance::inprogress_put(peer0_ballot, index1);
+
+        peer0.multi_paxos.log.append(i1.clone());
+        peer1.multi_paxos.log.append(i1.clone());
+
+        let index2 = 2;
+        let i2 = Instance::inprogress_get(peer0_ballot, index2);
+
+        peer1.multi_paxos.log.append(i2.clone());
+
+        let index3 = 3;
+        let peer0_i3 = Instance::committed_del(peer0_ballot, index3);
+        let peer1_i3 = Instance::inprogress_del(peer1_ballot, index3);
+
+        peer0.multi_paxos.log.append(peer0_i3.clone());
+        peer1.multi_paxos.log.append(peer1_i3.clone());
+
+        let index4 = 4;
+        let peer0_i4 = Instance::executed_del(peer0_ballot, index4);
+        let peer1_i4 = Instance::inprogress_del(peer1_ballot, index4);
+
+        peer0.multi_paxos.log.append(peer0_i4.clone());
+        peer1.multi_paxos.log.append(peer1_i4.clone());
+
+        let index5 = 5;
+        let peer0_ballot = peer0.next_ballot();
+        peer0.become_leader(peer0_ballot);
+        let peer1_ballot = peer1.next_ballot();
+        peer1.become_leader(peer1_ballot);
+
+        let peer0_i5 = Instance::inprogress_get(peer0_ballot, index5);
+        let peer1_i5 = Instance::inprogress_put(peer1_ballot, index5);
+
+        peer0.multi_paxos.log.append(peer0_i5.clone());
+        peer1.multi_paxos.log.append(peer1_i5.clone());
+
+        let ballot = peer0.next_ballot();
+
+        assert_eq!(None, peer0.multi_paxos.run_prepare_phase(ballot).await);
+
+        peer1.start_rpc_server();
+
+        sleep(Duration::from_millis(2000)).await;
+
+        let ballot = peer0.next_ballot();
+
+        let log = peer0.multi_paxos.run_prepare_phase(ballot).await.unwrap();
+
+        assert_eq!(&i1, log.get(&index1).unwrap());
+        assert_eq!(&i2, log.get(&index2).unwrap());
+        assert_eq!(peer0_i3.command, log.get(&index3).unwrap().command);
+        assert_eq!(peer0_i4.command, log.get(&index4).unwrap().command);
+        assert_eq!(&peer1_i5, log.get(&index5).unwrap());
+
+        peer0.stop_rpc_server();
+        peer1.stop_rpc_server();
+    }
 }
