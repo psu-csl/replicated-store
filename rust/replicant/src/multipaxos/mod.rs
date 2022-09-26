@@ -1171,7 +1171,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     #[serial]
     async fn replay() {
-        let (_, mut peer0, mut peer1, mut peer2) = init();
+        let (_, mut peer0, mut peer1, _) = init();
 
         peer0.start_rpc_server();
         peer1.start_rpc_server();
