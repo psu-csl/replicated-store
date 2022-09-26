@@ -41,7 +41,7 @@ fn is_someone_else_leader(ballot: i64, id: i64) -> bool {
     !is_leader(ballot, id) && leader(ballot) < MAX_NUM_PEERS
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 pub enum ResultType {
     Ok,
     Retry,
@@ -1060,7 +1060,7 @@ mod tests {
 
         peer1.start_rpc_server();
 
-        sleep(Duration::from_millis(2000)).await;
+        sleep(Duration::from_secs(2)).await;
 
         let ballot = peer0.next_ballot();
 
@@ -1071,6 +1071,46 @@ mod tests {
         assert_eq!(peer0_i3.command, log.get(&index3).unwrap().command);
         assert_eq!(peer0_i4.command, log.get(&index4).unwrap().command);
         assert_eq!(&peer1_i5, log.get(&index5).unwrap());
+
+        peer0.stop_rpc_server();
+        peer1.stop_rpc_server();
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    #[serial]
+    async fn run_accept_phase() {
+        let (_, mut peer0, mut peer1, peer2) = init();
+
+        peer0.start_rpc_server();
+
+        let ballot = peer0.next_ballot();
+        let index = peer0.multi_paxos.log.advance_last_index();
+
+        let result = peer0
+            .multi_paxos
+            .run_accept_phase(ballot, index, &Command::get(""), 0)
+            .await;
+
+        assert_eq!(ResultType::Retry, result);
+
+        assert!(peer0.multi_paxos.log.at(index).unwrap().is_inprogress());
+        assert_eq!(None, peer1.multi_paxos.log.at(index));
+        assert_eq!(None, peer2.multi_paxos.log.at(index));
+
+        peer1.start_rpc_server();
+
+        sleep(Duration::from_secs(2)).await;
+
+        let result = peer0
+            .multi_paxos
+            .run_accept_phase(ballot, index, &Command::get(""), 0)
+            .await;
+
+        assert_eq!(ResultType::Ok, result);
+
+        assert!(peer0.multi_paxos.log.at(index).unwrap().is_committed());
+        assert!(peer1.multi_paxos.log.at(index).unwrap().is_inprogress());
+        assert_eq!(None, peer2.multi_paxos.log.at(index));
 
         peer0.stop_rpc_server();
         peer1.stop_rpc_server();
