@@ -869,4 +869,33 @@ mod tests {
 
         peer0.stop_rpc_server();
     }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    #[serial]
+    async fn accept_appends_to_log() {
+        let (config, mut peer0, _, _) = init();
+        let mut stub = make_stub(&config["peers"][0]);
+
+        peer0.start_rpc_server();
+
+        let ballot = peer0.next_ballot();
+
+        let index1 = peer0.multi_paxos.log.advance_last_index();
+        let instance1 = Instance::make(ballot, index1);
+
+        let index2 = peer0.multi_paxos.log.advance_last_index();
+        let instance2 = Instance::make(ballot, index2);
+
+        let r = send_accept(&mut stub, instance1.clone()).await;
+        assert_eq!(ResponseType::Ok as i32, r.r#type);
+        assert_eq!(instance1, peer0.multi_paxos.log.at(index1).unwrap());
+        assert_eq!(None, peer0.multi_paxos.log.at(index2));
+
+        let r = send_accept(&mut stub, instance2.clone()).await;
+        assert_eq!(ResponseType::Ok as i32, r.r#type);
+        assert_eq!(instance1, peer0.multi_paxos.log.at(index1).unwrap());
+        assert_eq!(instance2, peer0.multi_paxos.log.at(index2).unwrap());
+
+        peer0.stop_rpc_server();
+    }
 }
