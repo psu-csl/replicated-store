@@ -72,7 +72,7 @@ impl Instance {
         self.state == InstanceState::Committed as i32
     }
 
-    fn is_executed(&self) -> bool {
+    pub fn is_executed(&self) -> bool {
         self.state == InstanceState::Executed as i32
     }
 
