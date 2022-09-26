@@ -812,4 +812,61 @@ mod tests {
 
         peer0.stop_rpc_server();
     }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    #[serial]
+    async fn prepare_responds_with_correct_instances() {
+        let (config, mut peer0, _, _) = init();
+        let mut stub = make_stub(&config["peers"][0]);
+
+        peer0.start_rpc_server();
+
+        let ballot = peer0.next_ballot();
+
+        let index1 = peer0.multi_paxos.log.advance_last_index();
+        let instance1 = Instance::make(ballot, index1);
+        peer0.multi_paxos.log.append(instance1.clone());
+
+        let index2 = peer0.multi_paxos.log.advance_last_index();
+        let instance2 = Instance::make(ballot, index2);
+        peer0.multi_paxos.log.append(instance2.clone());
+
+        let index3 = peer0.multi_paxos.log.advance_last_index();
+        let instance3 = Instance::make(ballot, index3);
+        peer0.multi_paxos.log.append(instance3.clone());
+
+        let r = send_prepare(&mut stub, ballot).await;
+        assert_eq!(ResponseType::Ok as i32, r.r#type);
+        assert_eq!(3, r.instances.len());
+        assert_eq!(instance1, r.instances[0]);
+        assert_eq!(instance2, r.instances[1]);
+        assert_eq!(instance3, r.instances[2]);
+
+        let r = send_commit(&mut stub, ballot, index2, 0).await;
+        assert_eq!(ResponseType::Ok as i32, r.r#type);
+
+        peer0.multi_paxos.log.execute();
+        peer0.multi_paxos.log.execute();
+
+        let ballot = peer0.next_ballot();
+
+        let r = send_prepare(&mut stub, ballot).await;
+        assert_eq!(ResponseType::Ok as i32, r.r#type);
+        assert_eq!(3, r.instances.len());
+        assert!(r.instances[0].is_executed());
+        assert!(r.instances[1].is_executed());
+        assert!(r.instances[2].is_inprogress());
+
+        let r = send_commit(&mut stub, ballot, index2, 2).await;
+        assert_eq!(ResponseType::Ok as i32, r.r#type);
+
+        let ballot = peer0.next_ballot();
+
+        let r = send_prepare(&mut stub, ballot).await;
+        assert_eq!(ResponseType::Ok as i32, r.r#type);
+        assert_eq!(1, r.instances.len());
+        assert_eq!(instance3, r.instances[0]);
+
+        peer0.stop_rpc_server();
+    }
 }
