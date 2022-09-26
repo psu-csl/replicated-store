@@ -8,11 +8,12 @@ use rand::distributions::{Distribution, Uniform};
 use rpc::multi_paxos_rpc_client::MultiPaxosRpcClient;
 use rpc::multi_paxos_rpc_server::{MultiPaxosRpc, MultiPaxosRpcServer};
 use rpc::{AcceptRequest, AcceptResponse};
-use rpc::{Command, Instance, ResponseType};
+use rpc::{Command, Instance, InstanceState, ResponseType};
 use rpc::{CommitRequest, CommitResponse};
 use rpc::{PrepareRequest, PrepareResponse};
 use serde_json::json;
 use serde_json::Value as json;
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
@@ -1165,5 +1166,62 @@ mod tests {
         peer0.stop_rpc_server();
         peer1.stop_rpc_server();
         peer2.stop_rpc_server();
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    #[serial]
+    async fn replay() {
+        let (_, mut peer0, mut peer1, mut peer2) = init();
+
+        peer0.start_rpc_server();
+        peer1.start_rpc_server();
+
+        let ballot = peer0.next_ballot();
+
+        let index1 = 1;
+        let mut i1 = Instance::committed_put(ballot, index1);
+        let index2 = 2;
+        let mut i2 = Instance::executed_get(ballot, index2);
+        let index3 = 3;
+        let mut i3 = Instance::inprogress_del(ballot, index3);
+
+        let indexes = vec![index1, index2, index3];
+        let instances = vec![i1.clone(), i2.clone(), i3.clone()];
+        let log: HashMap<_, _> =
+            indexes.into_iter().zip(instances.into_iter()).collect();
+
+        assert_eq!(None, peer0.multi_paxos.log.at(index1));
+        assert_eq!(None, peer0.multi_paxos.log.at(index2));
+        assert_eq!(None, peer0.multi_paxos.log.at(index3));
+
+        assert_eq!(None, peer1.multi_paxos.log.at(index1));
+        assert_eq!(None, peer1.multi_paxos.log.at(index2));
+        assert_eq!(None, peer1.multi_paxos.log.at(index3));
+
+        let new_ballot = peer0.next_ballot();
+        peer0.multi_paxos.replay(new_ballot, log).await;
+
+        i1.ballot = new_ballot;
+        i2.ballot = new_ballot;
+        i3.ballot = new_ballot;
+
+        i1.commit();
+        i2.commit();
+        i3.commit();
+
+        assert_eq!(i1, peer0.multi_paxos.log.at(index1).unwrap());
+        assert_eq!(i2, peer0.multi_paxos.log.at(index2).unwrap());
+        assert_eq!(i3, peer0.multi_paxos.log.at(index3).unwrap());
+
+        i1.state = InstanceState::Inprogress as i32;
+        i2.state = InstanceState::Inprogress as i32;
+        i3.state = InstanceState::Inprogress as i32;
+
+        assert_eq!(i1, peer1.multi_paxos.log.at(index1).unwrap());
+        assert_eq!(i2, peer1.multi_paxos.log.at(index2).unwrap());
+        assert_eq!(i3, peer1.multi_paxos.log.at(index3).unwrap());
+
+        peer0.stop_rpc_server();
+        peer1.stop_rpc_server();
     }
 }

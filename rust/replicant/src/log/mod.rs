@@ -69,6 +69,16 @@ impl Instance {
         )
     }
 
+    pub fn committed_put(ballot: i64, index: i64) -> Self {
+        Self::new(
+            ballot,
+            index,
+            InstanceState::Committed,
+            &Command::put("", ""),
+            0,
+        )
+    }
+
     pub fn committed_del(ballot: i64, index: i64) -> Self {
         Self::new(
             ballot,
@@ -86,6 +96,10 @@ impl Instance {
         client_id: i64,
     ) -> Self {
         Self::new(ballot, index, InstanceState::Executed, command, client_id)
+    }
+
+    pub fn executed_get(ballot: i64, index: i64) -> Self {
+        Self::new(ballot, index, InstanceState::Executed, &Command::get(""), 0)
     }
 
     pub fn executed_del(ballot: i64, index: i64) -> Self {
@@ -120,7 +134,7 @@ impl Instance {
         self.state == InstanceState::Executed as i32
     }
 
-    fn commit(&mut self) {
+    pub fn commit(&mut self) {
         self.state = InstanceState::Committed as i32
     }
 
