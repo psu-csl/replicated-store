@@ -20,14 +20,34 @@ impl Instance {
         Self::new(ballot, index, InstanceState::Inprogress, command, client_id)
     }
 
-    pub fn make(ballot: i64, index: i64) -> Self {
-        Self {
+    pub fn inprogress_get(ballot: i64, index: i64) -> Self {
+        Self::new(
             ballot,
             index,
-            client_id: 0,
-            state: InstanceState::Inprogress as i32,
-            command: Some(Command::get("")),
-        }
+            InstanceState::Inprogress,
+            &Command::get(""),
+            0,
+        )
+    }
+
+    pub fn inprogress_put(ballot: i64, index: i64) -> Self {
+        Self::new(
+            ballot,
+            index,
+            InstanceState::Inprogress,
+            &Command::put("", ""),
+            0,
+        )
+    }
+
+    pub fn inprogress_del(ballot: i64, index: i64) -> Self {
+        Self::new(
+            ballot,
+            index,
+            InstanceState::Inprogress,
+            &Command::del(""),
+            0,
+        )
     }
 
     fn committed(
@@ -39,6 +59,16 @@ impl Instance {
         Self::new(ballot, index, InstanceState::Committed, command, client_id)
     }
 
+    pub fn committed_del(ballot: i64, index: i64) -> Self {
+        Self::new(
+            ballot,
+            index,
+            InstanceState::Committed,
+            &Command::del(""),
+            0,
+        )
+    }
+
     fn executed(
         ballot: i64,
         index: i64,
@@ -46,6 +76,10 @@ impl Instance {
         client_id: i64,
     ) -> Self {
         Self::new(ballot, index, InstanceState::Executed, command, client_id)
+    }
+
+    pub fn executed_del(ballot: i64, index: i64) -> Self {
+        Self::new(ballot, index, InstanceState::Executed, &Command::del(""), 0)
     }
 
     fn new(
