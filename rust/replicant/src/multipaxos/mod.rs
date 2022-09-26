@@ -929,4 +929,38 @@ mod tests {
         peer1.stop_rpc_server();
         peer2.stop_rpc_server();
     }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    #[serial]
+    async fn accept_response_with_higher_ballot_changes_leader_to_follower() {
+        let (config, mut peer0, mut peer1, mut peer2) = init();
+        let mut stub1 = make_stub(&config["peers"][1]);
+
+        peer0.start_rpc_server();
+        peer1.start_rpc_server();
+        peer2.start_rpc_server();
+
+        let peer0_ballot = peer0.next_ballot();
+        peer0.become_leader(peer0_ballot);
+        peer1.become_leader(peer1.next_ballot());
+        let peer2_ballot = peer2.next_ballot();
+        peer2.become_leader(peer2_ballot);
+
+        let r = send_commit(&mut stub1, peer2_ballot, 0, 0).await;
+        assert_eq!(ResponseType::Ok as i32, r.r#type);
+        assert!(!is_leader(&peer1));
+        assert_eq!(2, leader(&peer1));
+
+        assert!(is_leader(&peer0));
+        peer0
+            .multi_paxos
+            .run_accept_phase(peer0_ballot, 1, &Command::get(""), 0)
+            .await;
+        assert!(!is_leader(&peer0));
+        assert_eq!(2, leader(&peer0));
+
+        peer0.stop_rpc_server();
+        peer1.stop_rpc_server();
+        peer2.stop_rpc_server();
+    }
 }
