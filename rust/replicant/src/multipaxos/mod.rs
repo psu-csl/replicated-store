@@ -1218,7 +1218,62 @@ mod tests {
         assert_eq!(i2, peer1.multi_paxos.log.at(index2).unwrap());
         assert_eq!(i3, peer1.multi_paxos.log.at(index3).unwrap());
 
-        peer0.stop_rpc_server();
-        peer1.stop_rpc_server();
+        peer0.stop_rpc_server(tx0);
+        peer1.stop_rpc_server(tx1);
+    }
+
+    fn one_leader(peers: &Vec<&MultiPaxos>) -> Option<i64> {
+        let assumed_leader = leader(peers[0]);
+        let mut num_leaders = 0;
+        for p in peers.iter() {
+            if is_leader(p) {
+                num_leaders += 1;
+                if num_leaders > 1 || p.multi_paxos.id != assumed_leader {
+                    return None;
+                }
+            } else if leader(p) != assumed_leader {
+                return None;
+            }
+        }
+        Some(assumed_leader)
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    #[serial]
+    async fn replicate() {
+        let (config, peer0, peer1, peer2) = init();
+
+        let tx0 = peer0.start();
+
+        sleep(Duration::from_secs(1)).await;
+
+        let command = Command::get("");
+        let result = peer0.replicate(&command, 0).await;
+        assert_eq!(ResultType::Retry, result);
+
+        let tx1 = peer1.start();
+        let tx2 = peer2.start();
+
+        let commit_interval = config["commit_interval"].as_u64().unwrap();
+        let commit_interval_3x = 3 * commit_interval;
+
+        sleep(Duration::from_millis(commit_interval_3x)).await;
+
+        let peers = vec![&peer0, &peer1, &peer2];
+        let leader = one_leader(&peers);
+        assert!(None != leader);
+        let leader = leader.unwrap() as usize;
+
+        let result = peers[leader].replicate(&command, 0).await;
+        assert_eq!(ResultType::Ok, result);
+
+        let nonleader = (leader + 1) % NUM_PEERS as usize;
+
+        let result = peers[nonleader].replicate(&command, 0).await;
+        assert!(ResultType::SomeoneElseLeader(leader as i64) == result);
+
+        peer0.stop(tx0);
+        peer1.stop(tx1);
+        peer2.stop(tx2);
     }
 }
