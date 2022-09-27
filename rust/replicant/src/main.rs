@@ -3,6 +3,8 @@ mod replicant;
 use replicant::kvstore::memkvstore::MemKVStore;
 use replicant::log::Log;
 use replicant::multipaxos::MultiPaxos;
+use replicant::Replicant;
+use std::sync::Arc;
 use tokio::time::{sleep, Duration};
 
 #[tokio::main]
@@ -20,9 +22,8 @@ async fn main() {
 
     let config = serde_json::from_str(str).unwrap();
 
-    let log = Log::new(Box::new(MemKVStore::new()));
-    let mp = MultiPaxos::new(log, &config);
-    let tx = mp.start();
+    let replicant = Replicant::new(&config);
+    let tx = replicant.start();
     sleep(Duration::from_millis(10000)).await;
-    mp.stop(tx);
+    replicant.stop(tx);
 }

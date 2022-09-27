@@ -1,5 +1,5 @@
-use super::kvstore::memkvstore::MemKVStore;
-use super::log::{insert, Log, MapLog};
+use crate::replicant::kvstore::memkvstore::MemKVStore;
+use crate::replicant::log::{insert, Log, MapLog};
 use futures_util::stream::FuturesUnordered;
 use futures_util::FutureExt;
 use futures_util::StreamExt;
@@ -16,7 +16,7 @@ use serde_json::Value as json;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+pub use std::sync::{Arc, Mutex};
 use tokio::sync::{oneshot, oneshot::Sender, Notify};
 use tokio::time::{sleep, Duration};
 use tonic::transport::{Channel, Endpoint, Server};
@@ -57,7 +57,7 @@ struct RpcPeer {
 struct MultiPaxosInner {
     ballot: Mutex<i64>,
     ready: AtomicBool,
-    log: Log,
+    log: Arc<Log>,
     id: i64,
     commit_received: AtomicBool,
     commit_interval: u64,
@@ -76,7 +76,7 @@ fn make_stub(port: &json) -> MultiPaxosRpcClient<Channel> {
 }
 
 impl MultiPaxosInner {
-    fn new(log: Log, config: &json) -> Self {
+    fn new(log: Arc<Log>, config: &json) -> Self {
         let commit_interval = config["commit_interval"].as_u64().unwrap();
         let id = config["id"].as_i64().unwrap();
         let port = config["peers"][id as usize]
@@ -460,7 +460,7 @@ pub struct MultiPaxos {
 }
 
 impl MultiPaxos {
-    pub fn new(log: Log, config: &json) -> Self {
+    pub fn new(log: Arc<Log>, config: &json) -> Self {
         Self {
             multi_paxos: Arc::new(MultiPaxosInner::new(log, &config)),
         }
@@ -658,14 +658,16 @@ mod tests {
     fn init() -> (json, MultiPaxos, MultiPaxos, MultiPaxos) {
         let _ = env_logger::builder().is_test(true).try_init();
         let config = make_config(0, NUM_PEERS);
-        let peer0 =
-            MultiPaxos::new(Log::new(Box::new(MemKVStore::new())), &config);
+        let peer0 = MultiPaxos::new(
+            Arc::new(Log::new(Box::new(MemKVStore::new()))),
+            &config,
+        );
         let peer1 = MultiPaxos::new(
-            Log::new(Box::new(MemKVStore::new())),
+            Arc::new(Log::new(Box::new(MemKVStore::new()))),
             &make_config(1, NUM_PEERS),
         );
         let peer2 = MultiPaxos::new(
-            Log::new(Box::new(MemKVStore::new())),
+            Arc::new(Log::new(Box::new(MemKVStore::new()))),
             &make_config(2, NUM_PEERS),
         );
 
