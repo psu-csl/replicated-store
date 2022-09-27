@@ -513,6 +513,7 @@ impl MultiPaxos {
             .store(true, Ordering::Relaxed);
         let multi_paxos = self.multi_paxos.clone();
         tokio::spawn(async move {
+            multi_paxos.wait_until_follower.notify_one();
             multi_paxos.prepare_task_fn().await;
         });
     }
