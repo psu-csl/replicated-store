@@ -1,11 +1,9 @@
-mod kvstore;
-mod log;
-mod multipaxos;
+mod replicant;
 
-use crate::log::Log;
-use kvstore::memkvstore::MemKVStore;
-use multipaxos::MultiPaxos;
-use std::{thread, time};
+use replicant::kvstore::memkvstore::MemKVStore;
+use replicant::log::Log;
+use replicant::multipaxos::MultiPaxos;
+use tokio::time::{sleep, Duration};
 
 #[tokio::main]
 async fn main() {
@@ -25,6 +23,6 @@ async fn main() {
     let log = Log::new(Box::new(MemKVStore::new()));
     let mp = MultiPaxos::new(log, &config);
     let tx = mp.start();
-    thread::sleep(time::Duration::from_millis(10000));
+    sleep(Duration::from_millis(10000)).await;
     mp.stop(tx);
 }

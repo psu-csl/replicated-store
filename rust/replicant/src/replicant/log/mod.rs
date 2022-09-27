@@ -1,5 +1,5 @@
-use crate::kvstore::memkvstore::MemKVStore;
-use crate::kvstore::KVStore;
+use super::kvstore::memkvstore::MemKVStore;
+use super::kvstore::KVStore;
 use std::cmp;
 use std::collections::HashMap;
 use std::sync::{Arc, Condvar, Mutex};
