@@ -23,8 +23,8 @@ async fn main() {
     let config = serde_json::from_str(str).unwrap();
 
     let log = Log::new(Box::new(MemKVStore::new()));
-    let mut mp = MultiPaxos::new(log, &config);
-    mp.start();
+    let mp = MultiPaxos::new(log, &config);
+    let tx = mp.start();
     thread::sleep(time::Duration::from_millis(1000));
-    mp.stop();
+    mp.stop(tx);
 }

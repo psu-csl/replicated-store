@@ -17,7 +17,7 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
-use tokio::sync::oneshot;
+use tokio::sync::{oneshot, oneshot::Sender};
 use tokio::time::{sleep, Duration};
 use tonic::transport::{Channel, Endpoint, Server};
 use tonic::{Request, Response, Status};
@@ -475,38 +475,34 @@ impl MultiPaxosRpc for RpcWrapper {
 
 pub struct MultiPaxos {
     multi_paxos: Arc<MultiPaxosInner>,
-    rpc_server_tx: Option<oneshot::Sender<()>>,
 }
 
 impl MultiPaxos {
     pub fn new(log: Log, config: &json) -> Self {
         Self {
             multi_paxos: Arc::new(MultiPaxosInner::new(log, &config)),
-            rpc_server_tx: None,
         }
     }
 
-    pub fn start(&mut self) {
+    pub fn start(&self) -> Sender<()> {
         self.start_prepare_task();
         self.start_commit_task();
-        self.start_rpc_server();
+        self.start_rpc_server()
     }
 
-    pub fn stop(&mut self) {
-        self.stop_rpc_server();
+    pub fn stop(&self, tx: Sender<()>) {
+        self.stop_rpc_server(tx);
         self.stop_commit_task();
         self.stop_prepare_task();
     }
 
-    fn start_rpc_server(&mut self) {
+    fn start_rpc_server(&self) -> Sender<()> {
         info!(
             "{} starting rpc server at {}",
             self.multi_paxos.id, self.multi_paxos.port
         );
 
         let (tx, rx) = oneshot::channel();
-        self.rpc_server_tx.replace(tx);
-
         let port = self.multi_paxos.port;
         let service =
             MultiPaxosRpcServer::new(RpcWrapper(Arc::clone(&self.multi_paxos)));
@@ -517,17 +513,18 @@ impl MultiPaxos {
                 .await
                 .unwrap();
         });
+        tx
     }
 
-    fn stop_rpc_server(&mut self) {
+    fn stop_rpc_server(&self, tx: Sender<()>) {
         info!(
             "{} stopping rpc server at {}",
             self.multi_paxos.id, self.multi_paxos.port
         );
-        self.rpc_server_tx.take().unwrap().send(()).unwrap();
+        tx.send(()).unwrap();
     }
 
-    fn start_prepare_task(&mut self) {
+    fn start_prepare_task(&self) {
         info!("{} starting prepare task", self.multi_paxos.id);
         self.multi_paxos
             .prepare_task_running
@@ -538,7 +535,7 @@ impl MultiPaxos {
         });
     }
 
-    fn stop_prepare_task(&mut self) {
+    fn stop_prepare_task(&self) {
         info!("{} stopping prepare task", self.multi_paxos.id);
         assert!(self
             .multi_paxos
@@ -550,7 +547,7 @@ impl MultiPaxos {
         self.multi_paxos.cv_follower.notify_one();
     }
 
-    fn start_commit_task(&mut self) {
+    fn start_commit_task(&self) {
         info!("{} starting commit task", self.multi_paxos.id);
         self.multi_paxos
             .commit_task_running
@@ -561,7 +558,7 @@ impl MultiPaxos {
         });
     }
 
-    fn stop_commit_task(&mut self) {
+    fn stop_commit_task(&self) {
         info!("{} stopping commit task", self.multi_paxos.id);
         assert!(self.multi_paxos.commit_task_running.load(Ordering::Relaxed));
         self.multi_paxos
@@ -712,10 +709,10 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     #[serial]
     async fn request_with_lower_ballot_ignored() {
-        let (config, mut peer0, peer1, _) = init();
+        let (config, peer0, peer1, _) = init();
         let mut stub = make_stub(&config["peers"][0]);
 
-        peer0.start_rpc_server();
+        let tx0 = peer0.start_rpc_server();
 
         peer0.become_leader(peer0.next_ballot());
         peer0.become_leader(peer0.next_ballot());
@@ -739,16 +736,16 @@ mod tests {
         assert_eq!(ResponseType::Reject as i32, r.r#type);
         assert!(is_leader(&peer0));
 
-        peer0.stop_rpc_server();
+        peer0.stop_rpc_server(tx0);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     #[serial]
     async fn request_with_higher_ballot_change_leader_to_follower() {
-        let (config, mut peer0, peer1, _) = init();
+        let (config, peer0, peer1, _) = init();
         let mut stub = make_stub(&config["peers"][0]);
 
-        peer0.start_rpc_server();
+        let tx0 = peer0.start_rpc_server();
 
         peer0.become_leader(peer0.next_ballot());
         assert!(is_leader(&peer0));
@@ -776,16 +773,16 @@ mod tests {
         assert!(!is_leader(&peer0));
         assert_eq!(1, leader(&peer0));
 
-        peer0.stop_rpc_server();
+        peer0.stop_rpc_server(tx0);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     #[serial]
     async fn commit_commits_and_trims() {
-        let (config, mut peer0, _, _) = init();
+        let (config, peer0, _, _) = init();
         let mut stub = make_stub(&config["peers"][0]);
 
-        peer0.start_rpc_server();
+        let tx0 = peer0.start_rpc_server();
 
         let ballot = peer0.next_ballot();
         let index1 = peer0.multi_paxos.log.advance_last_index();
@@ -821,16 +818,16 @@ mod tests {
         assert_eq!(None, peer0.multi_paxos.log.at(index2));
         assert!(peer0.multi_paxos.log.at(index3).unwrap().is_inprogress());
 
-        peer0.stop_rpc_server();
+        peer0.stop_rpc_server(tx0);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     #[serial]
     async fn prepare_responds_with_correct_instances() {
-        let (config, mut peer0, _, _) = init();
+        let (config, peer0, _, _) = init();
         let mut stub = make_stub(&config["peers"][0]);
 
-        peer0.start_rpc_server();
+        let tx0 = peer0.start_rpc_server();
 
         let ballot = peer0.next_ballot();
 
@@ -878,16 +875,16 @@ mod tests {
         assert_eq!(1, r.instances.len());
         assert_eq!(instance3, r.instances[0]);
 
-        peer0.stop_rpc_server();
+        peer0.stop_rpc_server(tx0);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     #[serial]
     async fn accept_appends_to_log() {
-        let (config, mut peer0, _, _) = init();
+        let (config, peer0, _, _) = init();
         let mut stub = make_stub(&config["peers"][0]);
 
-        peer0.start_rpc_server();
+        let tx0 = peer0.start_rpc_server();
 
         let ballot = peer0.next_ballot();
 
@@ -907,18 +904,18 @@ mod tests {
         assert_eq!(instance1, peer0.multi_paxos.log.at(index1).unwrap());
         assert_eq!(instance2, peer0.multi_paxos.log.at(index2).unwrap());
 
-        peer0.stop_rpc_server();
+        peer0.stop_rpc_server(tx0);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     #[serial]
     async fn prepare_response_with_higher_ballot_changes_leader_to_follower() {
-        let (config, mut peer0, mut peer1, mut peer2) = init();
+        let (config, peer0, peer1, peer2) = init();
         let mut stub1 = make_stub(&config["peers"][1]);
 
-        peer0.start_rpc_server();
-        peer1.start_rpc_server();
-        peer2.start_rpc_server();
+        let tx0 = peer0.start_rpc_server();
+        let tx1 = peer1.start_rpc_server();
+        let tx2 = peer2.start_rpc_server();
 
         let peer0_ballot = peer0.next_ballot();
         peer0.become_leader(peer0_ballot);
@@ -936,20 +933,20 @@ mod tests {
         assert!(!is_leader(&peer0));
         assert_eq!(2, leader(&peer0));
 
-        peer0.stop_rpc_server();
-        peer1.stop_rpc_server();
-        peer2.stop_rpc_server();
+        peer0.stop_rpc_server(tx0);
+        peer1.stop_rpc_server(tx1);
+        peer2.stop_rpc_server(tx2);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     #[serial]
     async fn accept_response_with_higher_ballot_changes_leader_to_follower() {
-        let (config, mut peer0, mut peer1, mut peer2) = init();
+        let (config, peer0, peer1, peer2) = init();
         let mut stub1 = make_stub(&config["peers"][1]);
 
-        peer0.start_rpc_server();
-        peer1.start_rpc_server();
-        peer2.start_rpc_server();
+        let tx0 = peer0.start_rpc_server();
+        let tx1 = peer1.start_rpc_server();
+        let tx2 = peer2.start_rpc_server();
 
         let peer0_ballot = peer0.next_ballot();
         peer0.become_leader(peer0_ballot);
@@ -970,20 +967,20 @@ mod tests {
         assert!(!is_leader(&peer0));
         assert_eq!(2, leader(&peer0));
 
-        peer0.stop_rpc_server();
-        peer1.stop_rpc_server();
-        peer2.stop_rpc_server();
+        peer0.stop_rpc_server(tx0);
+        peer1.stop_rpc_server(tx1);
+        peer2.stop_rpc_server(tx2);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     #[serial]
     async fn commit_response_with_higher_ballot_changes_leader_to_follower() {
-        let (config, mut peer0, mut peer1, mut peer2) = init();
+        let (config, peer0, peer1, peer2) = init();
         let mut stub1 = make_stub(&config["peers"][1]);
 
-        peer0.start_rpc_server();
-        peer1.start_rpc_server();
-        peer2.start_rpc_server();
+        let tx0 = peer0.start_rpc_server();
+        let tx1 = peer1.start_rpc_server();
+        let tx2 = peer2.start_rpc_server();
 
         let peer0_ballot = peer0.next_ballot();
         peer0.become_leader(peer0_ballot);
@@ -1001,17 +998,17 @@ mod tests {
         assert!(!is_leader(&peer0));
         assert_eq!(2, leader(&peer0));
 
-        peer0.stop_rpc_server();
-        peer1.stop_rpc_server();
-        peer2.stop_rpc_server();
+        peer0.stop_rpc_server(tx0);
+        peer1.stop_rpc_server(tx1);
+        peer2.stop_rpc_server(tx2);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     #[serial]
     async fn run_prepare_phase() {
-        let (_, mut peer0, mut peer1, _) = init();
+        let (_, peer0, peer1, _) = init();
 
-        peer0.start_rpc_server();
+        let tx0 = peer0.start_rpc_server();
 
         let peer0_ballot = peer0.next_ballot();
         peer0.become_leader(peer0_ballot);
@@ -1059,7 +1056,7 @@ mod tests {
 
         assert_eq!(None, peer0.multi_paxos.run_prepare_phase(ballot).await);
 
-        peer1.start_rpc_server();
+        let tx1 = peer1.start_rpc_server();
 
         sleep(Duration::from_secs(2)).await;
 
@@ -1073,16 +1070,16 @@ mod tests {
         assert_eq!(peer0_i4.command, log.get(&index4).unwrap().command);
         assert_eq!(&peer1_i5, log.get(&index5).unwrap());
 
-        peer0.stop_rpc_server();
-        peer1.stop_rpc_server();
+        peer0.stop_rpc_server(tx0);
+        peer1.stop_rpc_server(tx1);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     #[serial]
     async fn run_accept_phase() {
-        let (_, mut peer0, mut peer1, peer2) = init();
+        let (_, peer0, peer1, peer2) = init();
 
-        peer0.start_rpc_server();
+        let tx0 = peer0.start_rpc_server();
 
         let ballot = peer0.next_ballot();
         let index = peer0.multi_paxos.log.advance_last_index();
@@ -1098,7 +1095,7 @@ mod tests {
         assert_eq!(None, peer1.multi_paxos.log.at(index));
         assert_eq!(None, peer2.multi_paxos.log.at(index));
 
-        peer1.start_rpc_server();
+        let tx1 = peer1.start_rpc_server();
 
         sleep(Duration::from_secs(2)).await;
 
@@ -1113,17 +1110,17 @@ mod tests {
         assert!(peer1.multi_paxos.log.at(index).unwrap().is_inprogress());
         assert_eq!(None, peer2.multi_paxos.log.at(index));
 
-        peer0.stop_rpc_server();
-        peer1.stop_rpc_server();
+        peer0.stop_rpc_server(tx0);
+        peer1.stop_rpc_server(tx1);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     #[serial]
     async fn run_commit_phase() {
-        let (_, mut peer0, mut peer1, mut peer2) = init();
+        let (_, peer0, peer1, peer2) = init();
 
-        peer0.start_rpc_server();
-        peer1.start_rpc_server();
+        let tx0 = peer0.start_rpc_server();
+        let tx1 = peer1.start_rpc_server();
 
         let peers = vec![&peer0, &peer1, &peer2];
 
@@ -1146,7 +1143,7 @@ mod tests {
         let gle = peer0.multi_paxos.run_commit_phase(ballot, gle).await;
         assert_eq!(0, gle);
 
-        peer2.start_rpc_server();
+        let tx2 = peer2.start_rpc_server();
 
         peer2
             .multi_paxos
@@ -1163,18 +1160,18 @@ mod tests {
         let gle = peer0.multi_paxos.run_commit_phase(ballot, gle).await;
         assert_eq!(3, gle);
 
-        peer0.stop_rpc_server();
-        peer1.stop_rpc_server();
-        peer2.stop_rpc_server();
+        peer0.stop_rpc_server(tx0);
+        peer1.stop_rpc_server(tx1);
+        peer2.stop_rpc_server(tx2);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     #[serial]
     async fn replay() {
-        let (_, mut peer0, mut peer1, _) = init();
+        let (_, peer0, peer1, _) = init();
 
-        peer0.start_rpc_server();
-        peer1.start_rpc_server();
+        let tx0 = peer0.start_rpc_server();
+        let tx1 = peer1.start_rpc_server();
 
         let ballot = peer0.next_ballot();
 
