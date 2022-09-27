@@ -16,8 +16,8 @@ use serde_json::Value as json;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Condvar, Mutex};
-use tokio::sync::{oneshot, oneshot::Sender};
+use std::sync::{Arc, Mutex};
+use tokio::sync::{oneshot, oneshot::Sender, Notify};
 use tokio::time::{sleep, Duration};
 use tonic::transport::{Channel, Endpoint, Server};
 use tonic::{Request, Response, Status};
@@ -65,8 +65,8 @@ struct MultiPaxosInner {
     rpc_peers: Vec<RpcPeer>,
     prepare_task_running: AtomicBool,
     commit_task_running: AtomicBool,
-    cv_leader: Condvar,
-    cv_follower: Condvar,
+    wait_until_leader: Notify,
+    wait_until_follower: Notify,
 }
 
 fn make_stub(port: &json) -> MultiPaxosRpcClient<Channel> {
@@ -104,8 +104,8 @@ impl MultiPaxosInner {
             rpc_peers,
             prepare_task_running: AtomicBool::new(false),
             commit_task_running: AtomicBool::new(false),
-            cv_leader: Condvar::new(),
-            cv_follower: Condvar::new(),
+            wait_until_leader: Notify::new(),
+            wait_until_follower: Notify::new(),
         }
     }
 
@@ -125,7 +125,7 @@ impl MultiPaxosInner {
         );
         *ballot = next_ballot;
         self.ready.store(false, Ordering::Relaxed);
-        self.cv_leader.notify_one();
+        self.wait_until_leader.notify_one();
     }
 
     fn become_follower(&self, ballot: &mut i64, next_ballot: i64) {
@@ -138,7 +138,7 @@ impl MultiPaxosInner {
                 "{} became a follower: ballot: {} -> {}",
                 self.id, *ballot, next_ballot
             );
-            self.cv_follower.notify_one();
+            self.wait_until_follower.notify_one();
         }
         *ballot = next_ballot;
     }
@@ -146,24 +146,6 @@ impl MultiPaxosInner {
     fn ballot(&self) -> (i64, bool) {
         let ballot = self.ballot.lock().unwrap();
         (*ballot, self.ready.load(Ordering::Relaxed))
-    }
-
-    fn wait_until_leader(&self) {
-        let mut ballot = self.ballot.lock().unwrap();
-        while self.commit_task_running.load(Ordering::Relaxed)
-            && !is_leader(*ballot, self.id)
-        {
-            ballot = self.cv_leader.wait(ballot).unwrap();
-        }
-    }
-
-    fn wait_until_follower(&self) {
-        let mut ballot = self.ballot.lock().unwrap();
-        while self.prepare_task_running.load(Ordering::Relaxed)
-            && is_leader(*ballot, self.id)
-        {
-            ballot = self.cv_follower.wait(ballot).unwrap();
-        }
     }
 
     async fn sleep_for_commit_interval(&self) {
@@ -183,7 +165,7 @@ impl MultiPaxosInner {
 
     async fn prepare_task_fn(&self) {
         while self.prepare_task_running.load(Ordering::Relaxed) {
-            self.wait_until_follower();
+            self.wait_until_follower.notified().await;
             while self.prepare_task_running.load(Ordering::Relaxed) {
                 self.sleep_for_random_interval().await;
                 if self.received_commit() {
@@ -201,7 +183,7 @@ impl MultiPaxosInner {
 
     async fn commit_task_fn(&self) {
         while self.commit_task_running.load(Ordering::Relaxed) {
-            self.wait_until_leader();
+            self.wait_until_leader.notified().await;
             let mut gle = self.log.global_last_executed();
             while self.commit_task_running.load(Ordering::Relaxed) {
                 let (ballot, _) = self.ballot();
@@ -544,7 +526,7 @@ impl MultiPaxos {
         self.multi_paxos
             .prepare_task_running
             .store(false, Ordering::Relaxed);
-        self.multi_paxos.cv_follower.notify_one();
+        self.multi_paxos.wait_until_follower.notify_one();
     }
 
     fn start_commit_task(&self) {
@@ -564,7 +546,7 @@ impl MultiPaxos {
         self.multi_paxos
             .commit_task_running
             .store(false, Ordering::Relaxed);
-        self.multi_paxos.cv_leader.notify_one();
+        self.multi_paxos.wait_until_leader.notify_one();
     }
 
     pub async fn replicate(
@@ -1261,7 +1243,8 @@ mod tests {
 
         let peers = vec![&peer0, &peer1, &peer2];
         let leader = one_leader(&peers);
-        assert!(None != leader);
+        assert!(leader.is_some());
+
         let leader = leader.unwrap() as usize;
 
         let result = peers[leader].replicate(&command, 0).await;
