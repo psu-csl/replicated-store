@@ -1,10 +1,6 @@
 mod replicant;
 
-use replicant::kvstore::memkvstore::MemKVStore;
-use replicant::log::Log;
-use replicant::multipaxos::MultiPaxos;
 use replicant::Replicant;
-use std::sync::Arc;
 use tokio::time::{sleep, Duration};
 
 #[tokio::main]
