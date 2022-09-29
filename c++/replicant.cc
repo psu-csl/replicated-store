@@ -14,13 +14,12 @@ using nlohmann::json;
 
 Replicant::Replicant(asio::io_context* io_context, json const& config)
     : id_(config["id"]),
-      num_peers_(config["peers"].size()),
       log_(std::make_unique<kvstore::MemKVStore>()),
       multi_paxos_(&log_, config),
       ip_port_(config["peers"][id_]),
       io_context_(io_context),
       acceptor_(asio::make_strand(*io_context_)),
-      client_manager_(id_, num_peers_, &multi_paxos_) {}
+      client_manager_(id_, config["peers"].size(), &multi_paxos_) {}
 
 void Replicant::Start() {
   multi_paxos_.Start();
