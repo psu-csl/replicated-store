@@ -244,7 +244,7 @@ impl Log {
         log.last_index
     }
 
-    fn stop(&self) {
+    pub fn stop(&self) {
         let mut log = self.log.lock().unwrap();
         log.running = false;
         self.executable.notify_one();
