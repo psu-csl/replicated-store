@@ -288,7 +288,7 @@ impl MultiPaxosInner {
                 Err(_) => (),
             }
             if num_oks > num_peers / 2 {
-                self.log.commit(index);
+                self.log.commit(index).await;
                 return ResultType::Ok;
             }
         }
@@ -793,8 +793,8 @@ mod tests {
         assert!(peer0.multi_paxos.log.at(index2).unwrap().is_committed());
         assert!(peer0.multi_paxos.log.at(index3).unwrap().is_inprogress());
 
-        peer0.multi_paxos.log.execute();
-        peer0.multi_paxos.log.execute();
+        peer0.multi_paxos.log.execute().await;
+        peer0.multi_paxos.log.execute().await;
 
         let r = send_commit(&mut stub, ballot, index2, index2).await;
         assert_eq!(ResponseType::Ok as i32, r.r#type);
@@ -838,8 +838,8 @@ mod tests {
         let r = send_commit(&mut stub, ballot, index2, 0).await;
         assert_eq!(ResponseType::Ok as i32, r.r#type);
 
-        peer0.multi_paxos.log.execute();
-        peer0.multi_paxos.log.execute();
+        peer0.multi_paxos.log.execute().await;
+        peer0.multi_paxos.log.execute().await;
 
         let ballot = peer0.next_ballot();
 
@@ -1120,7 +1120,7 @@ mod tests {
                 peer.multi_paxos
                     .log
                     .append(Instance::committed_get(ballot, index));
-                peer.multi_paxos.log.execute();
+                peer.multi_paxos.log.execute().await;
             }
         }
 
@@ -1140,7 +1140,7 @@ mod tests {
         let gle = peer0.multi_paxos.run_commit_phase(ballot, gle).await;
         assert_eq!(2, gle);
 
-        peer2.multi_paxos.log.execute();
+        peer2.multi_paxos.log.execute().await;
 
         let gle = peer0.multi_paxos.run_commit_phase(ballot, gle).await;
         assert_eq!(3, gle);
