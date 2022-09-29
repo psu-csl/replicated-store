@@ -1,9 +1,12 @@
 use super::kvstore::memkvstore::MemKVStore;
 use super::kvstore::KVStore;
+use futures::future::join_all;
 use std::cmp;
 use std::collections::HashMap;
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Arc, Mutex};
 use std::thread;
+use tokio::sync::Notify;
+use tokio::time::{sleep, Duration};
 
 use super::multipaxos::rpc::Command;
 use super::multipaxos::rpc::{Instance, InstanceState};
@@ -214,16 +217,16 @@ impl LogInner {
 
 pub struct Log {
     log: Mutex<LogInner>,
-    cv_executable: Condvar,
-    cv_committable: Condvar,
+    executable: Notify,
+    committable: Notify,
 }
 
 impl Log {
     pub fn new(kv_store: Box<dyn KVStore + Sync + Send>) -> Self {
         Log {
             log: Mutex::new(LogInner::new(kv_store)),
-            cv_executable: Condvar::new(),
-            cv_committable: Condvar::new(),
+            executable: Notify::new(),
+            committable: Notify::new(),
         }
     }
 
@@ -246,7 +249,7 @@ impl Log {
     fn stop(&self) {
         let mut log = self.log.lock().unwrap();
         log.running = false;
-        self.cv_executable.notify_one();
+        self.executable.notify_one();
     }
 
     pub fn append(&self, instance: Instance) {
@@ -255,38 +258,57 @@ impl Log {
         if i <= log.global_last_executed {
             return;
         }
+        let mut committable = false;
         if log.insert(instance) {
             log.last_index = cmp::max(log.last_index, i);
-            self.cv_committable.notify_all();
+            committable = true;
+        }
+        drop(log);
+        if committable {
+            self.committable.notify_waiters();
         }
     }
 
-    pub fn commit(&self, index: i64) {
+    pub async fn commit(&self, index: i64) {
         assert!(index > 0, "invalid index");
-        let mut log = self.log.lock().unwrap();
-        let mut it = log.map.get_mut(&index);
-        while let None = it {
-            log = self.cv_committable.wait(log).unwrap();
-            it = log.map.get_mut(&index);
+        let mut executable = false;
+        loop {
+            let future = self.committable.notified();
+            {
+                let mut log = self.log.lock().unwrap();
+                let instance = log.map.get_mut(&index);
+                if instance.is_some() {
+                    let instance = instance.unwrap();
+                    if instance.is_inprogress() {
+                        instance.commit();
+                    }
+                    if log.is_executable() {
+                        executable = true;
+                    }
+                    break;
+                }
+            }
+            future.await;
         }
-        let instance = it.unwrap();
-        if instance.is_inprogress() {
-            instance.commit();
-        }
-        if log.is_executable() {
-            self.cv_executable.notify_one();
+        if executable {
+            self.executable.notify_one();
         }
     }
 
-    pub fn execute(&self) -> Option<LogResult> {
-        let mut log = self.log.lock().unwrap();
-        while log.running && !log.is_executable() {
-            log = self.cv_executable.wait(log).unwrap();
+    pub async fn execute(&self) -> Option<LogResult> {
+        loop {
+            let future = self.executable.notified();
+            {
+                let mut log = self.log.lock().unwrap();
+                if !log.running {
+                    return None;
+                }
+                if log.is_executable() {
+                    return Some(log.execute());
+                }
+            }
+            future.await;
         }
-        if !log.running {
-            return None;
-        }
-        Some(log.execute())
     }
 
     pub fn commit_until(&self, leader_last_executed: i64, ballot: i64) {
@@ -306,7 +328,7 @@ impl Log {
             }
         }
         if log.is_executable() {
-            self.cv_executable.notify_one();
+            self.executable.notify_one();
         }
     }
 
@@ -566,52 +588,50 @@ mod tests {
         assert!(log.is_executable());
     }
 
-    #[test]
-    fn commit_before_append() {
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn commit_before_append() {
         let log = Arc::new(Log::new(Box::new(MemKVStore::new())));
         let (get, _, _) = make_commands();
         let ballot = 0;
         let index = log.advance_last_index();
         let instance = Instance::inprogress(ballot, index, &get, 0);
 
-        let commit_thread = {
+        let commit_task = {
             let log = Arc::clone(&log);
-            thread::spawn(move || {
-                log.commit(index);
+            tokio::spawn(async move {
+                log.commit(index).await;
             })
         };
-        thread::yield_now();
-
         log.append(instance);
-        commit_thread.join().unwrap();
+        commit_task.await;
         assert!(log.at(index).unwrap().is_committed());
     }
 
-    #[test]
-    fn append_commit_execute() {
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn append_commit_execute() {
         let log = Arc::new(Log::new(Box::new(MemKVStore::new())));
         let (get, _, _) = make_commands();
         let ballot = 0;
         let index = log.advance_last_index();
         let instance = Instance::inprogress(ballot, index, &get, 0);
 
-        let execute_thread = {
+        let execute_task = {
             let log = Arc::clone(&log);
-            thread::spawn(move || {
-                log.execute();
+            tokio::spawn(async move {
+                log.execute().await;
             })
         };
 
         log.append(instance);
-        log.commit(index);
-        execute_thread.join().unwrap();
+        log.commit(index).await;
+        execute_task.await;
 
         assert!(log.at(index).unwrap().is_executed());
         assert_eq!(index, log.last_executed());
     }
 
-    #[test]
-    fn append_commit_execute_out_of_order() {
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn append_commit_execute_out_of_order() {
         let log = Arc::new(Log::new(Box::new(MemKVStore::new())));
         let (get, _, _) = make_commands();
         let ballot = 0;
@@ -622,12 +642,12 @@ mod tests {
         let index3 = 3;
         let instance3 = Instance::inprogress(ballot, index3, &get, 0);
 
-        let execute_thread = {
+        let execute_task = {
             let log = Arc::clone(&log);
-            thread::spawn(move || {
-                log.execute();
-                log.execute();
-                log.execute();
+            tokio::spawn(async move {
+                log.execute().await;
+                log.execute().await;
+                log.execute().await;
             })
         };
 
@@ -635,11 +655,14 @@ mod tests {
         log.append(instance2);
         log.append(instance3);
 
-        log.commit(index3);
-        log.commit(index2);
-        log.commit(index1);
+        join_all(vec![
+            log.commit(index3),
+            log.commit(index2),
+            log.commit(index1),
+        ])
+        .await;
 
-        execute_thread.join().unwrap();
+        execute_task.await;
 
         assert!(log.at(index1).unwrap().is_executed());
         assert!(log.at(index2).unwrap().is_executed());
@@ -734,8 +757,8 @@ mod tests {
         assert!(!log.at(index4).unwrap().is_committed());
     }
 
-    #[test]
-    fn append_commit_until_execute() {
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn append_commit_until_execute() {
         let log = Arc::new(Log::new(Box::new(MemKVStore::new())));
         let (get, _, _) = make_commands();
         let ballot = 0;
@@ -746,12 +769,12 @@ mod tests {
         let index3 = 3;
         let instance3 = Instance::inprogress(ballot, index3, &get, 0);
 
-        let execute_thread = {
+        let execute_task = {
             let log = Arc::clone(&log);
-            thread::spawn(move || {
-                log.execute();
-                log.execute();
-                log.execute();
+            tokio::spawn(async move {
+                log.execute().await;
+                log.execute().await;
+                log.execute().await;
             })
         };
 
@@ -761,7 +784,7 @@ mod tests {
 
         log.commit_until(index3, ballot);
 
-        execute_thread.join().unwrap();
+        execute_task.await;
 
         assert!(log.at(index1).unwrap().is_executed());
         assert!(log.at(index2).unwrap().is_executed());
@@ -769,8 +792,8 @@ mod tests {
         assert!(!log.is_executable());
     }
 
-    #[test]
-    fn append_commit_until_execute_trim_until() {
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn append_commit_until_execute_trim_until() {
         let log = Arc::new(Log::new(Box::new(MemKVStore::new())));
         let (get, _, _) = make_commands();
         let ballot = 0;
@@ -781,12 +804,12 @@ mod tests {
         let index3 = 3;
         let instance3 = Instance::inprogress(ballot, index3, &get, 0);
 
-        let execute_thread = {
+        let execute_task = {
             let log = Arc::clone(&log);
-            thread::spawn(move || {
-                log.execute();
-                log.execute();
-                log.execute();
+            tokio::spawn(async move {
+                log.execute().await;
+                log.execute().await;
+                log.execute().await;
             })
         };
 
@@ -795,7 +818,7 @@ mod tests {
         log.append(instance3);
 
         log.commit_until(index3, ballot);
-        execute_thread.join().unwrap();
+        execute_task.await;
 
         log.trim_until(index3);
 
@@ -807,8 +830,8 @@ mod tests {
         assert!(!log.is_executable());
     }
 
-    #[test]
-    fn append_at_trimmed_index() {
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn append_at_trimmed_index() {
         let log = Arc::new(Log::new(Box::new(MemKVStore::new())));
         let (get, _, _) = make_commands();
         let ballot = 0;
@@ -817,11 +840,11 @@ mod tests {
         let index2 = 2;
         let instance2 = Instance::inprogress(ballot, index2, &get, 0);
 
-        let execute_thread = {
+        let execute_task = {
             let log = Arc::clone(&log);
-            thread::spawn(move || {
-                log.execute();
-                log.execute();
+            tokio::spawn(async move {
+                log.execute().await;
+                log.execute().await;
             })
         };
 
@@ -829,7 +852,7 @@ mod tests {
         log.append(instance2.clone());
 
         log.commit_until(index2, ballot);
-        execute_thread.join().unwrap();
+        execute_task.await;
 
         log.trim_until(index2);
 
@@ -846,8 +869,8 @@ mod tests {
         assert_eq!(None, log.at(index2));
     }
 
-    #[test]
-    fn instances() {
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn instances() {
         let log = Arc::new(Log::new(Box::new(MemKVStore::new())));
         let (get, _, _) = make_commands();
         let ballot = 0;
@@ -861,11 +884,11 @@ mod tests {
         let expected =
             vec![instance1.clone(), instance2.clone(), instance3.clone()];
 
-        let execute_thread = {
+        let execute_task = {
             let log = Arc::clone(&log);
-            thread::spawn(move || {
-                log.execute();
-                log.execute();
+            tokio::spawn(async move {
+                log.execute().await;
+                log.execute().await;
             })
         };
 
@@ -877,26 +900,25 @@ mod tests {
 
         log.commit_until(index2, ballot);
 
-        execute_thread.join().unwrap();
+        execute_task.await;
 
         log.trim_until(index2);
 
         assert_eq!(&expected[index2 as usize..], log.instances());
     }
 
-    #[test]
-    fn calling_stop_unblocks_executor() {
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn calling_stop_unblocks_executor() {
         let log = Arc::new(Log::new(Box::new(MemKVStore::new())));
 
-        let execute_thread = {
+        let execute_task = {
             let log = Arc::clone(&log);
-            thread::spawn(move || {
-                let r = log.execute();
+            tokio::spawn(async move {
+                let r = log.execute().await;
                 assert_eq!(None, r);
             })
         };
-        thread::yield_now();
         log.stop();
-        execute_thread.join().unwrap();
+        execute_task.await;
     }
 }
