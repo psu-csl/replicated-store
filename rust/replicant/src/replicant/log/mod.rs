@@ -4,9 +4,7 @@ use futures::future::join_all;
 use std::cmp;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use std::thread;
 use tokio::sync::Notify;
-use tokio::time::{sleep, Duration};
 
 use super::multipaxos::rpc::Command;
 use super::multipaxos::rpc::{Instance, InstanceState};
@@ -559,8 +557,8 @@ mod tests {
         assert_eq!(put, log.at(index).unwrap().command.unwrap());
     }
 
-    #[test]
-    fn commit() {
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn commit() {
         let log = Log::new(Box::new(MemKVStore::new()));
         let (get, _, _) = make_commands();
         let ballot = 0;
@@ -575,13 +573,13 @@ mod tests {
         assert!(log.at(index2).unwrap().is_inprogress());
         assert!(!log.is_executable());
 
-        log.commit(index2);
+        log.commit(index2).await;
 
         assert!(log.at(index1).unwrap().is_inprogress());
         assert!(log.at(index2).unwrap().is_committed());
         assert!(!log.is_executable());
 
-        log.commit(index1);
+        log.commit(index1).await;
 
         assert!(log.at(index1).unwrap().is_committed());
         assert!(log.at(index2).unwrap().is_committed());
