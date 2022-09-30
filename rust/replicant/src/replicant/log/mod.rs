@@ -1,6 +1,5 @@
 use super::kvstore::memkvstore::MemKVStore;
-use super::kvstore::KVStore;
-use futures::future::join_all;
+use super::kvstore::{KVStore, KVStoreError};
 use std::cmp;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -9,7 +8,7 @@ use tokio::sync::Notify;
 use super::multipaxos::rpc::Command;
 use super::multipaxos::rpc::{Instance, InstanceState};
 
-type LogResult = (i64, Result<Option<String>, &'static str>);
+type LogResult = (i64, Result<Option<String>, KVStoreError>);
 
 impl Instance {
     pub fn inprogress(
@@ -142,7 +141,7 @@ impl Instance {
     fn execute(
         &mut self,
         store: &mut Box<dyn KVStore + Sync + Send>,
-    ) -> Result<Option<String>, &'static str> {
+    ) -> Result<Option<String>, KVStoreError> {
         self.state = InstanceState::Executed as i32;
         self.command.as_ref().unwrap().execute(store)
     }
@@ -910,7 +909,7 @@ mod tests {
             let log = Arc::clone(&log);
             tokio::spawn(async move {
                 let r = log.execute().await;
-                assert_eq!(None, r);
+                assert!(r.is_none());
             })
         };
         log.stop();

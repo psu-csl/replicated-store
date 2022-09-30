@@ -32,7 +32,7 @@ impl KVStore for MemKVStore {
 mod tests {
     
 
-    use crate::replicant::{multipaxos::rpc::Command, kvstore::NOT_FOUND};
+    use crate::replicant::{multipaxos::rpc::Command, kvstore::KVStoreError};
 
     use super::*;
 
@@ -81,9 +81,9 @@ mod tests {
         let put_key2val2 = Command::put(KEY2, VAL2);
         let put_key1val2 = Command::put(KEY1, VAL2);
 
-        assert_eq!(Err(NOT_FOUND), get_key1.execute(&mut store));
+        assert_eq!(Err(KVStoreError::NotFoundError), get_key1.execute(&mut store));
 
-        assert_eq!(Err(NOT_FOUND), del_key1.execute(&mut store));
+        assert_eq!(Err(KVStoreError::NotFoundError), del_key1.execute(&mut store));
 
         assert_eq!(Ok(None), put_key1val1.execute(&mut store));
         assert_eq!(Ok(Some(VAL1.to_string())), get_key1.execute(&mut store));
@@ -96,7 +96,7 @@ mod tests {
         assert_eq!(Ok(Some(VAL2.to_string())), get_key2.execute(&mut store));
 
         assert_eq!(Ok(None), del_key1.execute(&mut store));
-        assert_eq!(Err(NOT_FOUND), get_key1.execute(&mut store));
+        assert_eq!(Err(KVStoreError::NotFoundError), get_key1.execute(&mut store));
         assert_eq!(Ok(Some(VAL2.to_string())), get_key2.execute(&mut store));
     }
 }
