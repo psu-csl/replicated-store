@@ -1,3 +1,5 @@
+#![warn(clippy::pedantic)]
+
 mod replicant;
 
 use replicant::Replicant;

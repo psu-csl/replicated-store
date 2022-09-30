@@ -1,4 +1,4 @@
-use super::*;
+use super::KVStore;
 use std::collections::HashMap;
 
 pub struct MemKVStore {
@@ -15,10 +15,7 @@ impl MemKVStore {
 
 impl KVStore for MemKVStore {
     fn get(&self, key: &str) -> Option<String> {
-        match self.map.get(key) {
-            Some(value) => Some(value.clone()),
-            None => None,
-        }
+        self.map.get(key).cloned()
     }
 
     fn put(&mut self, key: &str, value: &str) -> bool {
@@ -27,15 +24,16 @@ impl KVStore for MemKVStore {
     }
 
     fn del(&mut self, key: &str) -> bool {
-        match self.map.remove(key) {
-            Some(_) => true,
-            None => false,
-        }
+        self.map.remove(key).is_some()
     }
 }
 
 #[cfg(test)]
 mod tests {
+    
+
+    use crate::replicant::{multipaxos::rpc::Command, kvstore::NOT_FOUND};
+
     use super::*;
 
     const KEY1: &str = "foo";

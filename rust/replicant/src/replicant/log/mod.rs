@@ -136,7 +136,7 @@ impl Instance {
     }
 
     pub fn commit(&mut self) {
-        self.state = InstanceState::Committed as i32
+        self.state = InstanceState::Committed as i32;
     }
 
     fn execute(
@@ -153,7 +153,7 @@ pub type MapLog = HashMap<i64, Instance>;
 
 pub fn insert(map_log: &mut MapLog, instance: Instance) -> bool {
     let it = map_log.get(&instance.index);
-    if let None = it {
+    if it.is_none() {
         map_log.insert(instance.index, instance);
         return true;
     }
@@ -189,7 +189,7 @@ impl LogInner {
             last_index: 0,
             last_executed: 0,
             global_last_executed: 0,
-            kv_store: kv_store,
+            kv_store,
         }
     }
 
@@ -316,13 +316,13 @@ impl Log {
         let mut log = self.log.lock().unwrap();
         for i in log.last_executed + 1..=leader_last_executed {
             let it = log.map.get_mut(&i);
-            if let None = it {
+            if let Some(instance) = it {
+                assert!(ballot >= instance.ballot, "commit_until case 2");
+                if instance.ballot == ballot {
+                    instance.commit();
+                }
+            } else {
                 break;
-            }
-            let instance = it.unwrap();
-            assert!(ballot >= instance.ballot, "commit_until case 2");
-            if instance.ballot == ballot {
-                instance.commit();
             }
         }
         if log.is_executable() {
@@ -357,10 +357,7 @@ impl Log {
 
     pub fn at(&self, index: i64) -> Option<Instance> {
         let log = self.log.lock().unwrap();
-        match log.map.get(&index) {
-            Some(instance) => Some(instance.clone()),
-            None => None,
-        }
+        log.map.get(&index).cloned()
     }
 }
 
