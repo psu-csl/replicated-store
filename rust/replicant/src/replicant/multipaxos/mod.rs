@@ -16,8 +16,9 @@ use serde_json::Value as json;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
-pub use std::sync::{Arc, Mutex};
-use tokio::sync::{oneshot, oneshot::Sender, Notify};
+use std::sync::{Arc, Mutex};
+use tokio::sync::oneshot::{self, Sender};
+use tokio::sync::Notify;
 use tokio::time::{sleep, Duration};
 use tonic::transport::{Channel, Endpoint, Server};
 use tonic::{Request, Response, Status};
@@ -472,8 +473,8 @@ impl MultiPaxos {
         self.start_rpc_server()
     }
 
-    pub fn stop(&self, tx: Sender<()>) {
-        self.stop_rpc_server(tx);
+    pub fn stop(&self, shutdown_send: Sender<()>) {
+        self.stop_rpc_server(shutdown_send);
         self.stop_commit_task();
         self.stop_prepare_task();
     }
@@ -484,18 +485,18 @@ impl MultiPaxos {
             self.multi_paxos.id, self.multi_paxos.port
         );
 
-        let (tx, rx) = oneshot::channel();
+        let (shutdown_send, shutdown_recv) = oneshot::channel();
         let port = self.multi_paxos.port;
         let service =
             MultiPaxosRpcServer::new(RpcWrapper(Arc::clone(&self.multi_paxos)));
         tokio::spawn(async move {
             Server::builder()
                 .add_service(service)
-                .serve_with_shutdown(port, rx.map(drop))
+                .serve_with_shutdown(port, shutdown_recv.map(drop))
                 .await
                 .unwrap();
         });
-        tx
+        shutdown_send
     }
 
     fn stop_rpc_server(&self, tx: Sender<()>) {
@@ -697,7 +698,7 @@ mod tests {
         let (config, peer0, peer1, _) = init();
         let mut stub = make_stub(&config["peers"][0]);
 
-        let tx0 = peer0.start_rpc_server();
+        let shutdown_send0 = peer0.start_rpc_server();
 
         peer0.become_leader(peer0.next_ballot());
         peer0.become_leader(peer0.next_ballot());
@@ -721,7 +722,7 @@ mod tests {
         assert_eq!(ResponseType::Reject as i32, r.r#type);
         assert!(is_leader(&peer0));
 
-        peer0.stop_rpc_server(tx0);
+        peer0.stop_rpc_server(shutdown_send0);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -730,7 +731,7 @@ mod tests {
         let (config, peer0, peer1, _) = init();
         let mut stub = make_stub(&config["peers"][0]);
 
-        let tx0 = peer0.start_rpc_server();
+        let shutdown_send0 = peer0.start_rpc_server();
 
         peer0.become_leader(peer0.next_ballot());
         assert!(is_leader(&peer0));
@@ -758,7 +759,7 @@ mod tests {
         assert!(!is_leader(&peer0));
         assert_eq!(1, leader(&peer0));
 
-        peer0.stop_rpc_server(tx0);
+        peer0.stop_rpc_server(shutdown_send0);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -767,7 +768,7 @@ mod tests {
         let (config, peer0, _, _) = init();
         let mut stub = make_stub(&config["peers"][0]);
 
-        let tx0 = peer0.start_rpc_server();
+        let shutdown_send0 = peer0.start_rpc_server();
 
         let ballot = peer0.next_ballot();
         let index1 = peer0.multi_paxos.log.advance_last_index();
@@ -803,7 +804,7 @@ mod tests {
         assert_eq!(None, peer0.multi_paxos.log.at(index2));
         assert!(peer0.multi_paxos.log.at(index3).unwrap().is_inprogress());
 
-        peer0.stop_rpc_server(tx0);
+        peer0.stop_rpc_server(shutdown_send0);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -812,7 +813,7 @@ mod tests {
         let (config, peer0, _, _) = init();
         let mut stub = make_stub(&config["peers"][0]);
 
-        let tx0 = peer0.start_rpc_server();
+        let shutdown_send0 = peer0.start_rpc_server();
 
         let ballot = peer0.next_ballot();
 
@@ -860,7 +861,7 @@ mod tests {
         assert_eq!(1, r.instances.len());
         assert_eq!(instance3, r.instances[0]);
 
-        peer0.stop_rpc_server(tx0);
+        peer0.stop_rpc_server(shutdown_send0);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -869,7 +870,7 @@ mod tests {
         let (config, peer0, _, _) = init();
         let mut stub = make_stub(&config["peers"][0]);
 
-        let tx0 = peer0.start_rpc_server();
+        let shutdown_send0 = peer0.start_rpc_server();
 
         let ballot = peer0.next_ballot();
 
@@ -889,7 +890,7 @@ mod tests {
         assert_eq!(instance1, peer0.multi_paxos.log.at(index1).unwrap());
         assert_eq!(instance2, peer0.multi_paxos.log.at(index2).unwrap());
 
-        peer0.stop_rpc_server(tx0);
+        peer0.stop_rpc_server(shutdown_send0);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -898,9 +899,9 @@ mod tests {
         let (config, peer0, peer1, peer2) = init();
         let mut stub1 = make_stub(&config["peers"][1]);
 
-        let tx0 = peer0.start_rpc_server();
-        let tx1 = peer1.start_rpc_server();
-        let tx2 = peer2.start_rpc_server();
+        let shutdown_send0 = peer0.start_rpc_server();
+        let shutdown_send1 = peer1.start_rpc_server();
+        let shutdown_send2 = peer2.start_rpc_server();
 
         let peer0_ballot = peer0.next_ballot();
         peer0.become_leader(peer0_ballot);
@@ -918,9 +919,9 @@ mod tests {
         assert!(!is_leader(&peer0));
         assert_eq!(2, leader(&peer0));
 
-        peer0.stop_rpc_server(tx0);
-        peer1.stop_rpc_server(tx1);
-        peer2.stop_rpc_server(tx2);
+        peer0.stop_rpc_server(shutdown_send0);
+        peer1.stop_rpc_server(shutdown_send1);
+        peer2.stop_rpc_server(shutdown_send2);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -929,9 +930,9 @@ mod tests {
         let (config, peer0, peer1, peer2) = init();
         let mut stub1 = make_stub(&config["peers"][1]);
 
-        let tx0 = peer0.start_rpc_server();
-        let tx1 = peer1.start_rpc_server();
-        let tx2 = peer2.start_rpc_server();
+        let shutdown_send0 = peer0.start_rpc_server();
+        let shutdown_send1 = peer1.start_rpc_server();
+        let shutdown_send2 = peer2.start_rpc_server();
 
         let peer0_ballot = peer0.next_ballot();
         peer0.become_leader(peer0_ballot);
@@ -952,9 +953,9 @@ mod tests {
         assert!(!is_leader(&peer0));
         assert_eq!(2, leader(&peer0));
 
-        peer0.stop_rpc_server(tx0);
-        peer1.stop_rpc_server(tx1);
-        peer2.stop_rpc_server(tx2);
+        peer0.stop_rpc_server(shutdown_send0);
+        peer1.stop_rpc_server(shutdown_send1);
+        peer2.stop_rpc_server(shutdown_send2);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -963,9 +964,9 @@ mod tests {
         let (config, peer0, peer1, peer2) = init();
         let mut stub1 = make_stub(&config["peers"][1]);
 
-        let tx0 = peer0.start_rpc_server();
-        let tx1 = peer1.start_rpc_server();
-        let tx2 = peer2.start_rpc_server();
+        let shutdown_send0 = peer0.start_rpc_server();
+        let shutdown_send1 = peer1.start_rpc_server();
+        let shutdown_send2 = peer2.start_rpc_server();
 
         let peer0_ballot = peer0.next_ballot();
         peer0.become_leader(peer0_ballot);
@@ -983,9 +984,9 @@ mod tests {
         assert!(!is_leader(&peer0));
         assert_eq!(2, leader(&peer0));
 
-        peer0.stop_rpc_server(tx0);
-        peer1.stop_rpc_server(tx1);
-        peer2.stop_rpc_server(tx2);
+        peer0.stop_rpc_server(shutdown_send0);
+        peer1.stop_rpc_server(shutdown_send1);
+        peer2.stop_rpc_server(shutdown_send2);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -993,7 +994,7 @@ mod tests {
     async fn run_prepare_phase() {
         let (_, peer0, peer1, _) = init();
 
-        let tx0 = peer0.start_rpc_server();
+        let shutdown_send0 = peer0.start_rpc_server();
 
         let peer0_ballot = peer0.next_ballot();
         peer0.become_leader(peer0_ballot);
@@ -1041,7 +1042,7 @@ mod tests {
 
         assert_eq!(None, peer0.multi_paxos.run_prepare_phase(ballot).await);
 
-        let tx1 = peer1.start_rpc_server();
+        let shutdown_send1 = peer1.start_rpc_server();
 
         sleep(Duration::from_secs(2)).await;
 
@@ -1055,8 +1056,8 @@ mod tests {
         assert_eq!(peer0_i4.command, log.get(&index4).unwrap().command);
         assert_eq!(&peer1_i5, log.get(&index5).unwrap());
 
-        peer0.stop_rpc_server(tx0);
-        peer1.stop_rpc_server(tx1);
+        peer0.stop_rpc_server(shutdown_send0);
+        peer1.stop_rpc_server(shutdown_send1);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -1064,7 +1065,7 @@ mod tests {
     async fn run_accept_phase() {
         let (_, peer0, peer1, peer2) = init();
 
-        let tx0 = peer0.start_rpc_server();
+        let shutdown_send0 = peer0.start_rpc_server();
 
         let ballot = peer0.next_ballot();
         let index = peer0.multi_paxos.log.advance_last_index();
@@ -1080,7 +1081,7 @@ mod tests {
         assert_eq!(None, peer1.multi_paxos.log.at(index));
         assert_eq!(None, peer2.multi_paxos.log.at(index));
 
-        let tx1 = peer1.start_rpc_server();
+        let shutdown_send1 = peer1.start_rpc_server();
 
         sleep(Duration::from_secs(2)).await;
 
@@ -1095,8 +1096,8 @@ mod tests {
         assert!(peer1.multi_paxos.log.at(index).unwrap().is_inprogress());
         assert_eq!(None, peer2.multi_paxos.log.at(index));
 
-        peer0.stop_rpc_server(tx0);
-        peer1.stop_rpc_server(tx1);
+        peer0.stop_rpc_server(shutdown_send0);
+        peer1.stop_rpc_server(shutdown_send1);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -1104,8 +1105,8 @@ mod tests {
     async fn run_commit_phase() {
         let (_, peer0, peer1, peer2) = init();
 
-        let tx0 = peer0.start_rpc_server();
-        let tx1 = peer1.start_rpc_server();
+        let shutdown_send0 = peer0.start_rpc_server();
+        let shutdown_send1 = peer1.start_rpc_server();
 
         let peers = vec![&peer0, &peer1, &peer2];
 
@@ -1128,7 +1129,7 @@ mod tests {
         let gle = peer0.multi_paxos.run_commit_phase(ballot, gle).await;
         assert_eq!(0, gle);
 
-        let tx2 = peer2.start_rpc_server();
+        let shutdown_send2 = peer2.start_rpc_server();
 
         peer2
             .multi_paxos
@@ -1145,9 +1146,9 @@ mod tests {
         let gle = peer0.multi_paxos.run_commit_phase(ballot, gle).await;
         assert_eq!(3, gle);
 
-        peer0.stop_rpc_server(tx0);
-        peer1.stop_rpc_server(tx1);
-        peer2.stop_rpc_server(tx2);
+        peer0.stop_rpc_server(shutdown_send0);
+        peer1.stop_rpc_server(shutdown_send1);
+        peer2.stop_rpc_server(shutdown_send2);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -1155,8 +1156,8 @@ mod tests {
     async fn replay() {
         let (_, peer0, peer1, _) = init();
 
-        let tx0 = peer0.start_rpc_server();
-        let tx1 = peer1.start_rpc_server();
+        let shutdown_send0 = peer0.start_rpc_server();
+        let shutdown_send1 = peer1.start_rpc_server();
 
         let ballot = peer0.next_ballot();
 
@@ -1203,8 +1204,8 @@ mod tests {
         assert_eq!(i2, peer1.multi_paxos.log.at(index2).unwrap());
         assert_eq!(i3, peer1.multi_paxos.log.at(index3).unwrap());
 
-        peer0.stop_rpc_server(tx0);
-        peer1.stop_rpc_server(tx1);
+        peer0.stop_rpc_server(shutdown_send0);
+        peer1.stop_rpc_server(shutdown_send1);
     }
 
     fn one_leader(peers: &Vec<&MultiPaxos>) -> Option<i64> {
@@ -1228,7 +1229,7 @@ mod tests {
     async fn replicate() {
         let (config, peer0, peer1, peer2) = init();
 
-        let tx0 = peer0.start();
+        let shutdown_send0 = peer0.start();
 
         sleep(Duration::from_secs(1)).await;
 
@@ -1236,8 +1237,8 @@ mod tests {
         let result = peer0.replicate(&command, 0).await;
         assert_eq!(ResultType::Retry, result);
 
-        let tx1 = peer1.start();
-        let tx2 = peer2.start();
+        let shutdown_send1 = peer1.start();
+        let shutdown_send2 = peer2.start();
 
         let commit_interval = config["commit_interval"].as_u64().unwrap();
         let commit_interval_3x = 3 * commit_interval;
@@ -1258,8 +1259,8 @@ mod tests {
         let result = peers[nonleader].replicate(&command, 0).await;
         assert!(ResultType::SomeoneElseLeader(leader as i64) == result);
 
-        peer0.stop(tx0);
-        peer1.stop(tx1);
-        peer2.stop(tx2);
+        peer0.stop(shutdown_send0);
+        peer1.stop(shutdown_send1);
+        peer2.stop(shutdown_send2);
     }
 }
