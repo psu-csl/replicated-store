@@ -65,8 +65,8 @@ struct MultiPaxosInner {
     rpc_peers: Vec<RpcPeer>,
     prepare_task_running: AtomicBool,
     commit_task_running: AtomicBool,
-    wait_until_leader: Notify,
-    wait_until_follower: Notify,
+    became_leader: Notify,
+    became_follower: Notify,
 }
 
 fn make_stub(port: &json) -> MultiPaxosRpcClient<Channel> {
@@ -104,8 +104,8 @@ impl MultiPaxosInner {
             rpc_peers,
             prepare_task_running: AtomicBool::new(false),
             commit_task_running: AtomicBool::new(false),
-            wait_until_leader: Notify::new(),
-            wait_until_follower: Notify::new(),
+            became_leader: Notify::new(),
+            became_follower: Notify::new(),
         }
     }
 
@@ -125,7 +125,7 @@ impl MultiPaxosInner {
         );
         *ballot = next_ballot;
         self.ready.store(false, Ordering::Relaxed);
-        self.wait_until_leader.notify_one();
+        self.became_leader.notify_one();
     }
 
     fn become_follower(&self, ballot: &mut i64, next_ballot: i64) {
@@ -138,7 +138,7 @@ impl MultiPaxosInner {
                 "{} became a follower: ballot: {} -> {}",
                 self.id, *ballot, next_ballot
             );
-            self.wait_until_follower.notify_one();
+            self.became_follower.notify_one();
         }
         *ballot = next_ballot;
     }
@@ -165,7 +165,7 @@ impl MultiPaxosInner {
 
     async fn prepare_task_fn(&self) {
         while self.prepare_task_running.load(Ordering::Relaxed) {
-            self.wait_until_follower.notified().await;
+            self.became_follower.notified().await;
             while self.prepare_task_running.load(Ordering::Relaxed) {
                 self.sleep_for_random_interval().await;
                 if self.received_commit() {
@@ -183,7 +183,7 @@ impl MultiPaxosInner {
 
     async fn commit_task_fn(&self) {
         while self.commit_task_running.load(Ordering::Relaxed) {
-            self.wait_until_leader.notified().await;
+            self.became_leader.notified().await;
             let mut gle = self.log.global_last_executed();
             while self.commit_task_running.load(Ordering::Relaxed) {
                 let (ballot, _) = self.ballot();
@@ -513,7 +513,7 @@ impl MultiPaxos {
             .store(true, Ordering::Relaxed);
         let multi_paxos = self.multi_paxos.clone();
         tokio::spawn(async move {
-            multi_paxos.wait_until_follower.notify_one();
+            multi_paxos.became_follower.notify_one();
             multi_paxos.prepare_task_fn().await;
         });
     }
@@ -527,7 +527,7 @@ impl MultiPaxos {
         self.multi_paxos
             .prepare_task_running
             .store(false, Ordering::Relaxed);
-        self.multi_paxos.wait_until_follower.notify_one();
+        self.multi_paxos.became_follower.notify_one();
     }
 
     fn start_commit_task(&self) {
@@ -547,7 +547,7 @@ impl MultiPaxos {
         self.multi_paxos
             .commit_task_running
             .store(false, Ordering::Relaxed);
-        self.multi_paxos.wait_until_leader.notify_one();
+        self.multi_paxos.became_leader.notify_one();
     }
 
     pub async fn replicate(
