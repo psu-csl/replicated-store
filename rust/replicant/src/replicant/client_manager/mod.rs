@@ -1,5 +1,4 @@
 use crate::replicant::multipaxos::MultiPaxos;
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::str;
@@ -65,13 +64,12 @@ impl ClientManagerInner {
         id
     }
 
-    fn start(&self, write_half: OwnedWriteHalf) -> i64 {
+    fn insert(&self, write_half: OwnedWriteHalf) -> i64 {
         let id = self.next_client_id();
         let mut clients = self.clients.lock().unwrap();
         let v = clients.insert(id, write_half);
         drop(clients);
         assert!(v.is_none());
-        println!("client_manager started client {}", id);
         id
     }
 
@@ -102,13 +100,14 @@ impl ClientManager {
 
     pub fn start(&self, client: TcpStream, multi_paxos: Arc<MultiPaxos>) {
         let (read_half, write_half) = client.into_split();
-        let id = self.client_manager.start(write_half);
+        let id = self.client_manager.insert(write_half);
         let client_manager = self.client_manager.clone();
         tokio::spawn(async move {
             Client::new(id, read_half, client_manager, multi_paxos)
                 .start()
                 .await;
         });
+        println!("client_manager started client {}", id);
     }
 
     fn stop_all(&self) {
