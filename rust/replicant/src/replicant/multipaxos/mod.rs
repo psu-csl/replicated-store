@@ -473,8 +473,8 @@ impl MultiPaxos {
         self.start_rpc_server()
     }
 
-    pub fn stop(&self, shutdown_send: Sender<()>) {
-        self.stop_rpc_server(shutdown_send);
+    pub fn stop(&self, shutdown: Sender<()>) {
+        self.stop_rpc_server(shutdown);
         self.stop_commit_task();
         self.stop_prepare_task();
     }
@@ -499,12 +499,12 @@ impl MultiPaxos {
         shutdown_send
     }
 
-    fn stop_rpc_server(&self, tx: Sender<()>) {
+    fn stop_rpc_server(&self, shutdown: Sender<()>) {
         info!(
             "{} stopping rpc server at {}",
             self.multi_paxos.id, self.multi_paxos.port
         );
-        tx.send(()).unwrap();
+        shutdown.send(()).unwrap();
     }
 
     fn start_prepare_task(&self) {

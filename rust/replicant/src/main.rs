@@ -19,7 +19,7 @@ async fn main() {
     let config = serde_json::from_str(str).unwrap();
 
     let replicant = Replicant::new(&config);
-    let tx = replicant.start();
+    let shutdown = replicant.start();
     sleep(Duration::from_millis(10000)).await;
-    replicant.stop(tx);
+    replicant.stop(shutdown);
 }
