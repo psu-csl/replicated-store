@@ -1,5 +1,6 @@
 use super::kvstore::memkvstore::MemKVStore;
 use super::kvstore::{KVStore, KVStoreError};
+use futures::future::join_all;
 use std::cmp;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
