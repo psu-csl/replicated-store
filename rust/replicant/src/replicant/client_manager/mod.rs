@@ -110,7 +110,7 @@ impl ClientManager {
         println!("client_manager started client {}", id);
     }
 
-    fn stop_all(&self) {
+    pub fn stop_all(&self) {
         self.client_manager.stop_all();
     }
 }
