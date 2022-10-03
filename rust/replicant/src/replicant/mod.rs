@@ -98,19 +98,6 @@ impl Replicant {
         self.replicant.multi_paxos.stop(shutdown.multi_paxos);
     }
 
-    fn start_executor_task(&self) {
-        info!("{} starting executor task", self.replicant.id);
-        let replicant = self.replicant.clone();
-        tokio::spawn(async move {
-            replicant.executor_task_fn().await;
-        });
-    }
-
-    fn stop_executor_task(&self) {
-        info!("{} stopping executor task", self.replicant.id);
-        self.replicant.log.stop();
-    }
-
     fn start_server_task(&self) -> Sender<()> {
         info!("{} starting server task", self.replicant.id);
         let (shutdown_send, shutdown_recv) = oneshot::channel();
@@ -124,5 +111,18 @@ impl Replicant {
     fn stop_server_task(&self, shutdown: Sender<()>) {
         info!("{} stopping server task", self.replicant.id);
         shutdown.send(()).unwrap();
+    }
+
+    fn start_executor_task(&self) {
+        info!("{} starting executor task", self.replicant.id);
+        let replicant = self.replicant.clone();
+        tokio::spawn(async move {
+            replicant.executor_task_fn().await;
+        });
+    }
+
+    fn stop_executor_task(&self) {
+        info!("{} stopping executor task", self.replicant.id);
+        self.replicant.log.stop();
     }
 }
