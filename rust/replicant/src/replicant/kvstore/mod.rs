@@ -1,9 +1,17 @@
 pub mod memkvstore;
 
-pub const NOT_FOUND: &str = "key not found";
-pub const PUT_FAILED: &str = "put failed";
+
+use thiserror::Error;
 
 use super::multipaxos::rpc::{Command, CommandType};
+
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum KVStoreError {
+    #[error("key not found")]
+    NotFoundError,
+    #[error("put failed")]
+    PutFailedError,
+}
 
 pub trait KVStore {
     fn get(&self, key: &str) -> Option<String>;
@@ -39,24 +47,24 @@ impl Command {
     pub fn execute(
         &self,
         store: &mut Box<dyn KVStore + Sync + Send>,
-    ) -> Result<Option<String>, &'static str> {
+    ) -> Result<Option<String>, KVStoreError> {
         match CommandType::from_i32(self.r#type).unwrap() {
             CommandType::Get => match store.get(&self.key) {
                 Some(value) => Ok(Some(value)),
-                None => Err(NOT_FOUND),
+                None => Err(KVStoreError::NotFoundError),
             },
             CommandType::Put => {
                 if store.put(&self.key, &self.value) {
                     Ok(None)
                 } else {
-                    Err(PUT_FAILED)
+                    Err(KVStoreError::PutFailedError)
                 }
             }
             CommandType::Del => {
                 if store.del(&self.key) {
                     Ok(None)
                 } else {
-                    Err(NOT_FOUND)
+                    Err(KVStoreError::NotFoundError)
                 }
             }
         }

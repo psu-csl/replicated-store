@@ -78,7 +78,7 @@ pub struct Shutdown {
 impl Replicant {
     pub fn new(config: &json) -> Self {
         Self {
-            replicant: Arc::new(ReplicantInner::new(&config)),
+            replicant: Arc::new(ReplicantInner::new(config)),
         }
     }
 

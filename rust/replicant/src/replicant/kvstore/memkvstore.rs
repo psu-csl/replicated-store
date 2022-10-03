@@ -1,4 +1,4 @@
-use super::*;
+use super::KVStore;
 use std::collections::HashMap;
 
 pub struct MemKVStore {
@@ -15,10 +15,7 @@ impl MemKVStore {
 
 impl KVStore for MemKVStore {
     fn get(&self, key: &str) -> Option<String> {
-        match self.map.get(key) {
-            Some(value) => Some(value.clone()),
-            None => None,
-        }
+        self.map.get(key).cloned()
     }
 
     fn put(&mut self, key: &str, value: &str) -> bool {
@@ -27,15 +24,16 @@ impl KVStore for MemKVStore {
     }
 
     fn del(&mut self, key: &str) -> bool {
-        match self.map.remove(key) {
-            Some(_) => true,
-            None => false,
-        }
+        self.map.remove(key).is_some()
     }
 }
 
 #[cfg(test)]
 mod tests {
+    
+
+    use crate::replicant::{multipaxos::rpc::Command, kvstore::KVStoreError};
+
     use super::*;
 
     const KEY1: &str = "foo";
@@ -83,9 +81,9 @@ mod tests {
         let put_key2val2 = Command::put(KEY2, VAL2);
         let put_key1val2 = Command::put(KEY1, VAL2);
 
-        assert_eq!(Err(NOT_FOUND), get_key1.execute(&mut store));
+        assert_eq!(Err(KVStoreError::NotFoundError), get_key1.execute(&mut store));
 
-        assert_eq!(Err(NOT_FOUND), del_key1.execute(&mut store));
+        assert_eq!(Err(KVStoreError::NotFoundError), del_key1.execute(&mut store));
 
         assert_eq!(Ok(None), put_key1val1.execute(&mut store));
         assert_eq!(Ok(Some(VAL1.to_string())), get_key1.execute(&mut store));
@@ -98,7 +96,7 @@ mod tests {
         assert_eq!(Ok(Some(VAL2.to_string())), get_key2.execute(&mut store));
 
         assert_eq!(Ok(None), del_key1.execute(&mut store));
-        assert_eq!(Err(NOT_FOUND), get_key1.execute(&mut store));
+        assert_eq!(Err(KVStoreError::NotFoundError), get_key1.execute(&mut store));
         assert_eq!(Ok(Some(VAL2.to_string())), get_key2.execute(&mut store));
     }
 }

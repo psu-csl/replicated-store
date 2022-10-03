@@ -43,7 +43,7 @@ fn is_someone_else_leader(ballot: i64, id: i64) -> bool {
     !is_leader(ballot, id) && leader(ballot) < MAX_NUM_PEERS
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Eq, Debug)]
 pub enum ResultType {
     Ok,
     Retry,
@@ -201,9 +201,9 @@ impl MultiPaxosInner {
         let num_peers = self.rpc_peers.len();
         let mut responses = FuturesUnordered::new();
 
-        for peer in self.rpc_peers.iter() {
+        self.rpc_peers.iter().for_each(|peer| {
             let request = Request::new(PrepareRequest {
-                ballot: ballot,
+                ballot,
                 sender: self.id,
             });
             let stub = Arc::clone(&peer.stub);
@@ -212,29 +212,26 @@ impl MultiPaxosInner {
                 stub.prepare(request).await
             });
             info!("{} sent prepare request to {}", self.id, peer.id);
-        }
+        });
 
         let mut num_oks = 0;
         let mut log = MapLog::new();
 
         while let Some(response) = responses.next().await {
-            match response {
-                Ok(response) => {
-                    let response = response.into_inner();
-                    if response.r#type == ResponseType::Ok as i32 {
-                        num_oks += 1;
-                        for instance in response.instances {
-                            insert(&mut log, instance);
-                        }
-                    } else {
-                        let mut ballot = self.ballot.lock().unwrap();
-                        if response.ballot > *ballot {
-                            self.become_follower(&mut *ballot, response.ballot);
-                            break;
-                        }
+            if let Ok(response) = response {
+                let response = response.into_inner();
+                if response.r#type == ResponseType::Ok as i32 {
+                    num_oks += 1;
+                    for instance in response.instances {
+                        insert(&mut log, instance);
+                    }
+                } else {
+                    let mut ballot = self.ballot.lock().unwrap();
+                    if response.ballot > *ballot {
+                        self.become_follower(&mut *ballot, response.ballot);
+                        break;
                     }
                 }
-                Err(_) => (),
             }
             if num_oks > num_peers / 2 {
                 return Some(log);
@@ -253,7 +250,7 @@ impl MultiPaxosInner {
         let num_peers = self.rpc_peers.len();
         let mut responses = FuturesUnordered::new();
 
-        for peer in self.rpc_peers.iter() {
+        self.rpc_peers.iter().for_each(|peer| {
             let request = Request::new(AcceptRequest {
                 instance: Some(Instance::inprogress(
                     ballot, index, command, client_id,
@@ -266,27 +263,24 @@ impl MultiPaxosInner {
                 stub.accept(request).await
             });
             info!("{} sent accept request to {}", self.id, peer.id);
-        }
+        });
 
         let mut num_oks = 0;
         let mut current_leader = self.id;
 
-        while let Some(response) = responses.next().await {
-            match response {
-                Ok(response) => {
-                    let response = response.into_inner();
-                    if response.r#type == ResponseType::Ok as i32 {
-                        num_oks += 1;
-                    } else {
-                        let mut ballot = self.ballot.lock().unwrap();
-                        if response.ballot > *ballot {
-                            self.become_follower(&mut *ballot, response.ballot);
-                            current_leader = leader(*ballot);
-                            break;
-                        }
+        while let Some(response_result) = responses.next().await {
+            if let Ok(response) = response_result {
+                let accept_response = response.into_inner();
+                if accept_response.r#type == ResponseType::Ok as i32 {
+                    num_oks += 1;
+                } else {
+                    let mut ballot = self.ballot.lock().unwrap();
+                    if accept_response.ballot > *ballot {
+                        self.become_follower(&mut *ballot, accept_response.ballot);
+                        current_leader = leader(*ballot);
+                        break;
                     }
                 }
-                Err(_) => (),
             }
             if num_oks > num_peers / 2 {
                 self.log.commit(index).await;
@@ -308,11 +302,11 @@ impl MultiPaxosInner {
         let mut responses = FuturesUnordered::new();
         let mut min_last_executed = self.log.last_executed();
 
-        for peer in self.rpc_peers.iter() {
+        self.rpc_peers.iter().for_each(|peer| {
             let request = Request::new(CommitRequest {
-                ballot: ballot,
+                ballot,
                 last_executed: min_last_executed,
-                global_last_executed: global_last_executed,
+                global_last_executed,
                 sender: self.id,
             });
             let stub = Arc::clone(&peer.stub);
@@ -321,28 +315,25 @@ impl MultiPaxosInner {
                 stub.commit(request).await
             });
             info!("{} sent commit request to {}", self.id, peer.id);
-        }
+        });
 
         let mut num_oks = 0;
 
-        while let Some(response) = responses.next().await {
-            match response {
-                Ok(response) => {
-                    let response = response.into_inner();
-                    if response.r#type == ResponseType::Ok as i32 {
-                        num_oks += 1;
-                        if response.last_executed < min_last_executed {
-                            min_last_executed = response.last_executed;
-                        }
-                    } else {
-                        let mut ballot = self.ballot.lock().unwrap();
-                        if response.ballot > *ballot {
-                            self.become_follower(&mut *ballot, response.ballot);
-                            break;
-                        }
+        while let Some(response_result) = responses.next().await {
+            if let Ok(response) = response_result {
+                let commit_response = response.into_inner();
+                if commit_response.r#type == ResponseType::Ok as i32 {
+                    num_oks += 1;
+                    if commit_response.last_executed < min_last_executed {
+                        min_last_executed = commit_response.last_executed;
+                    }
+                } else {
+                    let mut ballot = self.ballot.lock().unwrap();
+                    if commit_response.ballot > *ballot {
+                        self.become_follower(&mut *ballot, commit_response.ballot);
+                        break;
                     }
                 }
-                Err(_) => (),
             }
             if num_oks == num_peers {
                 return min_last_executed;
@@ -463,7 +454,7 @@ pub struct MultiPaxos {
 impl MultiPaxos {
     pub fn new(log: Arc<Log>, config: &json) -> Self {
         Self {
-            multi_paxos: Arc::new(MultiPaxosInner::new(log, &config)),
+            multi_paxos: Arc::new(MultiPaxosInner::new(log, config)),
         }
     }
 
@@ -574,7 +565,7 @@ impl MultiPaxos {
         if is_someone_else_leader(ballot, self.multi_paxos.id) {
             return ResultType::SomeoneElseLeader(leader(ballot));
         }
-        return ResultType::Retry;
+        ResultType::Retry
     }
 
     fn next_ballot(&self) -> i64 {
@@ -621,7 +612,7 @@ mod tests {
         ballot: i64,
     ) -> PrepareResponse {
         let request = Request::new(PrepareRequest {
-            ballot: ballot,
+            ballot,
             sender: 0,
         });
         let r = stub.prepare(request).await;
@@ -647,9 +638,9 @@ mod tests {
         global_last_executed: i64,
     ) -> CommitResponse {
         let request = Request::new(CommitRequest {
-            ballot: ballot,
-            last_executed: last_executed,
-            global_last_executed: global_last_executed,
+            ballot,
+            last_executed,
+            global_last_executed,
             sender: 0,
         });
         let r = stub.commit(request).await;

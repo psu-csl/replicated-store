@@ -1,6 +1,5 @@
 use super::kvstore::memkvstore::MemKVStore;
-use super::kvstore::KVStore;
-use futures::future::join_all;
+use super::kvstore::{KVStore, KVStoreError};
 use std::cmp;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -9,7 +8,7 @@ use tokio::sync::Notify;
 use super::multipaxos::rpc::Command;
 use super::multipaxos::rpc::{Instance, InstanceState};
 
-type LogResult = (i64, Result<Option<String>, &'static str>);
+type LogResult = (i64, Result<Option<String>, KVStoreError>);
 
 impl Instance {
     pub fn inprogress(
@@ -136,13 +135,13 @@ impl Instance {
     }
 
     pub fn commit(&mut self) {
-        self.state = InstanceState::Committed as i32
+        self.state = InstanceState::Committed as i32;
     }
 
     fn execute(
         &mut self,
         store: &mut Box<dyn KVStore + Sync + Send>,
-    ) -> Result<Option<String>, &'static str> {
+    ) -> Result<Option<String>, KVStoreError> {
         self.state = InstanceState::Executed as i32;
         self.command.as_ref().unwrap().execute(store)
     }
@@ -153,7 +152,7 @@ pub type MapLog = HashMap<i64, Instance>;
 
 pub fn insert(map_log: &mut MapLog, instance: Instance) -> bool {
     let it = map_log.get(&instance.index);
-    if let None = it {
+    if it.is_none() {
         map_log.insert(instance.index, instance);
         return true;
     }
@@ -189,7 +188,7 @@ impl LogInner {
             last_index: 0,
             last_executed: 0,
             global_last_executed: 0,
-            kv_store: kv_store,
+            kv_store,
         }
     }
 
@@ -316,13 +315,13 @@ impl Log {
         let mut log = self.log.lock().unwrap();
         for i in log.last_executed + 1..=leader_last_executed {
             let it = log.map.get_mut(&i);
-            if let None = it {
+            if let Some(instance) = it {
+                assert!(ballot >= instance.ballot, "commit_until case 2");
+                if instance.ballot == ballot {
+                    instance.commit();
+                }
+            } else {
                 break;
-            }
-            let instance = it.unwrap();
-            assert!(ballot >= instance.ballot, "commit_until case 2");
-            if instance.ballot == ballot {
-                instance.commit();
             }
         }
         if log.is_executable() {
@@ -357,10 +356,7 @@ impl Log {
 
     pub fn at(&self, index: i64) -> Option<Instance> {
         let log = self.log.lock().unwrap();
-        match log.map.get(&index) {
-            Some(instance) => Some(instance.clone()),
-            None => None,
-        }
+        log.map.get(&index).cloned()
     }
 }
 
@@ -913,7 +909,7 @@ mod tests {
             let log = Arc::clone(&log);
             tokio::spawn(async move {
                 let r = log.execute().await;
-                assert_eq!(None, r);
+                assert!(r.is_none());
             })
         };
         log.stop();
