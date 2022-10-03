@@ -111,6 +111,7 @@ impl Replicant {
     fn stop_server_task(&self, shutdown: Sender<()>) {
         info!("{} stopping server task", self.replicant.id);
         shutdown.send(()).unwrap();
+        self.replicant.client_manager.stop_all();
     }
 
     fn start_executor_task(&self) {
