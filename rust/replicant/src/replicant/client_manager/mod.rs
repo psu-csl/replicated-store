@@ -1,33 +1,34 @@
+use crate::replicant::multipaxos::rpc::Command;
 use crate::replicant::multipaxos::MultiPaxos;
-use rpc::Command;
+use crate::replicant::multipaxos::ResultType;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::str;
 use std::sync::{Arc, Mutex};
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::{TcpListener, TcpStream};
 
 struct Client {
     id: i64,
-    stream: BufReader<OwnedReadHalf>,
+    read_half: BufReader<OwnedReadHalf>,
     client_manager: Arc<ClientManagerInner>,
     multi_paxos: Arc<MultiPaxos>,
 }
 
-fn parse(line: &str) -> Option<Command> {
-    let tokens: Vec<&str> = line.split(' ').collect();
+fn parse(request: &str) -> Option<Command> {
+    let tokens: Vec<&str> = request.split(' ').collect();
     if tokens.len() == 2 {
         if tokens[0] == "get" {
-            return Command::get(tokens[1]);
+            return Some(Command::get(tokens[1]));
         }
         if tokens[0] == "del" {
-            return Command::del(tokens[1]);
+            return Some(Command::del(tokens[1]));
         }
         return None;
     }
     if tokens.len() == 3 && tokens[0] == "put" {
-        return Command::put(tokens[1], tokens[2]);
+        return Some(Command::put(tokens[1], tokens[2]));
     }
     None
 }
@@ -35,25 +36,41 @@ fn parse(line: &str) -> Option<Command> {
 impl Client {
     fn new(
         id: i64,
-        socket: OwnedReadHalf,
-        client_manager: Arc<ClientManagerInner>,
+        read_half: OwnedReadHalf,
         multi_paxos: Arc<MultiPaxos>,
+        client_manager: Arc<ClientManagerInner>,
     ) -> Self {
         Self {
             id,
-            stream: BufReader::new(socket),
-            client_manager,
+            read_half: BufReader::new(read_half),
             multi_paxos,
+            client_manager,
         }
     }
 
     async fn start(&mut self) {
-        let mut line = String::new();
-        while let Ok(n) = self.stream.read_line(&mut line).await {
+        let mut request = String::new();
+        while let Ok(n) = self.read_half.read_line(&mut request).await {
             if n == 0 {
                 break;
             }
-            println!("read {}", line);
+            if let Some(command) = parse(&request) {
+                let response =
+                    match self.multi_paxos.replicate(&command, self.id).await {
+                        ResultType::Ok => None,
+                        ResultType::Retry => Some("retry"),
+                        ResultType::SomeoneElseLeader(_) => {
+                            Some("leader is ...")
+                        }
+                    };
+                if let Some(response) = response {
+                    self.client_manager
+                        .write(self.id, response.as_bytes())
+                        .await;
+                }
+            } else {
+                self.client_manager.write(self.id, b"bad command").await;
+            }
         }
         self.client_manager.stop(self.id);
     }
@@ -62,7 +79,7 @@ impl Client {
 struct ClientManagerInner {
     next_id: Mutex<i64>,
     num_peers: i64,
-    clients: Mutex<HashMap<i64, OwnedWriteHalf>>,
+    clients: Mutex<HashMap<i64, Arc<tokio::sync::Mutex<OwnedWriteHalf>>>>,
 }
 
 impl ClientManagerInner {
@@ -81,20 +98,29 @@ impl ClientManagerInner {
         id
     }
 
-    fn insert(&self, write_half: OwnedWriteHalf) -> i64 {
-        let id = self.next_client_id();
-        let mut clients = self.clients.lock().unwrap();
-        let v = clients.insert(id, write_half);
-        drop(clients);
-        assert!(v.is_none());
-        id
+    async fn write(&self, client_id: i64, buf: &[u8]) {
+        let client;
+        {
+            client = if let Some(client) =
+                self.clients.lock().unwrap().get(&client_id)
+            {
+                Some(client.clone())
+            } else {
+                None
+            }
+        }
+
+        if let Some(client) = client {
+            let mut client = client.lock().await;
+            client.write(buf).await;
+        }
     }
 
     fn stop(&self, id: i64) {
         let mut clients = self.clients.lock().unwrap();
-        let v = clients.remove(&id);
+        let client = clients.remove(&id);
         drop(clients);
-        assert!(v.is_some());
+        assert!(client.is_some());
         println!("client_manager stopped client {}", id);
     }
 
@@ -106,23 +132,37 @@ impl ClientManagerInner {
 
 pub struct ClientManager {
     client_manager: Arc<ClientManagerInner>,
+    multi_paxos: Arc<MultiPaxos>,
 }
 
 impl ClientManager {
-    pub fn new(id: i64, num_peers: i64) -> Self {
+    pub fn new(id: i64, num_peers: i64, multi_paxos: Arc<MultiPaxos>) -> Self {
         Self {
             client_manager: Arc::new(ClientManagerInner::new(id, num_peers)),
+            multi_paxos,
         }
     }
 
-    pub fn start(&self, client: TcpStream, multi_paxos: Arc<MultiPaxos>) {
-        let (read_half, write_half) = client.into_split();
-        let id = self.client_manager.insert(write_half);
-        let client_manager = self.client_manager.clone();
+    pub fn start(&self, stream: TcpStream) {
+        let (read_half, write_half) = stream.into_split();
+        let id = self.client_manager.next_client_id();
+
+        let mut client = Client::new(
+            id,
+            read_half,
+            self.multi_paxos.clone(),
+            self.client_manager.clone(),
+        );
+
+        let write_half = Arc::new(tokio::sync::Mutex::new(write_half));
+
+        let mut clients = self.client_manager.clients.lock().unwrap();
+        let prev = clients.insert(id, write_half);
+        drop(clients);
+        assert!(prev.is_none());
+
         tokio::spawn(async move {
-            Client::new(id, read_half, client_manager, multi_paxos)
-                .start()
-                .await;
+            client.start().await;
         });
         println!("client_manager started client {}", id);
     }

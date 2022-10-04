@@ -29,7 +29,9 @@ impl ReplicantInner {
         let ip_port = peers[id as usize].as_str().unwrap().to_string();
         let log = Arc::new(Log::new(Box::new(MemKVStore::new())));
         let multi_paxos = Arc::new(MultiPaxos::new(log.clone(), config));
-        let client_manager = ClientManager::new(id, peers.len() as i64);
+        let num_peers = peers.len() as i64;
+        let client_manager =
+            ClientManager::new(id, num_peers, multi_paxos.clone());
 
         Self {
             id,
@@ -58,7 +60,7 @@ impl ReplicantInner {
         loop {
             tokio::select! {
                 Ok((client, _)) = listener.accept() => {
-                    self.client_manager.start(client, self.multi_paxos.clone())
+                    self.client_manager.start(client)
                 },
                 _ = &mut shutdown => break,
             }
