@@ -1,4 +1,5 @@
 use crate::replicant::multipaxos::MultiPaxos;
+use rpc::Command;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::str;
@@ -12,6 +13,23 @@ struct Client {
     stream: BufReader<OwnedReadHalf>,
     client_manager: Arc<ClientManagerInner>,
     multi_paxos: Arc<MultiPaxos>,
+}
+
+fn parse(line: &str) -> Option<Command> {
+    let tokens: Vec<&str> = line.split(' ').collect();
+    if tokens.len() == 2 {
+        if tokens[0] == "get" {
+            return Command::get(tokens[1]);
+        }
+        if tokens[0] == "del" {
+            return Command::del(tokens[1]);
+        }
+        return None;
+    }
+    if tokens.len() == 3 && tokens[0] == "put" {
+        return Command::put(tokens[1], tokens[2]);
+    }
+    None
 }
 
 impl Client {
