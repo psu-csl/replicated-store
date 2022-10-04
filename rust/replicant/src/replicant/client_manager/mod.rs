@@ -112,7 +112,10 @@ impl ClientManagerInner {
 
         if let Some(client) = client {
             let mut client = client.lock().await;
-            client.write(buf).await;
+            match client.write(buf).await {
+                Ok(_) => (),
+                Err(_) => self.stop(client_id),
+            }
         }
     }
 
@@ -165,6 +168,10 @@ impl ClientManager {
             client.start().await;
         });
         println!("client_manager started client {}", id);
+    }
+
+    pub async fn write(&self, client_id: i64, buf: &[u8]) {
+        self.client_manager.write(client_id, buf).await
     }
 
     pub fn stop_all(&self) {
