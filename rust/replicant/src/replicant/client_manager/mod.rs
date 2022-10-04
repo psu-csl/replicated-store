@@ -3,13 +3,13 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::str;
 use std::sync::{Arc, Mutex};
-use tokio::io::AsyncReadExt;
+use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::{TcpListener, TcpStream};
 
 struct Client {
     id: i64,
-    socket: OwnedReadHalf,
+    stream: BufReader<OwnedReadHalf>,
     client_manager: Arc<ClientManagerInner>,
     multi_paxos: Arc<MultiPaxos>,
 }
@@ -23,20 +23,19 @@ impl Client {
     ) -> Self {
         Self {
             id,
-            socket,
+            stream: BufReader::new(socket),
             client_manager,
             multi_paxos,
         }
     }
 
     async fn start(&mut self) {
-        let mut buf = vec![0; 1024];
-        loop {
-            let num_read = self.socket.read(&mut buf).await.unwrap();
-            if num_read == 0 {
+        let mut line = String::new();
+        while let Ok(n) = self.stream.read_line(&mut line).await {
+            if n == 0 {
                 break;
             }
-            println!("read {}", str::from_utf8(&buf).unwrap());
+            println!("read {}", line);
         }
         self.client_manager.stop(self.id);
     }
