@@ -1,6 +1,5 @@
 use crate::replicant::kvstore::memkvstore::MemKVStore;
 use crate::replicant::log::{insert, Log, MapLog};
-use futures_util::stream::FuturesUnordered;
 use futures_util::FutureExt;
 use futures_util::StreamExt;
 use log::info;
@@ -19,6 +18,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tokio::sync::oneshot::{self, Sender};
 use tokio::sync::Notify;
+use tokio::task::JoinSet;
 use tokio::time::{sleep, Duration};
 use tonic::transport::{Channel, Endpoint, Server};
 use tonic::{Request, Response, Status};
@@ -199,7 +199,7 @@ impl MultiPaxosInner {
 
     async fn run_prepare_phase(&self, ballot: i64) -> Option<MapLog> {
         let num_peers = self.rpc_peers.len();
-        let mut responses = FuturesUnordered::new();
+        let mut responses = JoinSet::new();
 
         self.rpc_peers.iter().for_each(|peer| {
             let request = Request::new(PrepareRequest {
@@ -207,7 +207,7 @@ impl MultiPaxosInner {
                 sender: self.id,
             });
             let stub = Arc::clone(&peer.stub);
-            responses.push(async move {
+            responses.spawn(async move {
                 let mut stub = stub.lock().await;
                 stub.prepare(request).await
             });
@@ -217,8 +217,8 @@ impl MultiPaxosInner {
         let mut num_oks = 0;
         let mut log = MapLog::new();
 
-        while let Some(response) = responses.next().await {
-            if let Ok(response) = response {
+        while let Some(response) = responses.join_next().await {
+            if let Ok(Ok(response)) = response {
                 let response = response.into_inner();
                 if response.r#type == ResponseType::Ok as i32 {
                     num_oks += 1;
@@ -248,7 +248,7 @@ impl MultiPaxosInner {
         client_id: i64,
     ) -> ResultType {
         let num_peers = self.rpc_peers.len();
-        let mut responses = FuturesUnordered::new();
+        let mut responses = JoinSet::new();
 
         self.rpc_peers.iter().for_each(|peer| {
             let request = Request::new(AcceptRequest {
@@ -258,7 +258,7 @@ impl MultiPaxosInner {
                 sender: self.id,
             });
             let stub = Arc::clone(&peer.stub);
-            responses.push(async move {
+            responses.spawn(async move {
                 let mut stub = stub.lock().await;
                 stub.accept(request).await
             });
@@ -268,15 +268,18 @@ impl MultiPaxosInner {
         let mut num_oks = 0;
         let mut current_leader = self.id;
 
-        while let Some(response_result) = responses.next().await {
-            if let Ok(response) = response_result {
+        while let Some(response_result) = responses.join_next().await {
+            if let Ok(Ok(response)) = response_result {
                 let accept_response = response.into_inner();
                 if accept_response.r#type == ResponseType::Ok as i32 {
                     num_oks += 1;
                 } else {
                     let mut ballot = self.ballot.lock().unwrap();
                     if accept_response.ballot > *ballot {
-                        self.become_follower(&mut *ballot, accept_response.ballot);
+                        self.become_follower(
+                            &mut *ballot,
+                            accept_response.ballot,
+                        );
                         current_leader = leader(*ballot);
                         break;
                     }
@@ -299,7 +302,7 @@ impl MultiPaxosInner {
         global_last_executed: i64,
     ) -> i64 {
         let num_peers = self.rpc_peers.len();
-        let mut responses = FuturesUnordered::new();
+        let mut responses = JoinSet::new();
         let mut min_last_executed = self.log.last_executed();
 
         self.rpc_peers.iter().for_each(|peer| {
@@ -310,7 +313,7 @@ impl MultiPaxosInner {
                 sender: self.id,
             });
             let stub = Arc::clone(&peer.stub);
-            responses.push(async move {
+            responses.spawn(async move {
                 let mut stub = stub.lock().await;
                 stub.commit(request).await
             });
@@ -319,8 +322,8 @@ impl MultiPaxosInner {
 
         let mut num_oks = 0;
 
-        while let Some(response_result) = responses.next().await {
-            if let Ok(response) = response_result {
+        while let Some(response_result) = responses.join_next().await {
+            if let Ok(Ok(response)) = response_result {
                 let commit_response = response.into_inner();
                 if commit_response.r#type == ResponseType::Ok as i32 {
                     num_oks += 1;
@@ -330,7 +333,10 @@ impl MultiPaxosInner {
                 } else {
                     let mut ballot = self.ballot.lock().unwrap();
                     if commit_response.ballot > *ballot {
-                        self.become_follower(&mut *ballot, commit_response.ballot);
+                        self.become_follower(
+                            &mut *ballot,
+                            commit_response.ballot,
+                        );
                         break;
                     }
                 }
@@ -611,10 +617,7 @@ mod tests {
         stub: &mut MultiPaxosRpcClient<Channel>,
         ballot: i64,
     ) -> PrepareResponse {
-        let request = Request::new(PrepareRequest {
-            ballot,
-            sender: 0,
-        });
+        let request = Request::new(PrepareRequest { ballot, sender: 0 });
         let r = stub.prepare(request).await;
         r.unwrap().into_inner()
     }
