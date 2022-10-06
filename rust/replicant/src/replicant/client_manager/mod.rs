@@ -71,6 +71,7 @@ impl Client {
             } else {
                 self.client_manager.write(self.id, b"bad command").await;
             }
+            request.clear();
         }
         self.client_manager.stop(self.id);
     }
