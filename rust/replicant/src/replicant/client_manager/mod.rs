@@ -54,7 +54,7 @@ impl Client {
             if n == 0 {
                 break;
             }
-            if let Some(command) = parse(&request) {
+            if let Some(command) = parse(&request.trim()) {
                 let response =
                     match self.multi_paxos.replicate(&command, self.id).await {
                         ResultType::Ok => None,
