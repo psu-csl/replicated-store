@@ -41,7 +41,6 @@ async fn main() {
 
     let replicant = Replicant::new(&config);
     let shutdown = replicant.start();
-
-    sleep(Duration::from_millis(10000)).await;
-    replicant.stop(shutdown);
+    signal::ctrl_c().await.unwrap();
+    replicant.stop(shutdown).await;
 }
