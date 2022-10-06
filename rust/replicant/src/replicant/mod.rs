@@ -6,13 +6,14 @@ mod multipaxos;
 use crate::replicant::client_manager::ClientManager;
 use crate::replicant::kvstore::memkvstore::MemKVStore;
 use crate::replicant::log::Log;
-use crate::replicant::multipaxos::MultiPaxos;
+use crate::replicant::multipaxos::{MultiPaxos, MultiPaxosHandle};
 use ::log::info;
 use serde_json::Value as json;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::oneshot::{self, Receiver, Sender};
+use tokio::task::JoinHandle;
 
 struct ReplicantInner {
     id: i64,
@@ -85,9 +86,10 @@ pub struct Replicant {
     replicant: Arc<ReplicantInner>,
 }
 
-pub struct Shutdown {
-    multi_paxos: Sender<()>,
-    server: Sender<()>,
+pub struct ReplicantHandle {
+    multi_paxos_handle: MultiPaxosHandle,
+    executor_task_handle: JoinHandle<()>,
+    server_task_handle: (JoinHandle<()>, Sender<()>),
 }
 
 impl Replicant {
@@ -97,48 +99,52 @@ impl Replicant {
         }
     }
 
-    pub fn start(&self) -> Shutdown {
-        let multi_paxos = self.replicant.multi_paxos.start();
-        self.start_executor_task();
-        let server = self.start_server_task();
-        Shutdown {
-            multi_paxos,
-            server,
+    pub fn start(&self) -> ReplicantHandle {
+        ReplicantHandle {
+            multi_paxos_handle: self.replicant.multi_paxos.start(),
+            executor_task_handle: self.start_executor_task(),
+            server_task_handle: self.start_server_task(),
         }
     }
 
-    pub fn stop(&self, shutdown: Shutdown) {
-        self.stop_server_task(shutdown.server);
-        self.stop_executor_task();
-        self.replicant.multi_paxos.stop(shutdown.multi_paxos);
+    pub async fn stop(&self, handle: ReplicantHandle) {
+        self.stop_server_task(handle.server_task_handle).await;
+        self.stop_executor_task(handle.executor_task_handle).await;
+        self.replicant
+            .multi_paxos
+            .stop(handle.multi_paxos_handle)
+            .await;
     }
 
-    fn start_server_task(&self) -> Sender<()> {
+    fn start_server_task(&self) -> (JoinHandle<()>, Sender<()>) {
         info!("{} starting server task", self.replicant.id);
         let (shutdown_send, shutdown_recv) = oneshot::channel();
         let replicant = self.replicant.clone();
-        tokio::spawn(async move {
+        let handle = tokio::spawn(async move {
             replicant.server_task_fn(shutdown_recv).await;
         });
-        shutdown_send
+        (handle, shutdown_send)
     }
 
-    fn stop_server_task(&self, shutdown: Sender<()>) {
+    async fn stop_server_task(&self, handle: (JoinHandle<()>, Sender<()>)) {
         info!("{} stopping server task", self.replicant.id);
+        let (handle, shutdown) = handle;
         shutdown.send(()).unwrap();
+        handle.await.unwrap();
         self.replicant.client_manager.stop_all();
     }
 
-    fn start_executor_task(&self) {
+    fn start_executor_task(&self) -> JoinHandle<()> {
         info!("{} starting executor task", self.replicant.id);
         let replicant = self.replicant.clone();
         tokio::spawn(async move {
             replicant.executor_task_fn().await;
-        });
+        })
     }
 
-    fn stop_executor_task(&self) {
+    async fn stop_executor_task(&self, handle: JoinHandle<()>) {
         info!("{} stopping executor task", self.replicant.id);
         self.replicant.log.stop();
+        handle.await.unwrap();
     }
 }
