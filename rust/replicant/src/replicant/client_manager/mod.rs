@@ -58,18 +58,18 @@ impl Client {
                 let response =
                     match self.multi_paxos.replicate(&command, self.id).await {
                         ResultType::Ok => None,
-                        ResultType::Retry => Some("retry"),
+                        ResultType::Retry => Some("retry".to_string()),
                         ResultType::SomeoneElseLeader(_) => {
-                            Some("leader is ...")
+                            Some("leader is ...".to_string())
                         }
                     };
                 if let Some(response) = response {
-                    self.client_manager
-                        .write(self.id, response.as_bytes())
-                        .await;
+                    self.client_manager.write(self.id, response).await;
                 }
             } else {
-                self.client_manager.write(self.id, b"bad command").await;
+                self.client_manager
+                    .write(self.id, "bad command".to_string())
+                    .await;
             }
             request.clear();
         }
@@ -99,7 +99,7 @@ impl ClientManagerInner {
         id
     }
 
-    async fn write(&self, client_id: i64, buf: &[u8]) {
+    async fn write(&self, client_id: i64, mut buf: String) {
         let client;
         {
             client = if let Some(client) =
@@ -111,9 +111,10 @@ impl ClientManagerInner {
             }
         }
 
+        buf.push('\n');
         if let Some(client) = client {
             let mut client = client.lock().await;
-            match client.write(buf).await {
+            match client.write(buf.as_bytes()).await {
                 Ok(_) => (),
                 Err(_) => self.stop(client_id),
             }
@@ -171,7 +172,7 @@ impl ClientManager {
         println!("client_manager started client {}", id);
     }
 
-    pub async fn write(&self, client_id: i64, buf: &[u8]) {
+    pub async fn write(&self, client_id: i64, buf: String) {
         self.client_manager.write(client_id, buf).await
     }
 

@@ -52,15 +52,11 @@ impl ReplicantInner {
             let (id, result) = r.unwrap();
             match result {
                 Ok(result) => match result {
-                    Some(value) => {
-                        self.client_manager.write(id, value.as_bytes()).await
-                    }
+                    Some(value) => self.client_manager.write(id, value).await,
                     None => (),
                 },
                 Err(err) => {
-                    self.client_manager
-                        .write(id, err.to_string().as_bytes())
-                        .await
+                    self.client_manager.write(id, err.to_string()).await
                 }
             };
         }
