@@ -27,6 +27,7 @@ public class ReplicatorMain {
       System.exit(1);
     }
     assert id < config.getPeers().size();
+    config.setId(id);
 
     var replicant = new Replicant(config);
     replicant.start();

@@ -466,6 +466,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
           state.mu.lock();
           state.numRpcs++;
           // TODO: be sure whether to signal here or not
+          state.cv.signal();
           state.mu.unlock();
           return;
         }
@@ -549,6 +550,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
           state.mu.lock();
           state.numRpcs++;
           // TODO: be sure whether to signal here or not
+          state.cv.signal();
           state.mu.unlock();
           return;
         }
@@ -684,6 +686,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
           state.mu.lock();
           ++state.numRpcs;
           // TODO: be sure whether to signal here or not
+          state.cv.signal();
           state.mu.unlock();
           return;
         }
@@ -745,7 +748,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
 
 
   public boolean receivedCommit() {
-    return commitReceived.compareAndExchange(commitReceived.get(), true);
+    return commitReceived.compareAndExchange(true, false);
   }
 
   public void replay(long ballot, HashMap<Long, log.Instance> log) {

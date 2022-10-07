@@ -83,7 +83,9 @@ public class ClientHandler extends SimpleChannelInboundHandler<String> {
     logger.info("raw msg: " + msg);
     var command = parse(msg);
     var r = multiPaxos.replicate(command, id);
-    if (r.type == MultiPaxosResultType.kRetry) {
+    if (r.type == MultiPaxosResultType.kOk) {
+      return;
+    } else if (r.type == MultiPaxosResultType.kRetry) {
       ctx.channel().writeAndFlush("retry\n");
     } else {
       assert r.type == MultiPaxosResultType.kSomeoneElseLeader;

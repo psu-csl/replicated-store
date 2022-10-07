@@ -50,8 +50,8 @@ public class Replicant {
   }
 
   public void start() {
-    // multiPaxos.start();
-    // startExecutorThread();
+    multiPaxos.start();
+    startExecutorThread();
     startServer();
   }
 
