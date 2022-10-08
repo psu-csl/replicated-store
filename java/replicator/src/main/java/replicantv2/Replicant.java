@@ -72,7 +72,7 @@ public class Replicant {
             @Override
             public void initChannel(SocketChannel ch) {
               ch.pipeline().addLast("framer",
-                  new DelimiterBasedFrameDecoder(1024, Delimiters.lineDelimiter()));
+                  new DelimiterBasedFrameDecoder(2048, Delimiters.lineDelimiter()));
               ch.pipeline().addLast("decoder", new StringDecoder());
               ch.pipeline().addLast("encoder", new StringEncoder());
               ch.pipeline().addLast("timeout", new ReadTimeoutHandler(5));

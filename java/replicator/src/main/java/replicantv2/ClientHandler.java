@@ -65,9 +65,8 @@ public class ClientHandler extends SimpleChannelInboundHandler<String> {
   }
 
   private long nextClientId() {
-    var id = nextClientId;
     nextClientId += numPeers;
-    return id;
+    return nextClientId;
   }
 
   @Override
@@ -80,9 +79,9 @@ public class ClientHandler extends SimpleChannelInboundHandler<String> {
 
   @Override
   public void channelRead0(ChannelHandlerContext ctx, String msg) {
-    logger.info("raw msg: " + msg);
+    // logger.info("raw msg: " + msg);
     var command = parse(msg);
-    var r = multiPaxos.replicate(command, id);
+    var r = multiPaxos.replicate(command, nextClientId);
     if (r.type == MultiPaxosResultType.kOk) {
       return;
     } else if (r.type == MultiPaxosResultType.kRetry) {
@@ -100,6 +99,6 @@ public class ClientHandler extends SimpleChannelInboundHandler<String> {
     if (client == null) {
       return;
     }
-    client.writeAndFlush(value);
+    client.writeAndFlush(value + "\n");
   }
 }
