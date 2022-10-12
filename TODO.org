@@ -51,6 +51,8 @@
 *** async version
 
 ** Rust
+   - switch to using parking_lot::mutex
+   - standardize error handling -- currently errors are ignored in most places
    - given that most of the stuff will run on a single thread, measure CPU
      utilization and spawn tasks for each replicate call if necessary
    - currently we're using tokio mutexes when doing rpc calls, which are slower
