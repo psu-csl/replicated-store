@@ -8,7 +8,6 @@ use std::fs;
 use std::io::BufReader;
 use std::path::PathBuf;
 use tokio::signal;
-use tokio::time::{sleep, Duration};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
