@@ -51,11 +51,13 @@
 *** async version
 
 ** Rust
-   - switch to using parking_lot::mutex
-   - standardize error handling -- currently errors are ignored in most places
-   - given that most of the stuff will run on a single thread, measure CPU
+*** examine all tokio::sync::Mutex use cases and see if they can be avoided
+*** one of them definitely can be: the use in client-manager
+*** switch to using parking_lot::mutex
+*** standardize error handling -- currently errors are ignored in most places
+*** given that most of the stuff will run on a single thread, measure CPU
      utilization and spawn tasks for each replicate call if necessary
-   - currently we're using tokio mutexes when doing rpc calls, which are slower
+*** currently we're using tokio mutexes when doing rpc calls, which are slower
      than standard mutexes; perhaps we should restructure so that each task
      has its own endpoints, so that we don't need to acquire mutexes
 ** Java
