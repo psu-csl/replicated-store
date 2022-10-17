@@ -7,6 +7,7 @@ import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandler.Sharable;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
+import io.netty.util.AttributeKey;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
@@ -26,6 +27,7 @@ public class ClientHandler extends SimpleChannelInboundHandler<String> {
   private final long id;
   private final MultiPaxos multiPaxos;
   private long nextClientId;
+  private AttributeKey<Long> clientIdAttrKey = AttributeKey.valueOf("ClientID");
 
   public ClientHandler(long id, long numPeers, MultiPaxos multiPaxos) {
     this.nextClientId = this.id = id;
@@ -73,6 +75,7 @@ public class ClientHandler extends SimpleChannelInboundHandler<String> {
   public void channelActive(final ChannelHandlerContext ctx) {
     var id = nextClientId();
     logger.info("client joined " + ctx);
+    ctx.channel().attr(clientIdAttrKey).set(id);
     channels.put(id, ctx.channel());
   }
 
@@ -81,7 +84,8 @@ public class ClientHandler extends SimpleChannelInboundHandler<String> {
   public void channelRead0(ChannelHandlerContext ctx, String msg) {
     // logger.info("raw msg: " + msg);
     var command = parse(msg);
-    var r = multiPaxos.replicate(command, nextClientId);
+    var clientId = ctx.channel().attr(clientIdAttrKey).get();
+    var r = multiPaxos.replicate(command, clientId);
     if (r.type == MultiPaxosResultType.kOk) {
       return;
     } else if (r.type == MultiPaxosResultType.kRetry) {

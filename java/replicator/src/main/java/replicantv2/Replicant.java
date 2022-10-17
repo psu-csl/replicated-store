@@ -75,7 +75,7 @@ public class Replicant {
                   new DelimiterBasedFrameDecoder(2048, Delimiters.lineDelimiter()));
               ch.pipeline().addLast("decoder", new StringDecoder());
               ch.pipeline().addLast("encoder", new StringEncoder());
-              ch.pipeline().addLast("timeout", new ReadTimeoutHandler(5));
+              //ch.pipeline().addLast("timeout", new ReadTimeoutHandler(5));
               ch.pipeline().addLast(clientHandler);
             }
           }).option(ChannelOption.SO_BACKLOG, 5).childOption(ChannelOption.SO_KEEPALIVE, true);
