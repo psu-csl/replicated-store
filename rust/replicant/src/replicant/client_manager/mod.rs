@@ -16,8 +16,8 @@ struct Client {
     multi_paxos: Arc<MultiPaxos>,
 }
 
-fn parse(request: &str) -> Option<Command> {
-    let tokens: Vec<&str> = request.split(' ').collect();
+fn parse(line: &str) -> Option<Command> {
+    let tokens: Vec<&str> = line.trim().split(' ').collect();
     if tokens.len() == 2 {
         if tokens[0] == "get" {
             return Some(Command::get(tokens[1]));
@@ -49,31 +49,31 @@ impl Client {
     }
 
     async fn start(&mut self) {
-        let mut request = String::new();
-        while let Ok(n) = self.read_half.read_line(&mut request).await {
+        let mut line = String::new();
+        while let Ok(n) = self.read_half.read_line(&mut line).await {
             if n == 0 {
                 break;
             }
-            if let Some(command) = parse(&request.trim()) {
-                let response =
-                    match self.multi_paxos.replicate(&command, self.id).await {
-                        ResultType::Ok => None,
-                        ResultType::Retry => Some("retry".to_string()),
-                        ResultType::SomeoneElseLeader(_) => {
-                            Some("leader is ...".to_string())
-                        }
-                    };
-                if let Some(response) = response {
-                    self.client_manager.write(self.id, response).await;
-                }
-            } else {
-                self.client_manager
-                    .write(self.id, "bad command".to_string())
-                    .await;
+            if let Some(response) = self.handle_request(&line).await {
+                self.client_manager.write(self.id, response).await;
             }
-            request.clear();
+            line.clear();
         }
         self.client_manager.stop(self.id);
+    }
+
+    async fn handle_request(&self, line: &str) -> Option<String> {
+        if let Some(command) = parse(&line) {
+            match self.multi_paxos.replicate(&command, self.id).await {
+                ResultType::Ok => None,
+                ResultType::Retry => Some("retry".to_string()),
+                ResultType::SomeoneElseLeader(_) => {
+                    Some("leader is ...".to_string())
+                }
+            }
+        } else {
+            Some("bad command".to_string())
+        }
     }
 }
 
