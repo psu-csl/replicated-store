@@ -87,7 +87,7 @@ public class ClientHandler extends SimpleChannelInboundHandler<String> {
     var clientId = ctx.channel().attr(clientIdAttrKey).get();
     var r = multiPaxos.replicate(command, clientId);
     if (r.type == MultiPaxosResultType.kOk) {
-      return;
+      ctx.channel().flush();
     } else if (r.type == MultiPaxosResultType.kRetry) {
       ctx.channel().writeAndFlush("retry\n");
     } else {
