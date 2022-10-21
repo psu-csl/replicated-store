@@ -49,15 +49,10 @@ impl ReplicantInner {
             if r.is_none() {
                 break;
             }
-            let (id, result) = r.unwrap();
-            match result {
-                Ok(result) => match result {
-                    Some(value) => self.client_manager.write(id, value).await,
-                    None => (),
-                },
-                Err(err) => {
-                    self.client_manager.write(id, err.to_string()).await
-                }
+            let (id, value) = r.unwrap();
+            match value {
+                Ok(value) => self.client_manager.write(id, value).await,
+                Err(e) => self.client_manager.write(id, e.to_string()).await,
             };
         }
     }

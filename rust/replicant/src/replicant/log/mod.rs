@@ -9,7 +9,7 @@ use tokio::sync::Notify;
 use super::multipaxos::rpc::Command;
 use super::multipaxos::rpc::{Instance, InstanceState};
 
-type LogResult = (i64, Result<Option<String>, KVStoreError>);
+type LogResult = (i64, Result<String, KVStoreError>);
 
 impl Instance {
     pub fn inprogress(
@@ -142,7 +142,7 @@ impl Instance {
     fn execute(
         &mut self,
         store: &mut Box<dyn KVStore + Sync + Send>,
-    ) -> Result<Option<String>, KVStoreError> {
+    ) -> Result<String, KVStoreError> {
         self.state = InstanceState::Executed as i32;
         self.command.as_ref().unwrap().execute(store)
     }

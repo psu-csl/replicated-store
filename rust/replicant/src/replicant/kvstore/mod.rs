@@ -1,6 +1,5 @@
 pub mod memkvstore;
 
-
 use thiserror::Error;
 
 use super::multipaxos::rpc::{Command, CommandType};
@@ -47,22 +46,22 @@ impl Command {
     pub fn execute(
         &self,
         store: &mut Box<dyn KVStore + Sync + Send>,
-    ) -> Result<Option<String>, KVStoreError> {
+    ) -> Result<String, KVStoreError> {
         match CommandType::from_i32(self.r#type).unwrap() {
             CommandType::Get => match store.get(&self.key) {
-                Some(value) => Ok(Some(value)),
+                Some(value) => Ok(value),
                 None => Err(KVStoreError::NotFoundError),
             },
             CommandType::Put => {
                 if store.put(&self.key, &self.value) {
-                    Ok(None)
+                    Ok("".to_string())
                 } else {
                     Err(KVStoreError::PutFailedError)
                 }
             }
             CommandType::Del => {
                 if store.del(&self.key) {
-                    Ok(None)
+                    Ok("".to_string())
                 } else {
                     Err(KVStoreError::NotFoundError)
                 }

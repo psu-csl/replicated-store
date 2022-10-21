@@ -30,9 +30,7 @@ impl KVStore for MemKVStore {
 
 #[cfg(test)]
 mod tests {
-    
-
-    use crate::replicant::{multipaxos::rpc::Command, kvstore::KVStoreError};
+    use crate::replicant::{kvstore::KVStoreError, multipaxos::rpc::Command};
 
     use super::*;
 
@@ -81,22 +79,33 @@ mod tests {
         let put_key2val2 = Command::put(KEY2, VAL2);
         let put_key1val2 = Command::put(KEY1, VAL2);
 
-        assert_eq!(Err(KVStoreError::NotFoundError), get_key1.execute(&mut store));
+        assert_eq!(
+            Err(KVStoreError::NotFoundError),
+            get_key1.execute(&mut store)
+        );
 
-        assert_eq!(Err(KVStoreError::NotFoundError), del_key1.execute(&mut store));
+        assert_eq!(
+            Err(KVStoreError::NotFoundError),
+            del_key1.execute(&mut store)
+        );
 
-        assert_eq!(Ok(None), put_key1val1.execute(&mut store));
-        assert_eq!(Ok(Some(VAL1.to_string())), get_key1.execute(&mut store));
+        let empty = Ok("".to_string());
 
-        assert_eq!(Ok(None), put_key2val2.execute(&mut store));
-        assert_eq!(Ok(Some(VAL2.to_string())), get_key2.execute(&mut store));
+        assert_eq!(empty, put_key1val1.execute(&mut store));
+        assert_eq!(Ok(VAL1.to_string()), get_key1.execute(&mut store));
 
-        assert_eq!(Ok(None), put_key1val2.execute(&mut store));
-        assert_eq!(Ok(Some(VAL2.to_string())), get_key1.execute(&mut store));
-        assert_eq!(Ok(Some(VAL2.to_string())), get_key2.execute(&mut store));
+        assert_eq!(empty, put_key2val2.execute(&mut store));
+        assert_eq!(Ok(VAL2.to_string()), get_key2.execute(&mut store));
 
-        assert_eq!(Ok(None), del_key1.execute(&mut store));
-        assert_eq!(Err(KVStoreError::NotFoundError), get_key1.execute(&mut store));
-        assert_eq!(Ok(Some(VAL2.to_string())), get_key2.execute(&mut store));
+        assert_eq!(empty, put_key1val2.execute(&mut store));
+        assert_eq!(Ok(VAL2.to_string()), get_key1.execute(&mut store));
+        assert_eq!(Ok(VAL2.to_string()), get_key2.execute(&mut store));
+
+        assert_eq!(empty, del_key1.execute(&mut store));
+        assert_eq!(
+            Err(KVStoreError::NotFoundError),
+            get_key1.execute(&mut store)
+        );
+        assert_eq!(Ok(VAL2.to_string()), get_key2.execute(&mut store));
     }
 }
