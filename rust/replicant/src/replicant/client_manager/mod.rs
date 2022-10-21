@@ -9,13 +9,6 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::{TcpListener, TcpStream};
 
-struct Client {
-    id: i64,
-    read_half: BufReader<OwnedReadHalf>,
-    client_manager: Arc<ClientManagerInner>,
-    multi_paxos: Arc<MultiPaxos>,
-}
-
 fn parse(line: &str) -> Option<Command> {
     let tokens: Vec<&str> = line.trim().split(' ').collect();
     if tokens.len() == 2 {
@@ -33,18 +26,21 @@ fn parse(line: &str) -> Option<Command> {
     None
 }
 
+struct Client {
+    read_half: BufReader<OwnedReadHalf>,
+    client: Arc<ClientInner>,
+}
+
 impl Client {
     fn new(
         id: i64,
         read_half: OwnedReadHalf,
         multi_paxos: Arc<MultiPaxos>,
-        client_manager: Arc<ClientManagerInner>,
+        manager: Arc<ClientManagerInner>,
     ) -> Self {
         Self {
-            id,
             read_half: BufReader::new(read_half),
-            multi_paxos,
-            client_manager,
+            client: Arc::new(ClientInner::new(id, multi_paxos, manager)),
         }
     }
 
@@ -54,15 +50,38 @@ impl Client {
             if n == 0 {
                 break;
             }
-            if let Some(response) = self.handle_request(&line).await {
-                self.client_manager.write(self.id, response).await;
-            }
-            line.clear();
+            let client = self.client.clone();
+            let line2 = line.clone();
+            tokio::spawn(async move {
+                if let Some(response) = client.handle_request(line2).await {
+                    client.manager.write(client.id, response).await;
+                }
+            });
         }
-        self.client_manager.stop(self.id);
+        self.client.manager.stop(self.client.id);
+    }
+}
+
+struct ClientInner {
+    id: i64,
+    multi_paxos: Arc<MultiPaxos>,
+    manager: Arc<ClientManagerInner>,
+}
+
+impl ClientInner {
+    fn new(
+        id: i64,
+        multi_paxos: Arc<MultiPaxos>,
+        manager: Arc<ClientManagerInner>,
+    ) -> Self {
+        Self {
+            id,
+            multi_paxos,
+            manager,
+        }
     }
 
-    async fn handle_request(&self, line: &str) -> Option<String> {
+    async fn handle_request(&self, line: String) -> Option<String> {
         if let Some(command) = parse(&line) {
             match self.multi_paxos.replicate(&command, self.id).await {
                 ResultType::Ok => None,
