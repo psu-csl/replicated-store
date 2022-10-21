@@ -11,7 +11,7 @@ using nlohmann::json;
 
 DEFINE_uint32(id, 0, "my id in the peers array in configuration file");
 DEFINE_string(config_path, "config.json", "path to the configuration file");
-DEFINE_uint32(num_threads, 4, "number of threads to use");
+DEFINE_uint32(num_threads, 4, "number of threads for running asio callbacks");
 
 int main(int argc, char* argv[]) {
   google::InitGoogleLogging(argv[0]);
@@ -25,10 +25,11 @@ int main(int argc, char* argv[]) {
   f >> config;
 
   CHECK(FLAGS_id < config["peers"].size());
-
   config["id"] = FLAGS_id;
 
-  asio::io_context io_context;
+  CHECK(FLAGS_num_threads > 0);
+  asio::io_context io_context(FLAGS_num_threads);
+
   auto replicant = std::make_shared<Replicant>(&io_context, config);
 
   asio::signal_set signals(io_context, SIGINT, SIGTERM);
@@ -38,8 +39,6 @@ int main(int argc, char* argv[]) {
   });
 
   replicant->Start();
-
-  CHECK(FLAGS_num_threads > 0);
 
   std::vector<std::thread> threads;
   threads.reserve(--FLAGS_num_threads);
