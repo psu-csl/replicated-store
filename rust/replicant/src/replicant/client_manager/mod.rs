@@ -45,18 +45,21 @@ impl Client {
     }
 
     async fn start(&mut self) {
-        let mut line = String::new();
-        while let Ok(n) = self.read_half.read_line(&mut line).await {
-            if n == 0 {
+        loop {
+            let mut line = String::new();
+            if let Ok(n) = self.read_half.read_line(&mut line).await {
+                if n == 0 {
+                    break;
+                }
+                let client = self.client.clone();
+                tokio::spawn(async move {
+                    if let Some(response) = client.handle_request(line).await {
+                        client.manager.write(client.id, response).await;
+                    }
+                });
+            } else {
                 break;
             }
-            let client = self.client.clone();
-            let line2 = line.clone();
-            tokio::spawn(async move {
-                if let Some(response) = client.handle_request(line2).await {
-                    client.manager.write(client.id, response).await;
-                }
-            });
         }
         self.client.manager.stop(self.client.id);
     }
