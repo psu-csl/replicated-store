@@ -47,7 +47,6 @@ void Replicant::StartServer() {
 
   auto self(shared_from_this());
   asio::dispatch(acceptor_.get_executor(), [this, self] { AcceptClient(); });
-  io_context_->run();
 }
 
 void Replicant::StopServer() {
