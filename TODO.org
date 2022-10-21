@@ -51,6 +51,8 @@
 *** async version
 
 ** Rust
+*** ensure stack variables are not used across await calls
+     see https://tokio.rs/tokio/tutorial/io about how this hurts
 *** examine all tokio::sync::Mutex use cases and see if they can be avoided
 *** one of them definitely can be: the use in client-manager
 *** switch to using parking_lot::mutex
