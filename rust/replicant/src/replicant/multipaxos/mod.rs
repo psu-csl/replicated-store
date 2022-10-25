@@ -52,7 +52,7 @@ pub enum ResultType {
 
 struct RpcPeer {
     id: i64,
-    stub: Arc<tokio::sync::Mutex<MultiPaxosRpcClient<Channel>>>,
+    stub: MultiPaxosRpcClient<Channel>,
 }
 
 struct MultiPaxosInner {
@@ -91,7 +91,7 @@ impl MultiPaxosInner {
         {
             rpc_peers.push(RpcPeer {
                 id: id as i64,
-                stub: Arc::new(tokio::sync::Mutex::new(make_stub(port))),
+                stub: make_stub(port),
             });
         }
         Self {
@@ -206,11 +206,8 @@ impl MultiPaxosInner {
                 ballot,
                 sender: self.id,
             });
-            let stub = Arc::clone(&peer.stub);
-            responses.spawn(async move {
-                let mut stub = stub.lock().await;
-                stub.prepare(request).await
-            });
+            let mut stub = peer.stub.clone();
+            responses.spawn(async move { stub.prepare(request).await });
             info!("{} sent prepare request to {}", self.id, peer.id);
         });
 
@@ -257,11 +254,8 @@ impl MultiPaxosInner {
                 )),
                 sender: self.id,
             });
-            let stub = Arc::clone(&peer.stub);
-            responses.spawn(async move {
-                let mut stub = stub.lock().await;
-                stub.accept(request).await
-            });
+            let mut stub = peer.stub.clone();
+            responses.spawn(async move { stub.accept(request).await });
             info!("{} sent accept request to {}", self.id, peer.id);
         });
 
@@ -312,11 +306,8 @@ impl MultiPaxosInner {
                 global_last_executed,
                 sender: self.id,
             });
-            let stub = Arc::clone(&peer.stub);
-            responses.spawn(async move {
-                let mut stub = stub.lock().await;
-                stub.commit(request).await
-            });
+            let mut stub = peer.stub.clone();
+            responses.spawn(async move { stub.commit(request).await });
             info!("{} sent commit request to {}", self.id, peer.id);
         });
 
