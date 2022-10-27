@@ -4,7 +4,7 @@ import (
 	"context"
 	"github.com/psu-csl/replicated-store/go/config"
 	pb "github.com/psu-csl/replicated-store/go/consensus/multipaxos/comm"
-	consensusLog "github.com/psu-csl/replicated-store/go/log"
+	Log "github.com/psu-csl/replicated-store/go/log"
 	logger "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -30,11 +30,11 @@ func IsSomeoneElseLeader(ballot int64, id int64) bool {
 type Multipaxos struct {
 	ready          int32
 	ballot         int64
-	log            *consensusLog.Log
+	log            *Log.Log
 	id             int64
+	commitReceived int32
 	CommitInterval int64
 	port           string
-	commitReceived int32
 	rpcPeers       []*RpcPeer
 	mu             sync.Mutex
 
@@ -51,15 +51,15 @@ type Multipaxos struct {
 	pb.UnimplementedMultiPaxosRPCServer
 }
 
-func NewMultipaxos(config config.Config, log *consensusLog.Log) *Multipaxos {
+func NewMultipaxos(config config.Config, log *Log.Log) *Multipaxos {
 	paxos := Multipaxos{
 		ready:                0,
 		ballot:               MaxNumPeers,
 		log:                  log,
 		id:                   config.Id,
+		commitReceived:       0,
 		CommitInterval:       config.CommitInterval,
 		port:                 config.Peers[config.Id],
-		commitReceived:       0,
 		rpcPeers:             make([]*RpcPeer, len(config.Peers)),
 		rpcServerRunning:     false,
 		prepareThreadRunning: 0,
@@ -98,6 +98,7 @@ func (p *Multipaxos) Stop() {
 }
 
 func (p *Multipaxos) StartRPCServer() {
+	logger.Infof("%v starting rpc server at %v", p.id, p.port)
 	listener, err := net.Listen("tcp", p.port)
 	if err != nil {
 		panic(err)
@@ -118,11 +119,13 @@ func (p *Multipaxos) StopRPCServer() {
 	for !p.rpcServerRunning {
 		p.rpcServerRunningCv.Wait()
 	}
+	logger.Infof("%v stopping rpc server at %v", p.id, p.port)
 	p.mu.Unlock()
 	p.server.GracefulStop()
 }
 
 func (p *Multipaxos) StartPrepareThread() {
+	logger.Infof("%v starting prepare thread", p.id)
 	if p.prepareThreadRunning == 1 {
 		panic("prepareThreadRunning is true")
 	}
@@ -131,6 +134,7 @@ func (p *Multipaxos) StartPrepareThread() {
 }
 
 func (p *Multipaxos) StopPrepareThread() {
+	logger.Infof("%v stopping prepare thread", p.id)
 	if p.prepareThreadRunning == 0 {
 		panic("prepareThreadRunning is false")
 	}
@@ -139,6 +143,7 @@ func (p *Multipaxos) StopPrepareThread() {
 }
 
 func (p *Multipaxos) StartCommitThread() {
+	logger.Infof("%v starting commit thread", p.id)
 	if p.commitThreadRunning == 1 {
 		panic("commitThreadRunning is true")
 	}
@@ -147,6 +152,7 @@ func (p *Multipaxos) StartCommitThread() {
 }
 
 func (p *Multipaxos) StopCommitThread() {
+	logger.Infof("%v stopping commit thread", p.id)
 	if p.commitThreadRunning == 0 {
 		panic("commitThreadRunning is false")
 	}
@@ -175,7 +181,6 @@ func (p *Multipaxos) PrepareThread() {
 		for atomic.LoadUint32(&p.prepareThreadRunning) == 1 {
 			p.sleepForRandomInterval()
 			if p.receivedCommit() {
-				logger.Infof("%v receivedCommit true\n", p.id)
 				continue
 			}
 			nextBallot := p.NextBallot()
@@ -213,33 +218,34 @@ func (p *Multipaxos) RunPreparePhase(ballot int64) map[int64]*pb.Instance {
 		Sender: p.id,
 	}
 
-	for i, peer := range p.rpcPeers {
-		go func(i int, peer *RpcPeer) {
+	for _, peer := range p.rpcPeers {
+		go func(peer *RpcPeer) {
 			ctx := context.Background()
 			response, err := peer.Stub.Prepare(ctx, &request)
+			logger.Infof("%v sent prepare request to %v", p.id, peer.Id)
+
 			state.Mu.Lock()
 			defer state.Mu.Unlock()
 			defer state.Cv.Signal()
 
 			state.NumRpcs += 1
-			if err != nil {
-				return
-			}
-			if response.GetType() == pb.ResponseType_OK {
-				state.NumOks += 1
-				receivedInstances := response.GetLogs()
-				for _, instance := range receivedInstances {
-					consensusLog.Insert(state.Log, instance)
+			if err == nil {
+				if response.GetType() == pb.ResponseType_OK {
+					state.NumOks += 1
+					receivedInstances := response.GetLogs()
+					for _, instance := range receivedInstances {
+						Log.Insert(state.Log, instance)
+					}
+				} else {
+					p.mu.Lock()
+					if response.GetBallot() > p.ballot {
+						p.BecomeFollower(response.GetBallot())
+						state.Leader = Leader(p.ballot)
+					}
+					p.mu.Unlock()
 				}
-			} else {
-				p.mu.Lock()
-				if response.GetBallot() > p.ballot {
-					p.BecomeFollower(response.GetBallot())
-					state.Leader = Leader(p.ballot)
-				}
-				p.mu.Unlock()
 			}
-		}(i, peer)
+		}(peer)
 	}
 
 	state.Mu.Lock()
@@ -272,29 +278,30 @@ func (p *Multipaxos) RunAcceptPhase(ballot int64, index int64,
 		Sender:   p.id,
 	}
 
-	for i, peer := range p.rpcPeers {
-		go func(i int, peer *RpcPeer) {
+	for _, peer := range p.rpcPeers {
+		go func(peer *RpcPeer) {
 			ctx := context.Background()
 			response, err := peer.Stub.Accept(ctx, &request)
+			logger.Infof("%v sent accept request to %v", p.id, peer.Id)
+
 			state.Mu.Lock()
 			defer state.Mu.Unlock()
 			defer state.Cv.Signal()
 
 			state.NumRpcs += 1
-			if err != nil {
-				return
-			}
-			if response.GetType() == pb.ResponseType_OK {
-				state.NumOks += 1
-			} else {
-				p.mu.Lock()
-				if response.GetBallot() > p.ballot {
-					p.BecomeFollower(response.GetBallot())
-					state.Leader = Leader(p.ballot)
+			if err == nil {
+				if response.GetType() == pb.ResponseType_OK {
+					state.NumOks += 1
+				} else {
+					p.mu.Lock()
+					if response.GetBallot() > p.ballot {
+						p.BecomeFollower(response.GetBallot())
+						state.Leader = Leader(p.ballot)
+					}
+					p.mu.Unlock()
 				}
-				p.mu.Unlock()
 			}
-		}(i, peer)
+		}(peer)
 	}
 
 	state.Mu.Lock()
@@ -324,33 +331,34 @@ func (p *Multipaxos) RunCommitPhase(ballot int64, globalLastExecuted int64) int6
 		Sender:             p.id,
 	}
 
-	for i, peer := range p.rpcPeers {
-		go func(i int, peer *RpcPeer) {
+	for _, peer := range p.rpcPeers {
+		go func(peer *RpcPeer) {
 			ctx := context.Background()
 
 			response, err := peer.Stub.Commit(ctx, &request)
+			logger.Infof("%v sent commit request to %v", p.id, peer.Id)
+
 			state.Mu.Lock()
 			defer state.Mu.Unlock()
 			defer state.Cv.Signal()
 
 			state.NumRpcs += 1
-			if err != nil {
-				return
-			}
-			if response.GetType() == pb.ResponseType_OK {
-				state.NumOks += 1
-				if response.GetLastExecuted() < state.MinLastExecuted {
-					state.MinLastExecuted = response.GetLastExecuted()
+			if err == nil {
+				if response.GetType() == pb.ResponseType_OK {
+					state.NumOks += 1
+					if response.GetLastExecuted() < state.MinLastExecuted {
+						state.MinLastExecuted = response.GetLastExecuted()
+					}
+				} else {
+					p.mu.Lock()
+					if response.GetBallot() > p.ballot {
+						p.BecomeFollower(response.GetBallot())
+						state.Leader = Leader(p.ballot)
+					}
+					p.mu.Unlock()
 				}
-			} else {
-				p.mu.Lock()
-				if response.GetBallot() > p.ballot {
-					p.BecomeFollower(response.GetBallot())
-					state.Leader = Leader(p.ballot)
-				}
-				p.mu.Unlock()
 			}
-		}(i, peer)
+		}(peer)
 	}
 
 	state.Mu.Lock()
@@ -377,6 +385,7 @@ func (p *Multipaxos) Replay(ballot int64, replayLog map[int64]*pb.Instance) {
 		}
 	}
 	atomic.StoreInt32(&p.ready, 1)
+	logger.Infof("%v leader is ready to serve", p.id)
 }
 
 func (p *Multipaxos) Prepare(ctx context.Context,
@@ -384,13 +393,13 @@ func (p *Multipaxos) Prepare(ctx context.Context,
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	logger.Infof("%v received prepare from %v\n", p.id, request.GetSender())
+	logger.Infof("%v <--prepare-- %v", p.id, request.GetSender())
 	if request.GetBallot() > p.ballot {
 		p.BecomeFollower(request.GetBallot())
 		logSlice := p.log.InstancesSinceGlobalLastExecuted()
 		responseLogs := make([]*pb.Instance, 0, len(logSlice))
-		for _, instance := range logSlice {
-			responseLogs = append(responseLogs, instance)
+		for _, i := range logSlice {
+			responseLogs = append(responseLogs, i)
 		}
 		return &pb.PrepareResponse{
 			Type: pb.ResponseType_OK,
@@ -409,6 +418,7 @@ func (p *Multipaxos) Accept(ctx context.Context,
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
+	logger.Infof("%v <--accept-- %v", p.id, request.GetSender())
 	response := &pb.AcceptResponse{}
 	if request.GetInstance().GetBallot() >= p.ballot {
 		p.BecomeFollower(request.GetInstance().GetBallot())
@@ -427,7 +437,7 @@ func (p *Multipaxos) Commit(ctx context.Context,
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	logger.Infof("%v received commit from %v\n", p.id, request.GetSender())
+	logger.Infof("%v <--commit-- %v", p.id, request.GetSender())
 	response := &pb.CommitResponse{}
 	if request.GetBallot() >= p.ballot {
 		atomic.StoreInt32(&p.commitReceived, 1)

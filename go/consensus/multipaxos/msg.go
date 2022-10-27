@@ -20,11 +20,6 @@ const (
 	NoLeader       int64 = -1
 )
 
-type Result struct {
-	Type   ResultType
-	Leader int64
-}
-
 type RpcPeer struct {
 	Id   int64
 	Stub pb.MultiPaxosRPCClient
@@ -36,6 +31,11 @@ func NewRpcPeer(id int64, stub pb.MultiPaxosRPCClient) *RpcPeer {
 		Stub: stub,
 	}
 	return peer
+}
+
+type Result struct {
+	Type   ResultType
+	Leader int64
 }
 
 type PrepareState struct {

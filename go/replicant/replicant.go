@@ -51,7 +51,7 @@ func (r *Replicant) Stop() {
 func (r *Replicant) StartServer() {
 	pos := strings.Index(r.ipPort, ":")
 	if pos == -1 {
-		panic("no : in the listener port")
+		panic("no separator : in the listener port")
 	}
 	pos += 1
 	port, err := strconv.Atoi(r.ipPort[pos:])
