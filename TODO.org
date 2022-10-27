@@ -1,5 +1,23 @@
 #+title: TODO
 
+* todo refactoring
+** in all use at as the name of the test function that accesses the log entry at index i
+** in go use i instead of index: 	for index := l.globalLastExecuted + 1; index <= l.lastIndex; index++ {
+
+** in java and go: rename instancessincegloballastexecuted -> instances
+** in go fix assertion message to match the design doc here: 			logger.Panicf("Not Executed at Index %d\n", l.globalLastExecuted)
+** in java: fix         var current = ++globalLastExecuted;
+** fix commitable -> committable in java and go
+** rust -> get rid of LogResult tuple
+** get rid of typedefs maplog and vectorlog in rust and c++
+** make sure that variable declaration order and function definition order in all objects is the same in the design doc
+** remove all comments from the source codes
+** in go rename insertLog to log in func Insert(insertLog map[int64]*pb.Instance, instance *pb.Instance) bool { and also fix the ordering in 	if insertLog[i].GetBallot() == instance.GetBallot() {
+** in java fix this line     assert instance.getBallot() != it.getBallot() || (it.getCommand() .equals(instance.getCommand())) : "Insert case3";
+
+
+
+
 * TODO
 ** All
 *** design a better committable notification system
