@@ -147,7 +147,7 @@ func TestRequestsWithLowerBallotIgnored(t *testing.T) {
 	r2 := sendAccept(stub, instance)
 	assert.EqualValues(t, pb.ResponseType_REJECT, r2.GetType())
 	assert.True(t, IsLeaderByPeer(peers[0]))
-	assert.Nil(t, logs[0].Find(index))
+	assert.Nil(t, logs[0].At(index))
 
 	r3 := sendCommit(stub, staleBallot, 0, 0)
 	assert.EqualValues(t, pb.ResponseType_REJECT, r3.GetType())
@@ -222,9 +222,9 @@ func TestCommitCommitsAndTrims(t *testing.T) {
 	r1 := sendCommit(stub, ballot, index2, 0)
 	assert.EqualValues(t, pb.ResponseType_OK, r1.GetType())
 	assert.EqualValues(t, 0, r1.LastExecuted)
-	assert.True(t, log.IsCommitted(logs[0].Find(index1)))
-	assert.True(t, log.IsCommitted(logs[0].Find(index2)))
-	assert.True(t, log.IsInProgress(logs[0].Find(index3)))
+	assert.True(t, log.IsCommitted(logs[0].At(index1)))
+	assert.True(t, log.IsCommitted(logs[0].At(index2)))
+	assert.True(t, log.IsInProgress(logs[0].At(index3)))
 
 	logs[0].Execute()
 	logs[0].Execute()
@@ -232,9 +232,9 @@ func TestCommitCommitsAndTrims(t *testing.T) {
 	r2 := sendCommit(stub, ballot, index2, index2)
 	assert.EqualValues(t, pb.ResponseType_OK, r2.GetType())
 	assert.EqualValues(t, index2, r2.LastExecuted)
-	assert.Nil(t, logs[0].Find(index1))
-	assert.Nil(t, logs[0].Find(index2))
-	assert.True(t, log.IsInProgress(logs[0].Find(index3)))
+	assert.Nil(t, logs[0].At(index1))
+	assert.Nil(t, logs[0].At(index2))
+	assert.True(t, log.IsInProgress(logs[0].At(index3)))
 
 	peers[0].StopRPCServer()
 }
@@ -303,13 +303,13 @@ func TestAcceptAppendsToLog(t *testing.T) {
 
 	r1 := sendAccept(stub, instance1)
 	assert.EqualValues(t, pb.ResponseType_OK, r1.GetType())
-	assert.True(t, log.IsEqualInstance(instance1, logs[0].Find(index1)))
-	assert.Nil(t, logs[0].Find(index2))
+	assert.True(t, log.IsEqualInstance(instance1, logs[0].At(index1)))
+	assert.Nil(t, logs[0].At(index2))
 
 	r2 := sendAccept(stub, instance2)
 	assert.EqualValues(t, pb.ResponseType_OK, r2.GetType())
-	assert.True(t, log.IsEqualInstance(instance1, logs[0].Find(index1)))
-	assert.True(t, log.IsEqualInstance(instance2, logs[0].Find(index2)))
+	assert.True(t, log.IsEqualInstance(instance1, logs[0].At(index1)))
+	assert.True(t, log.IsEqualInstance(instance2, logs[0].At(index2)))
 
 	peers[0].StopRPCServer()
 }
@@ -486,9 +486,9 @@ func TestRunAcceptPhase(t *testing.T) {
 	assert.EqualValues(t, Retry, r1.Type)
 	assert.EqualValues(t, NoLeader, r1.Leader)
 
-	assert.True(t, log.IsInProgress(logs[0].Find(index1)))
-	assert.Nil(t, logs[1].Find(index1))
-	assert.Nil(t, logs[2].Find(index1))
+	assert.True(t, log.IsInProgress(logs[0].At(index1)))
+	assert.Nil(t, logs[1].At(index1))
+	assert.Nil(t, logs[2].At(index1))
 
 	peers[1].StartRPCServer()
 	defer peers[1].StopRPCServer()
@@ -498,9 +498,9 @@ func TestRunAcceptPhase(t *testing.T) {
 	assert.EqualValues(t, Ok, r2.Type)
 	assert.EqualValues(t, NoLeader, r2.Leader)
 
-	assert.True(t, log.IsCommitted(logs[0].Find(index1)))
-	assert.True(t, log.IsEqualInstance(instance1, logs[1].Find(index1)))
-	assert.Nil(t, logs[2].Find(index1))
+	assert.True(t, log.IsCommitted(logs[0].At(index1)))
+	assert.True(t, log.IsEqualInstance(instance1, logs[1].At(index1)))
+	assert.Nil(t, logs[2].At(index1))
 }
 
 func TestRunCommitPhase(t *testing.T) {
@@ -565,36 +565,36 @@ func TestReplay(t *testing.T) {
 			pb.InstanceState_INPROGRESS, pb.CommandType_DEL),
 	}
 
-	assert.Nil(t, logs[0].Find(index1))
-	assert.Nil(t, logs[0].Find(index2))
-	assert.Nil(t, logs[0].Find(index3))
+	assert.Nil(t, logs[0].At(index1))
+	assert.Nil(t, logs[0].At(index2))
+	assert.Nil(t, logs[0].At(index3))
 
-	assert.Nil(t, logs[1].Find(index1))
-	assert.Nil(t, logs[1].Find(index2))
-	assert.Nil(t, logs[1].Find(index3))
+	assert.Nil(t, logs[1].At(index1))
+	assert.Nil(t, logs[1].At(index2))
+	assert.Nil(t, logs[1].At(index3))
 
 	newBallot := peers[0].NextBallot()
 	peers[0].Replay(newBallot, replayLog)
 
 	assert.True(t, log.IsEqualInstance(util.MakeInstanceWithAll(newBallot,
 		index1, pb.InstanceState_COMMITTED, pb.CommandType_PUT),
-		logs[0].Find(index1)))
+		logs[0].At(index1)))
 	assert.True(t, log.IsEqualInstance(util.MakeInstanceWithAll(newBallot,
 		index2, pb.InstanceState_COMMITTED, pb.CommandType_GET),
-		logs[0].Find(index2)))
+		logs[0].At(index2)))
 	assert.True(t, log.IsEqualInstance(util.MakeInstanceWithAll(newBallot,
 		index3, pb.InstanceState_COMMITTED, pb.CommandType_DEL),
-		logs[0].Find(index3)))
+		logs[0].At(index3)))
 
 	assert.True(t, log.IsEqualInstance(util.MakeInstanceWithAll(newBallot,
 		index1, pb.InstanceState_INPROGRESS, pb.CommandType_PUT),
-		logs[1].Find(index1)))
+		logs[1].At(index1)))
 	assert.True(t, log.IsEqualInstance(util.MakeInstanceWithAll(newBallot,
 		index2, pb.InstanceState_INPROGRESS, pb.CommandType_GET),
-		logs[1].Find(index2)))
+		logs[1].At(index2)))
 	assert.True(t, log.IsEqualInstance(util.MakeInstanceWithAll(newBallot,
 		index3, pb.InstanceState_INPROGRESS, pb.CommandType_DEL),
-		logs[1].Find(index3)))
+		logs[1].At(index3)))
 }
 
 func TestReplicate(t *testing.T) {
@@ -727,8 +727,8 @@ func TestProposeWithFailPeer(t *testing.T) {
 
 	cmd1 := &pb.Command{Type: pb.CommandType_PUT}
 	peers[0].Replicate(cmd1, 0)
-	assert.EqualValues(t, pb.CommandType_PUT, logs[0].Find(1).GetCommand().GetType())
-	assert.EqualValues(t, pb.CommandType_PUT, logs[1].Find(1).GetCommand().GetType())
+	assert.EqualValues(t, pb.CommandType_PUT, logs[0].At(1).GetCommand().GetType())
+	assert.EqualValues(t, pb.CommandType_PUT, logs[1].At(1).GetCommand().GetType())
 
 	peers[0].StopRPCServer()
 	peers[2].StartRPCServer()
@@ -746,11 +746,11 @@ func TestProposeWithFailPeer(t *testing.T) {
 	assert.EqualValues(t, 3, logs[1].AdvanceLastIndex())
 	assert.EqualValues(t, 3, logs[2].AdvanceLastIndex())
 
-	assert.EqualValues(t, pb.CommandType_DEL, logs[1].Find(2).GetCommand().
+	assert.EqualValues(t, pb.CommandType_DEL, logs[1].At(2).GetCommand().
 		GetType())
-	assert.EqualValues(t, pb.CommandType_PUT, logs[2].Find(1).GetCommand().
+	assert.EqualValues(t, pb.CommandType_PUT, logs[2].At(1).GetCommand().
 		GetType())
-	assert.EqualValues(t, pb.CommandType_DEL, logs[2].Find(2).GetCommand().
+	assert.EqualValues(t, pb.CommandType_DEL, logs[2].At(2).GetCommand().
 		GetType())
 }
 

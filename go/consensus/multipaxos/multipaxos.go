@@ -396,7 +396,7 @@ func (p *Multipaxos) Prepare(ctx context.Context,
 	logger.Infof("%v <--prepare-- %v", p.id, request.GetSender())
 	if request.GetBallot() > p.ballot {
 		p.BecomeFollower(request.GetBallot())
-		logSlice := p.log.InstancesSinceGlobalLastExecuted()
+		logSlice := p.log.Instances()
 		responseLogs := make([]*pb.Instance, 0, len(logSlice))
 		for _, i := range logSlice {
 			responseLogs = append(responseLogs, i)

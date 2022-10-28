@@ -31,30 +31,27 @@ func IsEqualInstance(a, b *pb.Instance) bool {
 		IsEqualCommand(a.GetCommand(), b.GetCommand())
 }
 
-func Insert(insertLog map[int64]*pb.Instance, instance *pb.Instance) bool {
-	// Case 1
+func Insert(log map[int64]*pb.Instance, instance *pb.Instance) bool {
 	i := instance.GetIndex()
-	if _, ok := insertLog[i]; !ok {
-		insertLog[i] = instance
+	if _, ok := log[i]; !ok {
+		log[i] = instance
 		return true
 	}
 
-	// Case 2
-	if IsCommitted(insertLog[i]) || IsExecuted(insertLog[i]) {
-		if !IsEqualCommand(insertLog[i].GetCommand(), instance.GetCommand()) {
+	if IsCommitted(log[i]) || IsExecuted(log[i]) {
+		if !IsEqualCommand(log[i].GetCommand(), instance.GetCommand()) {
 			logger.Panicf("case 2 violation\n")
 		}
 		return false
 	}
 
-	// Case 3
-	if instance.GetBallot() > insertLog[i].GetBallot() {
-		insertLog[i] = instance
+	if instance.GetBallot() > log[i].GetBallot() {
+		log[i] = instance
 		return false
 	}
 
-	if insertLog[i].GetBallot() == instance.GetBallot() {
-		if !IsEqualCommand(insertLog[i].GetCommand(), instance.GetCommand()) {
+	if instance.GetBallot() == log[i].GetBallot() {
+		if !IsEqualCommand(log[i].GetCommand(), instance.GetCommand()) {
 			logger.Panicf("case 3 violation\n")
 		}
 	}
@@ -63,20 +60,20 @@ func Insert(insertLog map[int64]*pb.Instance, instance *pb.Instance) bool {
 
 type Log struct {
 	running            bool
-	store              store.KVStore
+	kvStore            store.KVStore
 	log                map[int64]*pb.Instance
 	lastIndex          int64
 	lastExecuted       int64
 	globalLastExecuted int64
 	mu                 sync.Mutex
 	cvExecutable       *sync.Cond
-	cvCommitable       *sync.Cond
+	cvCommittable      *sync.Cond
 }
 
 func NewLog(s store.KVStore) *Log {
 	l := Log{
 		running:            true,
-		store:              s,
+		kvStore:            s,
 		log:                make(map[int64]*pb.Instance),
 		lastIndex:          0,
 		lastExecuted:       0,
@@ -84,8 +81,22 @@ func NewLog(s store.KVStore) *Log {
 		mu:                 sync.Mutex{},
 	}
 	l.cvExecutable = sync.NewCond(&l.mu)
-	l.cvCommitable = sync.NewCond(&l.mu)
+	l.cvCommittable = sync.NewCond(&l.mu)
 	return &l
+}
+
+func (l *Log) LastExecuted() int64 {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	return l.lastExecuted
+}
+
+func (l *Log) GlobalLastExecuted() int64 {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	return l.globalLastExecuted
 }
 
 func (l *Log) AdvanceLastIndex() int64 {
@@ -96,20 +107,6 @@ func (l *Log) AdvanceLastIndex() int64 {
 	return l.lastIndex
 }
 
-func (l *Log) GlobalLastExecuted() int64 {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-
-	return l.globalLastExecuted
-}
-
-func (l *Log) LastExecuted() int64 {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-
-	return l.lastExecuted
-}
-
 func (l *Log) Stop() {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -118,27 +115,27 @@ func (l *Log) Stop() {
 }
 
 func (l *Log) IsExecutable() bool {
-	inst, ok := l.log[l.lastExecuted+ 1]
-	if ok && inst.GetState() == pb.InstanceState_COMMITTED {
+	instance, ok := l.log[l.lastExecuted+ 1]
+	if ok && IsCommitted(instance) {
 		return true
 	}
 	return false
 }
 
-func (l *Log) Append(inst *pb.Instance) {
+func (l *Log) Append(instance *pb.Instance) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	i := inst.GetIndex()
+	i := instance.GetIndex()
 	if i <= l.globalLastExecuted {
 		return
 	}
 
-	if Insert(l.log, inst) {
+	if Insert(l.log, instance) {
 		if i > l.lastIndex {
 			l.lastIndex = i
 		}
-		l.cvCommitable.Broadcast()
+		l.cvCommittable.Broadcast()
 	}
 }
 
@@ -152,7 +149,7 @@ func (l *Log) Commit(index int64) {
 
 	instance, ok := l.log[index]
 	for !ok {
-		l.cvCommitable.Wait()
+		l.cvCommittable.Wait()
 		instance, ok = l.log[index]
 	}
 
@@ -176,14 +173,14 @@ func (l *Log) Execute() (int64, *store.KVResult) {
 		return -1, nil
 	}
 
-	inst, ok := l.log[l.lastExecuted+ 1]
+	instance, ok := l.log[l.lastExecuted+ 1]
 	if !ok {
 		logger.Panicf("Instance at Index %v empty\n", l.lastExecuted+ 1)
 	}
-	result := store.Execute(inst.GetCommand(), l.store)
-	inst.State = pb.InstanceState_EXECUTED
+	result := store.Execute(instance.GetCommand(), l.kvStore)
+	instance.State = pb.InstanceState_EXECUTED
 	l.lastExecuted += 1
-	return inst.ClientId, &result
+	return instance.ClientId, &result
 }
 
 func (l *Log) CommitUntil(leaderLastExecuted int64, ballot int64) {
@@ -198,15 +195,15 @@ func (l *Log) CommitUntil(leaderLastExecuted int64, ballot int64) {
 	defer l.mu.Unlock()
 
 	for i := l.lastExecuted + 1; i <= leaderLastExecuted; i++ {
-		inst, ok := l.log[i]
+		instance, ok := l.log[i]
 		if !ok {
 			break
 		}
-		if ballot < inst.GetBallot() {
+		if ballot < instance.GetBallot() {
 			panic("CommitUntil case 2")
 		}
-		if inst.GetBallot() == ballot {
-			inst.State = pb.InstanceState_COMMITTED
+		if instance.GetBallot() == ballot {
+			instance.State = pb.InstanceState_COMMITTED
 		}
 	}
 	if l.IsExecutable() {
@@ -222,19 +219,19 @@ func (l *Log) TrimUntil(leaderGlobalLastExecuted int64) {
 		l.globalLastExecuted += 1
 		instance, ok := l.log[l.globalLastExecuted]
 		if !ok || !IsExecuted(instance) {
-			logger.Panicf("Not Executed at Index %d\n", l.globalLastExecuted)
+			logger.Panicln("TrimUntil case 1")
 		}
 		delete(l.log, l.globalLastExecuted)
 	}
 }
 
-func (l *Log) InstancesSinceGlobalLastExecuted() []*pb.Instance {
+func (l *Log) Instances() []*pb.Instance {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
 	instances := make([]*pb.Instance, 0, len(l.log))
-	for index := l.globalLastExecuted + 1; index <= l.lastIndex; index++ {
-		instance := proto.Clone(l.log[index]).(*pb.Instance)
+	for i := l.globalLastExecuted + 1; i <= l.lastIndex; i++ {
+		instance := proto.Clone(l.log[i]).(*pb.Instance)
 		if instance != nil {
 			instances = append(instances, instance)
 		}
@@ -242,12 +239,11 @@ func (l *Log) InstancesSinceGlobalLastExecuted() []*pb.Instance {
 	return instances
 }
 
-// Helper functions for testing
-func (l *Log) Find(index int64) *pb.Instance {
+func (l *Log) At(index int64) *pb.Instance {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if inst, ok := l.log[index]; ok {
-		return inst
+	if instance, ok := l.log[index]; ok {
+		return instance
 	}
 	return nil
 }

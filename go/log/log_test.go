@@ -472,7 +472,7 @@ func TestLog_InstancesSinceGlobalLastExecuted(t *testing.T) {
 	var wg sync.WaitGroup
 
 	expect := make([]*pb.Instance, 0, 3)
-	assert.Equal(t, expect, log1.InstancesSinceGlobalLastExecuted())
+	assert.Equal(t, expect, log1.Instances())
 
 	expect = append(expect, util.MakeInstance(ballot, index1))
 	log1.Append(util.MakeInstance(ballot, index1))
@@ -481,7 +481,7 @@ func TestLog_InstancesSinceGlobalLastExecuted(t *testing.T) {
 	expect = append(expect, util.MakeInstance(ballot, index3))
 	log1.Append(util.MakeInstance(ballot, index3))
 
-	instances := log1.InstancesSinceGlobalLastExecuted()
+	instances := log1.Instances()
 	for index, instance := range expect {
 		assert.True(t, IsEqualInstance(instance, instances[index]))
 	}
@@ -502,7 +502,7 @@ func TestLog_InstancesSinceGlobalLastExecuted(t *testing.T) {
 
 	log1.TrimUntil(index)
 	expect = expect[index:]
-	instances = log1.InstancesSinceGlobalLastExecuted()
+	instances = log1.Instances()
 	for index, instance := range expect {
 		assert.True(t, IsEqualInstance(instance, instances[index]))
 	}
