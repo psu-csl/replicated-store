@@ -3,6 +3,13 @@
 * todo refactoring
 ** make sure that variable declaration order and function definition order in all objects is the same in the design doc
 ** go: fix test name: func TestLog_Instances(t *testing.T) {
+** go: rename store -> kvstore
+** java: ConcurrentHashMap -> HashMap
+** java: rename paxos -> multipaxos
+** java: add port field to multipaxos
+** java: log_ -> log
+** go: server -> rpcServer
+** go: remove NoLeader constant
 
 * TODO
 ** All
