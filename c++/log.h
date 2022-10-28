@@ -11,7 +11,6 @@
 
 #include "kvstore.h"
 
-using log_result_t = std::tuple<int64_t, kvstore::KVResult>;
 using vector_log_t = std::vector<multipaxos::Instance>;
 using map_log_t = std::unordered_map<int64_t, multipaxos::Instance>;
 
@@ -57,7 +56,7 @@ class Log {
 
   void Append(multipaxos::Instance instance);
   void Commit(int64_t index);
-  std::optional<log_result_t> Execute();
+  std::optional<std::tuple<int64_t, kvstore::KVResult>> Execute();
 
   void CommitUntil(int64_t leader_last_executed, int64_t ballot);
   void TrimUntil(int64_t leader_global_last_executed);

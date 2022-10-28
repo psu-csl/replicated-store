@@ -78,7 +78,7 @@ void Log::Commit(int64_t index) {
     cv_executable_.notify_one();
 }
 
-std::optional<log_result_t> Log::Execute() {
+std::optional<std::tuple<int64_t, kvstore::KVResult>> Log::Execute() {
   std::unique_lock lock(mu_);
   while (running_ && !IsExecutable())
     cv_executable_.wait(lock);
