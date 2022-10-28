@@ -16,7 +16,6 @@ import io.grpc.ServerBuilder;
 import io.grpc.StatusRuntimeException;
 import io.grpc.stub.StreamObserver;
 import java.io.IOException;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -601,7 +600,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
       if (request.getBallot() > ballot) {
         becomeFollower(request.getBallot());
 
-        for (var i : log_.instancesSinceGlobalLastExecuted()) {
+        for (var i : log_.instances()) {
           if (i == null) {
             logger.info("null instance of log");
             continue;

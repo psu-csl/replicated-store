@@ -424,7 +424,7 @@ class LogTest {
       expected.add(makeInstance(ballot, log_.advanceLastIndex()));
       log_.append(expected.get(expected.size() - 1));
     }
-    assertEquals(expected, log_.instancesSinceGlobalLastExecuted());
+    assertEquals(expected, log_.instances());
 
     long index = 5;
     log_.commitUntil(index, ballot);
@@ -440,7 +440,7 @@ class LogTest {
     for (int i = 0; i < index; i++) {
       expected.remove(0);
     }
-    assertEquals(expected, log_.instancesSinceGlobalLastExecuted());
+    assertEquals(expected, log_.instances());
   }
 
   @Test
