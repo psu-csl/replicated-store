@@ -4,7 +4,7 @@ import org.codehaus.jackson.map.ObjectMapper;
 import paxos.Configuration;
 import replicant.Replicant;
 
-public class ReplicantMain {
+public class ReplicatorMain {
 
   public static void main(String[] args) {
 
