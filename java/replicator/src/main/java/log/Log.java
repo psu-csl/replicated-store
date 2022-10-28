@@ -188,10 +188,10 @@ public class Log {
     mu.lock();
     try {
       while (globalLastExecuted < leaderGlobalLastExecuted) {
-        var current = ++globalLastExecuted;
+        ++globalLastExecuted;
         var inst = log.get(globalLastExecuted);
         assert (inst != null && inst.isExecuted()) : "TrimUntil case 1";
-        log.remove(current, inst);
+        log.remove(globalLastExecuted, inst);
       }
     } finally {
       mu.unlock();
