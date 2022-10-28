@@ -17,17 +17,15 @@ func main() {
 	configPath := flag.String("c", "config/config.json", "config path")
 	flag.Parse()
 
-	var cfg config.Config
 	if *debug {
 		logger.SetLevel(logger.InfoLevel)
-		cfg = config.DefaultConfig(*id, numPeers)
 	} else {
 		logger.SetLevel(logger.ErrorLevel)
-		var err error
-		cfg, err = config.LoadConfig(*id, *configPath)
-		if err != nil {
-			logger.Panic(err)
-		}
+	}
+
+	cfg, err := config.LoadConfig(*id, *configPath)
+	if err != nil {
+		logger.Panic(err)
 	}
 
 	replicant := replicant.NewReplicant(cfg)
