@@ -1,12 +1,11 @@
 #+title: TODO
 
 * todo refactoring
-** in java use at as the name of the test function that accesses the log entry at index i
 ** in java: rename instancessincegloballastexecuted -> instances
 ** in java: fix         var current = ++globalLastExecuted;
-** fix commitable -> committable in java
+** fix commitable -> committable in java and go
 ** make sure that variable declaration order and function definition order in all objects is the same in the design doc
-** remove all comments from the java source codes
+** remove all comments from the source codes
 ** in java fix this line     assert instance.getBallot() != it.getBallot() || (it.getCommand() .equals(instance.getCommand())) : "Insert case3";
 
 
