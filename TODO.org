@@ -8,7 +8,7 @@
 ** rust -> get rid of LogResult tuple
 ** get rid of typedefs maplog and vectorlog in rust and c++
 ** make sure that variable declaration order and function definition order in all objects is the same in the design doc
-** remove all comments from the source codes
+** remove all comments from the java source codes
 ** in java fix this line     assert instance.getBallot() != it.getBallot() || (it.getCommand() .equals(instance.getCommand())) : "Insert case3";
 
 
