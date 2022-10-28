@@ -1,9 +1,7 @@
 #+title: TODO
 
 * todo refactoring
-** java: replicator -> replicant
 ** make sure that variable declaration order and function definition order in all objects is the same in the design doc
-** java: fix test name: void instancesSinceGlobalLastExecuted
 ** go: fix test name: func TestLog_Instances(t *testing.T) {
 
 * TODO
