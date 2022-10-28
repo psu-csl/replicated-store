@@ -538,7 +538,8 @@ TEST_F(MultiPaxosTest, Replay) {
   auto i2 = MakeInstance(ballot, index2, EXECUTED, GET);
   auto index3 = 3;
   auto i3 = MakeInstance(ballot, index3, INPROGRESS, DEL);
-  map_log_t log{{index1, i1}, {index2, i2}, {index3, i3}};
+  std::unordered_map<int64_t, multipaxos::Instance> log{
+      {index1, i1}, {index2, i2}, {index3, i3}};
 
   EXPECT_EQ(nullptr, logs_[0]->at(index1));
   EXPECT_EQ(nullptr, logs_[0]->at(index2));

@@ -11,10 +11,8 @@
 
 #include "kvstore.h"
 
-using vector_log_t = std::vector<multipaxos::Instance>;
-using map_log_t = std::unordered_map<int64_t, multipaxos::Instance>;
-
-bool Insert(map_log_t* log, multipaxos::Instance instance);
+bool Insert(std::unordered_map<int64_t, multipaxos::Instance>* log,
+            multipaxos::Instance instance);
 bool IsCommitted(multipaxos::Instance const& instance);
 bool IsExecuted(multipaxos::Instance const& instance);
 bool IsInProgress(multipaxos::Instance const& instance);
@@ -61,7 +59,7 @@ class Log {
   void CommitUntil(int64_t leader_last_executed, int64_t ballot);
   void TrimUntil(int64_t leader_global_last_executed);
 
-  vector_log_t Instances() const;
+  std::vector<multipaxos::Instance> Instances() const;
 
   bool IsExecutable() const {
     auto it = log_.find(last_executed_ + 1);
@@ -73,7 +71,7 @@ class Log {
  private:
   bool running_ = true;
   std::unique_ptr<kvstore::KVStore> kv_store_;
-  map_log_t log_;
+  std::unordered_map<int64_t, multipaxos::Instance> log_;
   int64_t last_index_ = 0;
   int64_t last_executed_ = 0;
   int64_t global_last_executed_ = 0;

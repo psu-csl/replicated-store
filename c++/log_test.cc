@@ -37,7 +37,7 @@ TEST_F(LogTest, Constructor) {
 }
 
 TEST_F(LogTest, Insert) {
-  map_log_t log;
+  std::unordered_map<int64_t, multipaxos::Instance> log;
   auto index = 1;
   auto ballot = 1;
   EXPECT_TRUE(Insert(&log, MakeInstance(ballot, index, PUT)));
@@ -46,7 +46,7 @@ TEST_F(LogTest, Insert) {
 }
 
 TEST_F(LogTest, InsertUpdateInProgress) {
-  map_log_t log;
+  std::unordered_map<int64_t, multipaxos::Instance> log;
   auto index = 1;
   auto ballot = 1;
   EXPECT_TRUE(Insert(&log, MakeInstance(ballot, index, PUT)));
@@ -56,7 +56,7 @@ TEST_F(LogTest, InsertUpdateInProgress) {
 }
 
 TEST_F(LogTest, InsertUpdateCommitted) {
-  map_log_t log;
+  std::unordered_map<int64_t, multipaxos::Instance> log;
   auto index = 1;
   auto ballot = 1;
   EXPECT_TRUE(Insert(&log, MakeInstance(ballot, index, COMMITTED, PUT)));
@@ -64,7 +64,7 @@ TEST_F(LogTest, InsertUpdateCommitted) {
 }
 
 TEST_F(LogTest, InsertStale) {
-  map_log_t log;
+  std::unordered_map<int64_t, multipaxos::Instance> log;
   auto index = 1;
   auto ballot = 1;
   EXPECT_TRUE(Insert(&log, MakeInstance(ballot, index, PUT)));
@@ -77,7 +77,7 @@ TEST_F(LogDeathTest, InsertCase2Committed) {
   auto index = 1;
   auto inst1 = MakeInstance(0, index, COMMITTED, PUT);
   auto inst2 = MakeInstance(0, index, INPROGRESS, DEL);
-  map_log_t log;
+  std::unordered_map<int64_t, multipaxos::Instance> log;
   Insert(&log, std::move(inst1));
   EXPECT_DEATH(Insert(&log, std::move(inst2)), "Insert case2");
 }
@@ -86,7 +86,7 @@ TEST_F(LogDeathTest, InsertCase2Executed) {
   auto index = 1;
   auto inst1 = MakeInstance(0, index, EXECUTED, PUT);
   auto inst2 = MakeInstance(0, index, INPROGRESS, DEL);
-  map_log_t log;
+  std::unordered_map<int64_t, multipaxos::Instance> log;
   Insert(&log, std::move(inst1));
   EXPECT_DEATH(Insert(&log, std::move(inst2)), "Insert case2");
 }
@@ -95,7 +95,7 @@ TEST_F(LogDeathTest, InsertCase3) {
   auto index = 1;
   auto inst1 = MakeInstance(0, index, INPROGRESS, PUT);
   auto inst2 = MakeInstance(0, index, INPROGRESS, DEL);
-  map_log_t log;
+  std::unordered_map<int64_t, multipaxos::Instance> log;
   Insert(&log, std::move(inst1));
   EXPECT_DEATH(Insert(&log, std::move(inst2)), "Insert case3");
 }
@@ -356,7 +356,7 @@ TEST_F(LogTest, Instances) {
   });
 
   auto ballot = 0;
-  vector_log_t expected;
+  std::vector<multipaxos::Instance> expected;
 
   expected.emplace_back(MakeInstance(ballot, log_.AdvanceLastIndex()));
   log_.Append(expected.back());

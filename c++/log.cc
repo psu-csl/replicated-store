@@ -28,7 +28,8 @@ bool operator==(multipaxos::Instance const& a, multipaxos::Instance const& b) {
 }
 }  // namespace multipaxos
 
-bool Insert(map_log_t* log, Instance instance) {
+bool Insert(std::unordered_map<int64_t, multipaxos::Instance>* log,
+            Instance instance) {
   auto i = instance.index();
   auto it = log->find(i);
   if (it == log->end()) {
@@ -123,9 +124,9 @@ void Log::TrimUntil(int64_t leader_global_last_executed) {
   }
 }
 
-vector_log_t Log::Instances() const {
+std::vector<multipaxos::Instance> Log::Instances() const {
   std::scoped_lock lock(mu_);
-  vector_log_t instances;
+  std::vector<multipaxos::Instance> instances;
   for (auto i = global_last_executed_ + 1; i <= last_index_; ++i)
     if (auto it = log_.find(i); it != log_.end())
       instances.push_back(it->second);

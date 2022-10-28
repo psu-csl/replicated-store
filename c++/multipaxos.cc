@@ -164,7 +164,8 @@ void MultiPaxos::CommitThread() {
   }
 }
 
-std::optional<map_log_t> MultiPaxos::RunPreparePhase(int64_t ballot) {
+std::optional<std::unordered_map<int64_t, multipaxos::Instance>>
+MultiPaxos::RunPreparePhase(int64_t ballot) {
   auto state = std::make_shared<prepare_state_t>(id_);
 
   PrepareRequest request;
@@ -251,9 +252,9 @@ Result MultiPaxos::RunAcceptPhase(int64_t ballot,
   }
   {
     std::unique_lock lock(state->mu_);
-    while (state->current_leader_ == id_
-           && state->num_oks_ <= rpc_peers_.size() / 2
-           && state->num_rpcs_ != rpc_peers_.size())
+    while (state->current_leader_ == id_ &&
+           state->num_oks_ <= rpc_peers_.size() / 2 &&
+           state->num_rpcs_ != rpc_peers_.size())
       state->cv_.wait(lock);
     if (state->num_oks_ > rpc_peers_.size() / 2) {
       log_->Commit(index);
@@ -311,7 +312,9 @@ int64_t MultiPaxos::RunCommitPhase(int64_t ballot,
   return global_last_executed;
 }
 
-void MultiPaxos::Replay(int64_t ballot, map_log_t const& log) {
+void MultiPaxos::Replay(
+    int64_t ballot,
+    std::unordered_map<int64_t, multipaxos::Instance> const& log) {
   for (auto const& [index, instance] : log) {
     Result r = RunAcceptPhase(ballot, instance.index(), instance.command(),
                               instance.client_id());
