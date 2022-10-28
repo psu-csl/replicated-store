@@ -1,12 +1,7 @@
 #+title: TODO
 
 * todo refactoring
-** fix commitable -> committable in  go
 ** make sure that variable declaration order and function definition order in all objects is the same in the design doc
-** remove all comments from the source codes
-
-
-
 
 * TODO
 ** All
