@@ -155,7 +155,7 @@ TEST_F(MultiPaxosTest, RequestsWithLowerBallotIgnored) {
   auto r2 = SendAccept(stub.get(), instance);
   EXPECT_EQ(REJECT, r2.type());
   EXPECT_TRUE(IsLeader(*peers_[0]));
-  EXPECT_EQ(nullptr, (*logs_[0])[index]);
+  EXPECT_EQ(nullptr, logs_[0]->at(index));
 
   auto r3 = SendCommit(stub.get(), stale_ballot, 0, 0);
   EXPECT_EQ(REJECT, r3.type());
@@ -213,9 +213,9 @@ TEST_F(MultiPaxosTest, CommitCommitsAndTrims) {
   auto r1 = SendCommit(stub.get(), ballot, index2, 0);
   EXPECT_EQ(OK, r1.type());
   EXPECT_EQ(0, r1.last_executed());
-  EXPECT_TRUE(IsCommitted(*(*logs_[0])[index1]));
-  EXPECT_TRUE(IsCommitted(*(*logs_[0])[index2]));
-  EXPECT_TRUE(IsInProgress(*(*logs_[0])[index3]));
+  EXPECT_TRUE(IsCommitted(*logs_[0]->at(index1)));
+  EXPECT_TRUE(IsCommitted(*logs_[0]->at(index2)));
+  EXPECT_TRUE(IsInProgress(*logs_[0]->at(index3)));
 
   logs_[0]->Execute();
   logs_[0]->Execute();
@@ -223,9 +223,9 @@ TEST_F(MultiPaxosTest, CommitCommitsAndTrims) {
   auto r2 = SendCommit(stub.get(), ballot, index2, index2);
   EXPECT_EQ(OK, r2.type());
   EXPECT_EQ(index2, r2.last_executed());
-  EXPECT_EQ(nullptr, (*logs_[0])[index1]);
-  EXPECT_EQ(nullptr, (*logs_[0])[index2]);
-  EXPECT_TRUE(IsInProgress(*(*logs_[0])[index3]));
+  EXPECT_EQ(nullptr, logs_[0]->at(index1));
+  EXPECT_EQ(nullptr, logs_[0]->at(index2));
+  EXPECT_TRUE(IsInProgress(*logs_[0]->at(index3)));
 
   peers_[0]->StopRPCServer();
 }
@@ -295,13 +295,13 @@ TEST_F(MultiPaxosTest, AcceptAppendsToLog) {
 
   auto r1 = SendAccept(stub.get(), instance1);
   EXPECT_EQ(OK, r1.type());
-  EXPECT_EQ(instance1, *(*logs_[0])[index1]);
-  EXPECT_EQ(nullptr, (*logs_[0])[index2]);
+  EXPECT_EQ(instance1, *logs_[0]->at(index1));
+  EXPECT_EQ(nullptr, logs_[0]->at(index2));
 
   auto r2 = SendAccept(stub.get(), instance2);
   EXPECT_EQ(OK, r2.type());
-  EXPECT_EQ(instance1, *(*logs_[0])[index1]);
-  EXPECT_EQ(instance2, *(*logs_[0])[index2]);
+  EXPECT_EQ(instance1, *logs_[0]->at(index1));
+  EXPECT_EQ(instance2, *logs_[0]->at(index2));
 
   peers_[0]->StopRPCServer();
 }
@@ -467,9 +467,9 @@ TEST_F(MultiPaxosTest, RunAcceptPhase) {
   EXPECT_EQ(ResultType::kRetry, result.type_);
   EXPECT_EQ(std::nullopt, result.leader_);
 
-  EXPECT_TRUE(IsInProgress(*(*logs_[0])[index]));
-  EXPECT_EQ(nullptr, (*logs_[1])[index]);
-  EXPECT_EQ(nullptr, (*logs_[2])[index]);
+  EXPECT_TRUE(IsInProgress(*logs_[0]->at(index)));
+  EXPECT_EQ(nullptr, logs_[1]->at(index));
+  EXPECT_EQ(nullptr, logs_[2]->at(index));
 
   peers_[1]->StartRPCServer();
 
@@ -480,9 +480,9 @@ TEST_F(MultiPaxosTest, RunAcceptPhase) {
   EXPECT_EQ(ResultType::kOk, result.type_);
   EXPECT_EQ(std::nullopt, result.leader_);
 
-  EXPECT_TRUE(IsCommitted(*(*logs_[0])[index]));
-  EXPECT_TRUE(IsInProgress(*(*logs_[1])[index]));
-  EXPECT_EQ(nullptr, (*logs_[2])[index]);
+  EXPECT_TRUE(IsCommitted(*logs_[0]->at(index)));
+  EXPECT_TRUE(IsInProgress(*logs_[1]->at(index)));
+  EXPECT_EQ(nullptr, logs_[2]->at(index));
 
   peers_[0]->StopRPCServer();
   peers_[1]->StopRPCServer();
@@ -540,13 +540,13 @@ TEST_F(MultiPaxosTest, Replay) {
   auto i3 = MakeInstance(ballot, index3, INPROGRESS, DEL);
   map_log_t log{{index1, i1}, {index2, i2}, {index3, i3}};
 
-  EXPECT_EQ(nullptr, (*logs_[0])[index1]);
-  EXPECT_EQ(nullptr, (*logs_[0])[index2]);
-  EXPECT_EQ(nullptr, (*logs_[0])[index3]);
+  EXPECT_EQ(nullptr, logs_[0]->at(index1));
+  EXPECT_EQ(nullptr, logs_[0]->at(index2));
+  EXPECT_EQ(nullptr, logs_[0]->at(index3));
 
-  EXPECT_EQ(nullptr, (*logs_[1])[index1]);
-  EXPECT_EQ(nullptr, (*logs_[1])[index2]);
-  EXPECT_EQ(nullptr, (*logs_[1])[index3]);
+  EXPECT_EQ(nullptr, logs_[1]->at(index1));
+  EXPECT_EQ(nullptr, logs_[1]->at(index2));
+  EXPECT_EQ(nullptr, logs_[1]->at(index3));
 
   auto new_ballot = peers_[0]->NextBallot();
   peers_[0]->Replay(new_ballot, log);
@@ -559,17 +559,17 @@ TEST_F(MultiPaxosTest, Replay) {
   i2.set_state(COMMITTED);
   i3.set_state(COMMITTED);
 
-  EXPECT_EQ(i1, *(*logs_[0])[index1]);
-  EXPECT_EQ(i2, *(*logs_[0])[index2]);
-  EXPECT_EQ(i3, *(*logs_[0])[index3]);
+  EXPECT_EQ(i1, *logs_[0]->at(index1));
+  EXPECT_EQ(i2, *logs_[0]->at(index2));
+  EXPECT_EQ(i3, *logs_[0]->at(index3));
 
   i1.set_state(INPROGRESS);
   i2.set_state(INPROGRESS);
   i3.set_state(INPROGRESS);
 
-  EXPECT_EQ(i1, *(*logs_[1])[index1]);
-  EXPECT_EQ(i2, *(*logs_[1])[index2]);
-  EXPECT_EQ(i3, *(*logs_[1])[index3]);
+  EXPECT_EQ(i1, *logs_[1]->at(index1));
+  EXPECT_EQ(i2, *logs_[1]->at(index2));
+  EXPECT_EQ(i3, *logs_[1]->at(index3));
 
   peers_[0]->StopRPCServer();
   peers_[1]->StopRPCServer();

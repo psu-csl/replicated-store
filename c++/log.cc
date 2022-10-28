@@ -89,8 +89,8 @@ std::optional<log_result_t> Log::Execute() {
   auto it = log_.find(last_executed_ + 1);
   CHECK(it != log_.end());
   Instance* instance = &it->second;
-  kvstore::KVResult result = kvstore::Execute(instance->command(),
-                                              kv_store_.get());
+  kvstore::KVResult result =
+      kvstore::Execute(instance->command(), kv_store_.get());
   instance->set_state(EXECUTED);
   ++last_executed_;
   return {{instance->client_id(), std::move(result)}};
@@ -132,7 +132,7 @@ vector_log_t Log::Instances() const {
   return instances;
 }
 
-Instance const* Log::operator[](std::size_t i) const {
+Instance const* Log::at(std::size_t i) const {
   auto it = log_.find(i);
   return it == log_.end() ? nullptr : &it->second;
 }

@@ -69,7 +69,7 @@ class Log {
     return it != log_.end() && IsCommitted(it->second);
   }
 
-  multipaxos::Instance const* operator[](std::size_t i) const;
+  multipaxos::Instance const* at(std::size_t i) const;
 
  private:
   bool running_ = true;

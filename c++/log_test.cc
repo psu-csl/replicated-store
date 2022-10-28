@@ -31,9 +31,9 @@ TEST_F(LogTest, Constructor) {
   EXPECT_EQ(log_.LastExecuted(), 0);
   EXPECT_EQ(log_.GlobalLastExecuted(), 0);
   EXPECT_FALSE(log_.IsExecutable());
-  EXPECT_EQ(nullptr, log_[0]);
-  EXPECT_EQ(nullptr, log_[-1]);
-  EXPECT_EQ(nullptr, log_[3]);
+  EXPECT_EQ(nullptr, log_.at(0));
+  EXPECT_EQ(nullptr, log_.at(-1));
+  EXPECT_EQ(nullptr, log_.at(3));
 }
 
 TEST_F(LogTest, Insert) {
@@ -103,14 +103,14 @@ TEST_F(LogDeathTest, InsertCase3) {
 TEST_F(LogTest, Append) {
   log_.Append(MakeInstance(0, log_.AdvanceLastIndex()));
   log_.Append(MakeInstance(0, log_.AdvanceLastIndex()));
-  EXPECT_EQ(1, log_[1]->index());
-  EXPECT_EQ(2, log_[2]->index());
+  EXPECT_EQ(1, log_.at(1)->index());
+  EXPECT_EQ(2, log_.at(2)->index());
 }
 
 TEST_F(LogTest, AppendWithGap) {
   auto index = 42;
   log_.Append(MakeInstance(0, index));
-  EXPECT_EQ(index, log_[index]->index());
+  EXPECT_EQ(index, log_.at(index)->index());
   EXPECT_EQ(index + 1, log_.AdvanceLastIndex());
 }
 
@@ -125,14 +125,14 @@ TEST_F(LogTest, AppendHighBallotOverride) {
   auto index = 1, lo_ballot = 0, hi_ballot = 1;
   log_.Append(MakeInstance(lo_ballot, index, PUT));
   log_.Append(MakeInstance(hi_ballot, index, DEL));
-  EXPECT_EQ(DEL, log_[index]->command().type());
+  EXPECT_EQ(DEL, log_.at(index)->command().type());
 }
 
 TEST_F(LogTest, AppendLowBallotNoEffect) {
   auto index = 1, lo_ballot = 0, hi_ballot = 1;
   log_.Append(MakeInstance(hi_ballot, index, PUT));
   log_.Append(MakeInstance(lo_ballot, index, DEL));
-  EXPECT_EQ(PUT, log_[index]->command().type());
+  EXPECT_EQ(PUT, log_.at(index)->command().type());
 }
 
 TEST_F(LogTest, Commit) {
@@ -141,20 +141,20 @@ TEST_F(LogTest, Commit) {
   auto index2 = 2;
   log_.Append(MakeInstance(0, index2));
 
-  EXPECT_TRUE(IsInProgress(*log_[index1]));
-  EXPECT_TRUE(IsInProgress(*log_[index2]));
+  EXPECT_TRUE(IsInProgress(*log_.at(index1)));
+  EXPECT_TRUE(IsInProgress(*log_.at(index2)));
   EXPECT_FALSE(log_.IsExecutable());
 
   log_.Commit(index2);
 
-  EXPECT_TRUE(IsInProgress(*log_[index1]));
-  EXPECT_TRUE(IsCommitted(*log_[index2]));
+  EXPECT_TRUE(IsInProgress(*log_.at(index1)));
+  EXPECT_TRUE(IsCommitted(*log_.at(index2)));
   EXPECT_FALSE(log_.IsExecutable());
 
   log_.Commit(index1);
 
-  EXPECT_TRUE(IsCommitted(*log_[index1]));
-  EXPECT_TRUE(IsCommitted(*log_[index2]));
+  EXPECT_TRUE(IsCommitted(*log_.at(index1)));
+  EXPECT_TRUE(IsCommitted(*log_.at(index2)));
   EXPECT_TRUE(log_.IsExecutable());
 }
 
@@ -164,7 +164,7 @@ TEST_F(LogTest, CommitBeforeAppend) {
   std::this_thread::yield();
   log_.Append(MakeInstance(0, log_.AdvanceLastIndex()));
   commit_thread.join();
-  EXPECT_TRUE(IsCommitted(*log_[index]));
+  EXPECT_TRUE(IsCommitted(*log_.at(index)));
 }
 
 TEST_F(LogTest, AppendCommitExecute) {
@@ -175,7 +175,7 @@ TEST_F(LogTest, AppendCommitExecute) {
   log_.Commit(index);
   execute_thread.join();
 
-  EXPECT_TRUE(IsExecuted(*log_[index]));
+  EXPECT_TRUE(IsExecuted(*log_.at(index)));
   EXPECT_EQ(index, log_.LastExecuted());
 }
 
@@ -199,9 +199,9 @@ TEST_F(LogTest, AppendCommitExecuteOutOfOrder) {
 
   execute_thread.join();
 
-  EXPECT_TRUE(IsExecuted(*log_[index1]));
-  EXPECT_TRUE(IsExecuted(*log_[index2]));
-  EXPECT_TRUE(IsExecuted(*log_[index3]));
+  EXPECT_TRUE(IsExecuted(*log_.at(index1)));
+  EXPECT_TRUE(IsExecuted(*log_.at(index2)));
+  EXPECT_TRUE(IsExecuted(*log_.at(index3)));
   EXPECT_EQ(index3, log_.LastExecuted());
 }
 
@@ -216,9 +216,9 @@ TEST_F(LogTest, CommitUntil) {
 
   log_.CommitUntil(index2, ballot);
 
-  EXPECT_TRUE(IsCommitted(*log_[index1]));
-  EXPECT_TRUE(IsCommitted(*log_[index2]));
-  EXPECT_FALSE(IsCommitted(*log_[index3]));
+  EXPECT_TRUE(IsCommitted(*log_.at(index1)));
+  EXPECT_TRUE(IsCommitted(*log_.at(index2)));
+  EXPECT_FALSE(IsCommitted(*log_.at(index3)));
   EXPECT_TRUE(log_.IsExecutable());
 }
 
@@ -233,9 +233,9 @@ TEST_F(LogTest, CommitUntilHigherBallot) {
 
   log_.CommitUntil(index3, ballot + 1);
 
-  EXPECT_FALSE(IsCommitted(*log_[index1]));
-  EXPECT_FALSE(IsCommitted(*log_[index2]));
-  EXPECT_FALSE(IsCommitted(*log_[index3]));
+  EXPECT_FALSE(IsCommitted(*log_.at(index1)));
+  EXPECT_FALSE(IsCommitted(*log_.at(index2)));
+  EXPECT_FALSE(IsCommitted(*log_.at(index3)));
   EXPECT_FALSE(log_.IsExecutable());
 }
 
@@ -262,9 +262,9 @@ TEST_F(LogTest, CommitUntilWithGap) {
 
   log_.CommitUntil(index4, ballot);
 
-  EXPECT_TRUE(IsCommitted(*log_[index1]));
-  EXPECT_FALSE(IsCommitted(*log_[index3]));
-  EXPECT_FALSE(IsCommitted(*log_[index4]));
+  EXPECT_TRUE(IsCommitted(*log_.at(index1)));
+  EXPECT_FALSE(IsCommitted(*log_.at(index3)));
+  EXPECT_FALSE(IsCommitted(*log_.at(index4)));
   EXPECT_TRUE(log_.IsExecutable());
 }
 
@@ -286,9 +286,9 @@ TEST_F(LogTest, AppendCommitUntilExecute) {
   log_.CommitUntil(index3, ballot);
   execute_thread.join();
 
-  EXPECT_TRUE(IsExecuted(*log_[index1]));
-  EXPECT_TRUE(IsExecuted(*log_[index2]));
-  EXPECT_TRUE(IsExecuted(*log_[index3]));
+  EXPECT_TRUE(IsExecuted(*log_.at(index1)));
+  EXPECT_TRUE(IsExecuted(*log_.at(index2)));
+  EXPECT_TRUE(IsExecuted(*log_.at(index3)));
   EXPECT_FALSE(log_.IsExecutable());
 }
 
@@ -312,9 +312,9 @@ TEST_F(LogTest, AppendCommitUntilExecuteTrimUntil) {
 
   log_.TrimUntil(index3);
 
-  EXPECT_EQ(nullptr, log_[index1]);
-  EXPECT_EQ(nullptr, log_[index2]);
-  EXPECT_EQ(nullptr, log_[index3]);
+  EXPECT_EQ(nullptr, log_.at(index1));
+  EXPECT_EQ(nullptr, log_.at(index2));
+  EXPECT_EQ(nullptr, log_.at(index3));
   EXPECT_EQ(index3, log_.LastExecuted());
   EXPECT_EQ(index3, log_.GlobalLastExecuted());
   EXPECT_FALSE(log_.IsExecutable());
@@ -337,16 +337,16 @@ TEST_F(LogTest, AppendAtTrimmedIndex) {
 
   log_.TrimUntil(index2);
 
-  EXPECT_EQ(nullptr, log_[index1]);
-  EXPECT_EQ(nullptr, log_[index2]);
+  EXPECT_EQ(nullptr, log_.at(index1));
+  EXPECT_EQ(nullptr, log_.at(index2));
   EXPECT_EQ(index2, log_.LastExecuted());
   EXPECT_EQ(index2, log_.GlobalLastExecuted());
   EXPECT_FALSE(log_.IsExecutable());
 
   log_.Append(MakeInstance(ballot, index1));
   log_.Append(MakeInstance(ballot, index2));
-  EXPECT_EQ(nullptr, log_[index1]);
-  EXPECT_EQ(nullptr, log_[index2]);
+  EXPECT_EQ(nullptr, log_.at(index1));
+  EXPECT_EQ(nullptr, log_.at(index2));
 }
 
 TEST_F(LogTest, Instances) {
