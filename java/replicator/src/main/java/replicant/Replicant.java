@@ -1,71 +1,120 @@
 package replicant;
 
-import command.Command;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.PrintWriter;
-import java.net.Socket;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Future;
-import java.util.concurrent.ThreadPoolExecutor;
+import ch.qos.logback.classic.Logger;
+import io.netty.bootstrap.ServerBootstrap;
+import io.netty.channel.ChannelFuture;
+import io.netty.channel.ChannelInitializer;
+import io.netty.channel.ChannelOption;
+import io.netty.channel.EventLoopGroup;
+import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.socket.SocketChannel;
+import io.netty.channel.socket.nio.NioServerSocketChannel;
+import io.netty.handler.codec.DelimiterBasedFrameDecoder;
+import io.netty.handler.codec.Delimiters;
+import io.netty.handler.codec.string.StringDecoder;
+import io.netty.handler.codec.string.StringEncoder;
+
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import kvstore.KVStore;
 import kvstore.MemKVStore;
-import org.codehaus.jackson.map.ObjectMapper;
-import paxos.DummyPaxos;
+import log.Log;
+import org.slf4j.LoggerFactory;
+import paxos.Configuration;
+import paxos.MultiPaxos;
 
-public class Replicant extends TCPServer {
+public class Replicant {
 
-  public Replicant(int port, DummyPaxos paxos, MemKVStore memKVStore,
-      ThreadPoolExecutor threadPool) {
+  private static final Logger logger = (Logger) LoggerFactory.getLogger(Replicant.class);
+  private final ExecutorService executorThread = Executors.newSingleThreadExecutor();
+  private final EventLoopGroup bossGroup = new NioEventLoopGroup();
+  private final EventLoopGroup workerGroup = new NioEventLoopGroup();
+  private final long id;
+  private final long numPeers;
+  private final String ipPort;
+
+  private final MultiPaxos multiPaxos;
+  private final KVStore kvStore = new MemKVStore();
+  private final Log log = new Log(kvStore);
+
+  private ClientHandler clientHandler;
+
+  public Replicant(Configuration config) {
+    this.id = config.getId();
+    this.ipPort = config.getPeers().get((int) id);
+    this.multiPaxos = new MultiPaxos(log, config);
+    this.numPeers = config.getPeers().size();
+  }
+
+  public void start() {
+    multiPaxos.start();
+    startExecutorThread();
+    startServer();
+  }
+
+  public void stop() {
+    stopExecutorThread();
+    stopServer();
+    multiPaxos.stop();
+  }
+
+  private void startServer() {
+
+    clientHandler = new ClientHandler(id, numPeers, multiPaxos);
 
     try {
-      startServer(port, paxos, memKVStore, threadPool);
-      System.out.println("Successfully created a new replicant server!");
-    } catch (IOException e) {
-      e.printStackTrace();
-      System.err.println("Couldn't create a replicant server!");
+      ServerBootstrap b = new ServerBootstrap();
+      b.group(bossGroup, workerGroup).channel(NioServerSocketChannel.class).childHandler(
+          new ChannelInitializer<SocketChannel>() {
+            @Override
+            public void initChannel(SocketChannel ch) {
+              ch.pipeline().addLast("framer",
+                  new DelimiterBasedFrameDecoder(2048, Delimiters.lineDelimiter()));
+              ch.pipeline().addLast("decoder", new StringDecoder());
+              ch.pipeline().addLast("encoder", new StringEncoder());
+              ch.pipeline().addLast(clientHandler);
+            }
+          }).option(ChannelOption.SO_BACKLOG, 5).childOption(ChannelOption.SO_KEEPALIVE, true);
+
+      int port = Integer.parseInt(ipPort.substring(ipPort.indexOf(":") + 1)) + 1;
+      logger.info(id + " starting server at port " + port);
+      ChannelFuture f = b.bind(port).sync();
+      f.channel().closeFuture().sync();
+    } catch (InterruptedException e) {
+      logger.error(e.getMessage());
+    } finally {
+      workerGroup.shutdownGracefully();
+      bossGroup.shutdownGracefully();
     }
   }
 
-  public void run(Socket data) {
-    while (!data.isClosed() && data.isConnected()) {
-      try {
-        InputStream in = data.getInputStream();
-        // create a request object from input stream
-        HTTPRequest request = new HTTPRequest(in);
-        //System.out.println(request);
+  private void stopServer() {
+    workerGroup.shutdownGracefully();
+    bossGroup.shutdownGracefully();
+  }
 
-        // deserialize the content of request
-        String json = request.getContent();
-        System.out.println("Content : " + json);
-        ObjectMapper objectMapper = new ObjectMapper();
-        KVRequest kvRequest = objectMapper.readValue(json, KVRequest.class);
-        String key = kvRequest.getKey();
-        String value = kvRequest.getValue();
+  private void startExecutorThread() {
+    logger.info(id + " starting executor thread");
+    executorThread.submit(this::executorThread);
+  }
 
-        //  send requests to paxos to be handled over thread pool
-        String method = request.getMethod();
+  private void stopExecutorThread() {
+    logger.info(id + " stopping executor thread");
+    log.stop();
+    executorThread.shutdown();
+  }
 
-        Command cmd = new Command(request.getComandType(), kvRequest.getKey(),
-            kvRequest.getValue());
-        Future<TCPResponse> future = threadPool.submit(new Task(cmd, paxos));
-        TCPResponse response = future.get();
-        System.out.println(response);
 
-        PrintWriter out = new PrintWriter(data.getOutputStream());
-        out.print(response.toString());
-        out.flush();
-        out.close();
-        in.close();
-
-      } catch (IOException | InterruptedException | ExecutionException e) {
-        e.printStackTrace();
-        try {
-          data.close();
-        } catch (IOException ex) {
-          ex.printStackTrace();
-        }
+  private void executorThread() {
+    while (true) {
+      var r = log.execute();
+      if (r == null) {
+        break;
       }
+      var clientId = r.getKey();
+      var result = r.getValue();
+      clientHandler.respond(clientId, result.getValue());
     }
-
   }
+
 }

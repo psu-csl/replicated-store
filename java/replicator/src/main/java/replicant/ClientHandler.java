@@ -1,4 +1,4 @@
-package replicantv2;
+package replicant;
 
 import ch.qos.logback.classic.Logger;
 import command.Command;
@@ -8,14 +8,12 @@ import io.netty.channel.ChannelHandler.Sharable;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.util.AttributeKey;
-import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 import org.codehaus.jackson.map.ObjectMapper;
 import org.slf4j.LoggerFactory;
 import paxos.MultiPaxos;
 import paxos.MultiPaxosResultType;
-import replicant.KVRequest;
 
 @Sharable
 public class ClientHandler extends SimpleChannelInboundHandler<String> {
@@ -82,7 +80,6 @@ public class ClientHandler extends SimpleChannelInboundHandler<String> {
 
   @Override
   public void channelRead0(ChannelHandlerContext ctx, String msg) {
-    // logger.info("raw msg: " + msg);
     var command = parse(msg);
     var clientId = ctx.channel().attr(clientIdAttrKey).get();
     var r = multiPaxos.replicate(command, clientId);

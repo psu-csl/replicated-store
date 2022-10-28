@@ -21,14 +21,11 @@ public class MemKVStore implements KVStore {
 
   public boolean put(String key, String value) {
     store.put(key, value);
-    // ?? Dummy implementation always inserts key with value
-    // when it fails throw exception
     return true;
   }
 
   public boolean del(String key) {
     String value = store.remove(key);
-    // key doesn't exist in store
     return value != null;
   }
 
@@ -48,7 +45,6 @@ public class MemKVStore implements KVStore {
     } else if (cmdType == CommandType.Del && del(cmd.getKey())) {
       return new KVResult(true, kEmpty);
     } else {
-      // default action if command type is not matched
       return new KVResult(false, kKeyNotFound);
     }
   }

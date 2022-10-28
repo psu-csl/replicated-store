@@ -1,6 +1,5 @@
-package replicantv2;
+package replicant;
 
-import static org.junit.jupiter.api.Assertions.*;
 import static util.TestUtil.makeConfig;
 
 import java.util.concurrent.ExecutorService;

@@ -79,7 +79,6 @@ class LogTest {
     long index = 1, ballot = 1;
     assertTrue(Log.insert(log, makeInstance(ballot, index, CommandType.Put)));
     assertEquals(CommandType.Put, log.get(index).getCommand().getCommandType());
-    // 0 = ballot - 1
     assertFalse(Log.insert(log, makeInstance(0, index, CommandType.Del)));
     assertEquals(CommandType.Put, log.get(index).getCommand().getCommandType());
   }
@@ -295,12 +294,11 @@ class LogTest {
   void commitUntilWithGap() {
     long ballot = 0, index;
     for (index = 1; index < 10; index++) {
-      if (index % 3 == 0) { // 3, 6, 9 are gaps
+      if (index % 3 == 0) {
         continue;
       }
       log_.append(makeInstance(ballot, index));
     }
-    // will only commitUntil 3(exclusively)
     log_.commitUntil(index - 1, ballot);
     long i;
     for (i = 1; i < index; i++) {

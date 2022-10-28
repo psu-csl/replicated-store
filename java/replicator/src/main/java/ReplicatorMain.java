@@ -2,7 +2,7 @@ import java.io.File;
 import java.io.IOException;
 import org.codehaus.jackson.map.ObjectMapper;
 import paxos.Configuration;
-import replicantv2.Replicant;
+import replicant.Replicant;
 
 public class ReplicatorMain {
 

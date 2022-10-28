@@ -405,7 +405,6 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     mu.lock();
     cvLeader.signal();
     mu.unlock();
-    // joint commit thread here
     commitThread.shutdown();
     try {
       commitThread.awaitTermination(1000, TimeUnit.MILLISECONDS);
