@@ -1,5 +1,5 @@
 use crate::replicant::kvstore::memkvstore::MemKVStore;
-use crate::replicant::log::{insert, Log, MapLog};
+use crate::replicant::log::{insert, Log};
 use futures_util::FutureExt;
 use futures_util::StreamExt;
 use log::info;
@@ -197,7 +197,10 @@ impl MultiPaxosInner {
         }
     }
 
-    async fn run_prepare_phase(&self, ballot: i64) -> Option<MapLog> {
+    async fn run_prepare_phase(
+        &self,
+        ballot: i64,
+    ) -> Option<HashMap<i64, Instance>> {
         let num_peers = self.rpc_peers.len();
         let mut responses = JoinSet::new();
 
@@ -212,7 +215,7 @@ impl MultiPaxosInner {
         });
 
         let mut num_oks = 0;
-        let mut log = MapLog::new();
+        let mut log = HashMap::new();
 
         while let Some(response) = responses.join_next().await {
             if let Ok(Ok(response)) = response {
@@ -339,7 +342,7 @@ impl MultiPaxosInner {
         global_last_executed
     }
 
-    async fn replay(&self, ballot: i64, log: MapLog) {
+    async fn replay(&self, ballot: i64, log: HashMap<i64, Instance>) {
         for (_, instance) in log {
             let command = instance.command.unwrap();
             let mut r;

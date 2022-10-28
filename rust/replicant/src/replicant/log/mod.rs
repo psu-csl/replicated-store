@@ -146,10 +146,10 @@ impl Instance {
     }
 }
 
-pub type VecLog = Vec<Instance>;
-pub type MapLog = HashMap<i64, Instance>;
-
-pub fn insert(map_log: &mut MapLog, instance: Instance) -> bool {
+pub fn insert(
+    map_log: &mut HashMap<i64, Instance>,
+    instance: Instance,
+) -> bool {
     let it = map_log.get(&instance.index);
     if it.is_none() {
         map_log.insert(instance.index, instance);
@@ -172,7 +172,7 @@ pub fn insert(map_log: &mut MapLog, instance: Instance) -> bool {
 
 struct LogInner {
     running: bool,
-    map: MapLog,
+    map: HashMap<i64, Instance>,
     last_index: i64,
     last_executed: i64,
     global_last_executed: i64,
@@ -337,9 +337,9 @@ impl Log {
         }
     }
 
-    pub fn instances(&self) -> VecLog {
+    pub fn instances(&self) -> Vec<Instance> {
         let log = self.log.lock().unwrap();
-        let mut instances: VecLog = Vec::new();
+        let mut instances = Vec::new();
         for i in log.global_last_executed + 1..=log.last_index {
             if let Some(instance) = log.map.get(&i) {
                 instances.push(instance.clone());
