@@ -9,8 +9,6 @@ use tokio::sync::Notify;
 use super::multipaxos::rpc::Command;
 use super::multipaxos::rpc::{Instance, InstanceState};
 
-type LogResult = (i64, Result<String, KVStoreError>);
-
 impl Instance {
     pub fn inprogress(
         ballot: i64,
@@ -204,7 +202,7 @@ impl LogInner {
         }
     }
 
-    fn execute(&mut self) -> LogResult {
+    fn execute(&mut self) -> (i64, Result<String, KVStoreError>) {
         self.last_executed += 1;
         let it = self.map.get_mut(&self.last_executed);
         assert!(it.is_some());
@@ -293,7 +291,7 @@ impl Log {
         }
     }
 
-    pub async fn execute(&self) -> Option<LogResult> {
+    pub async fn execute(&self) -> Option<(i64, Result<String, KVStoreError>)> {
         loop {
             let future = self.executable.notified();
             {
