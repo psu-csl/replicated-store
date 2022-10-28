@@ -4,7 +4,7 @@
 ** in java use at as the name of the test function that accesses the log entry at index i
 ** in java: rename instancessincegloballastexecuted -> instances
 ** in java: fix         var current = ++globalLastExecuted;
-** fix commitable -> committable in java and go
+** fix commitable -> committable in java
 ** rust -> get rid of LogResult tuple
 ** get rid of typedefs maplog and vectorlog in rust and c++
 ** make sure that variable declaration order and function definition order in all objects is the same in the design doc
