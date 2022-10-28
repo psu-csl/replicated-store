@@ -1,12 +1,9 @@
 #+title: TODO
 
 * todo refactoring
-** in java: rename instancessincegloballastexecuted -> instances
-** in java: fix         var current = ++globalLastExecuted;
-** fix commitable -> committable in java and go
+** fix commitable -> committable in  go
 ** make sure that variable declaration order and function definition order in all objects is the same in the design doc
 ** remove all comments from the source codes
-** in java fix this line     assert instance.getBallot() != it.getBallot() || (it.getCommand() .equals(instance.getCommand())) : "Insert case3";
 
 
 
