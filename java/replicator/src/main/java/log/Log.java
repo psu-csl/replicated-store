@@ -48,8 +48,8 @@ public class Log {
       log.put(i, instance);
       return false;
     }
-    assert instance.getBallot() != it.getBallot() || (it.getCommand()
-        .equals(instance.getCommand())) : "Insert case3";
+    if(instance.getBallot() == it.getBallot())
+      assert it.getCommand().equals(instance.getCommand()) : "Insert case3";
     return false;
   }
 
