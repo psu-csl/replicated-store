@@ -17,7 +17,7 @@ public class Log {
   private final KVStore kvStore;
   private final ReentrantLock mu;
   private final Condition cvExecutable;
-  private final Condition cvCommitable;
+  private final Condition cvCommittable;
   private final HashMap<Long, Instance> log;
   private long globalLastExecuted = 0;
   private long lastIndex = 0;
@@ -30,7 +30,7 @@ public class Log {
     log = new HashMap<>();
     mu = new ReentrantLock();
     cvExecutable = mu.newCondition();
-    cvCommitable = mu.newCondition();
+    cvCommittable = mu.newCondition();
   }
 
   public static boolean insert(HashMap<Long, Instance> log, Instance instance) {
@@ -107,7 +107,7 @@ public class Log {
       }
       if (insert(log, instance)) {
         lastIndex = max(lastIndex, i);
-        cvCommitable.signalAll();
+        cvCommittable.signalAll();
       }
     } finally {
       mu.unlock();
@@ -121,7 +121,7 @@ public class Log {
     try {
       var it = log.get(index);
       while (it == null) {
-        cvCommitable.await();
+        cvCommittable.await();
         it = log.get(index);
       }
       if (it.isInProgress()) {
