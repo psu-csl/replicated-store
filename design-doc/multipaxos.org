@@ -1,30 +1,47 @@
 - MultiPaxos
-  # The Paxos module that contains the consensus logic for phase1 and phase2 of
-  # the MultiPaxos protocol.
+
+  - types/protobufs
+
+    - commit_request
+      - ballot_: ballot of the leader sending the commit RPC
+      - last_executed_: last_executed_ of the leader sending the commit RPC
+      - global_last_executed_: global_last_executed of the leader sending the
+        commit RPC
+      - sender: id of the sender
+
+    - commit_response
+      - type_: enum {ok, reject}
+      - ballot_: ballot of the peer (valid only if type_ == reject)
+      - last_executed_: last_executed_ of the follower responding to the commit
+        RPC
+
+    - prepare_request
+      - ballot_: ballot of the sender
+      - sender: id of the sender
+
+    - prepare_response
+      - type_: enum {ok, reject}
+      - ballot_: ballot of the peer (valid only if type_ == reject)
+      - instances_: Instances of the peer since global_last_executed_ (valid
+        only if type_ == ok)
+
+    - accept_request
+      - instance_: Instance sent by the leader
+      - sender_: id of the leader
+
+    - accept_response
+      - type_: enum {ok, reject}
+      - ballot_: ballot of the peer (valid only if type_ == reject)
 
   - members
-
-    - running_: atomic<bool>; a flag used by long-running threads (prepare
-      thread and commit thread) to know when to stop running; initialized to
-      false, set to true with the start() method and to false with the
-      shutdown() method.
-
-    - ready_: bool; a flag that indicates if the peer---after becoming a
+    - ready_: atomic<bool>; a flag that indicates if the peer---after becoming a
       leader---is ready to respond to client requests. we need this flag because
-      as soon as this peer calls next_ballot() in prepare_thread(), it becomes a
-      leader, but it may not yet be able to serve client requests since it may
-      need to recover the log and replay the instances it received as a response
-      to prepare request, to catch up with the rest of the peers; during this
-      replay, the ready_ flag is false and this peer responds to the clients
-      with "retry"; as soon as this peer has caught up, we set ready_ to true
-      and start responding to the clients. initialized to false; set to false in
-      next_ballot() and set to true once replay has completed.
-
-    - id_: int64_t; identifier of this peer. initialized from the configuration
-      file. currently, we limit the number of peers to 16; therefore, id_ is a
-      value in [0, 16).
-
-    - port_: string; the port where the RPC server is listening
+      once a peer becomes a leader, it may not yet be able to serve client
+      requests since it may need to recover the log and replay the instances it
+      received as a response to the prepare request, to catch up with the rest
+      of the peers. during this replay, the ready_ flag is false and this peer
+      responds to the clients with "retry". as soon as this peer has caught up,
+      we set ready_ to true and start responding to the clients.
 
     - ballot_: int64_t; current ballot number known to the peer;
       initialized |max_num_peers_|, which indicates that there is no current
@@ -35,84 +52,62 @@
       when identifying a leader. initialized to |id_|. at any moment, we can
       look at the lower 8 bits of |ballot_| to determine current leader.
 
-    - log_: Log; a non-owning pointer to Log instance.
+    - log_: non-owning pointer to Log instance.
 
-    - peers_: array of RPC endpoints; RPC endpoints to peers, including to self.
+    - id_: int64; identifier of this peer. initialized from the configuration
+      file. currently, we limit the number of peers to 16; therefore, id_ is a
+      value in [0, 16).
+
+    - commit_received_: atomic<bool>; indicates whether a commit message was
+      received during commit_interval_.
+
+    - commit_interval_: milliseconds; time between sending consecutive commits.
       initialized from the configuration file.
 
-    - ready_: boolean; when a new leader is elected, it receives logs from the
-      peers in the quorum; the leader merges all these logs to obtain the most
-      up-to-date instance at each index in the log and then replays (calls
-      accept on) all the instances in the merged log. for now, we consider the
-      leader not ready to accept new requests from the clients until it has
-      processed the merged log; the |ready_| flag tracks the readiness for
-      accepting commands from clients. initialized to false.
+    - port_: string; the port where the RPC server is listening
 
-    - last_commit_: timestamp; timestamp of the last commit received from the
-      current leader. initialized to 0.
-
-    - commit_interval_: milliseconds; time between two consecutive commits.
+    - rpc_peers_: an array of RPC endpoints to peers, including to self.
       initialized from the configuration file.
-
-    - rpc_peers_: stubs to RPC peers; initialized based on the configuration file
-
-    - rpc_server_: an RPC server for handling incoming RPC requests; initialized
-      based on the configuration file
 
     - mu_: mutex; MultiPaxos is a concurrent object -- multiple threads may
-      concurrently call its |decide| method. |mu_| protects shared data in
+      concurrently call its |replicate| method. |mu_| protects shared data in
       MultiPaxos.
 
     - tp_: thread_pool; a thread pool to which we post RPC requests to peers;
       initialized from the configuration file.
 
-    # the followings are commit thread related variables. we cannot make them
-    # local to the commit thread because the commit thread posts tasks to the
-    # threadpool tp_; it is possible that the threads from the threadpool
-    # outlive the commit thread, and if these variables are local to the commit
-    # thread, then the threadpool threads will end up referencing destroyed
-    # variables. One other possible solution is to have the threadpool local to
-    # the commit thread as well.
-
-    - commit_thread_: thread; runs the function commit_thread() until shutdown()
-      is called.
-
     - cv_leader_: condition variable; commit_thread sleeps on this condition
       variable to get notified when this peer becomes a leader.
-
-    - commit_request_: commit RPC request protobuf; initialized every time right
-      before commits are sent by acquiring mu_ and getting a consistent set of
-      its fields (ballot, last_executed, and global_last_executed) from this
-      peer.
-
-    - commit_num_rpcs_: int; the number of commit rpcs sent; initialized
-      to 0 every time right before commits are sent.
-
-    - commit_responses_: array of ints; the values of responses to commits;
-      reset to empty every time right before commit are sent.
-
-    - commit_mu_: mutex; serializes access to commit_num_responses_ and
-      commit_ok_responses_ among thread pool threads and the commit thread.
-
-    - commit_cv_: condition variable; the commit thread waits on this condition
-      variable and it is woken up every time an RPC posted by a threadpool
-      thread completes and signals this condition variable.
-
-    # the followings are prepare thread related variables. we cannot make them
-    # local to the prepare thread for the same reason as above, with the
-    # commit thread.
-
-    - prepare_thread_: thread; runs the function prepare_thread() until
-      shutdown() is called.
 
     - cv_follower_: condition variable; prepare_thread sleeps on this condition
       variable to get notified when this peer becomes a follower.
 
-    - prepare_num_rpcs_: int; the number of prepare rpcs sent; initialized to 0
-      every time right before prepare rpcs are sent.
+    - rpc_server_: a RPC server for handling incoming RPC requests; initialized
+      based on the configuration file
 
-    - prepare_ok_responses_: array of log_vector_t; log_vector_ts received in a
-      round of prepare rpcs
+    - rpc_server_running_: bool; a flag that indicates if the RPC server is
+      running
+
+    - rpc_server_running_cv_: condition variable; to avoid calling gRPC's
+      shutdown() on the RPC server before it is started, we sleep on this
+      condition variable in the stop_rpc_server() method; in the
+      start_rpc_server() method, we signal this condition variable after
+      starting the RPC server.
+
+    - rpc_server_thread_: thread; runs the rpc server until shutdown() is
+      called.
+
+    - prepare_thread_running_: atomic<bool>; a flag that indicates if the
+      prepare thread is running
+
+    - prepare_thread_: thread; runs the function prepare_thread() until
+      shutdown() is called.
+
+    - commit_thread_running_: atomic<bool>; a flag that indicates if the commit
+      thread is running
+
+    - commit_thread_: thread; runs the function commit_thread() until shutdown()
+      is called.
 
   - constants
 
@@ -123,36 +118,6 @@
       increment the round portion of |ballot_| by one.
 
     - max_num_peers_ = 0xf: maximum number of peers.
-
-  - types
-
-    - commit_rpc_request
-      - ballot_: ballot of the leader sending the commit RPC
-      - last_executed_: last_executed_ of the leader sending the commit RPC
-      - global_last_executed_: global_last_executed of the leader sending the commit RPC
-      - sender: id of the sender
-
-    - commit_rpc_response
-      - last_executed_: last_executed_ of the follower responding to the
-        commit RPC
-
-    - prepare_rpc_request
-      - ballot_: ballot of the sender
-      - sender: id of the sender
-
-    - prepare_rpc_response
-      - type_: enum {ok, reject}
-      - ballot_: ballot of the peer (valid only if type_ == reject)
-      - instances_: Instances of the peer since global_last_executed_ (valid
-        only if type_ == ok)
-
-    - accept_rpc_request
-      - instance: Instance sent by the leader
-      - sender: id of the sender
-
-    - accept_rpc_response
-      - type_: enum {ok, reject}
-      - ballot_: ballot of the peer (valid only if type_ == reject)
 
   - methods
 
