@@ -10,7 +10,6 @@ import java.util.Map;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 import kvstore.KVStore;
-import kvstore.MemKVStore;
 import log.Instance.InstanceState;
 
 public class Log {
@@ -95,7 +94,7 @@ public class Log {
     return found != null && found.getState() == InstanceState.kCommitted;
   }
 
-  public Instance get(Long index) {
+  public Instance at(Long index) {
     return log.get(index);
   }
 

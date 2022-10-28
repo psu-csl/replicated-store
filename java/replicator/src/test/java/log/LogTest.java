@@ -39,9 +39,9 @@ class LogTest {
     assertEquals(log_.getLastExecuted(), 0);
     assertEquals(log_.getGlobalLastExecuted(), 0);
     assertFalse(log_.isExecutable());
-    assertNull(log_.get(0L));
-    assertNull(log_.get(-1L));
-    assertNull(log_.get(3L));
+    assertNull(log_.at(0L));
+    assertNull(log_.at(-1L));
+    assertNull(log_.at(3L));
   }
 
   @Test
@@ -121,15 +121,15 @@ class LogTest {
   void append() {
     log_.append(makeInstance(0, log_.advanceLastIndex()));
     log_.append(makeInstance(0, log_.advanceLastIndex()));
-    assertEquals(1, log_.get(1L).getIndex());
-    assertEquals(2, log_.get(2L).getIndex());
+    assertEquals(1, log_.at(1L).getIndex());
+    assertEquals(2, log_.at(2L).getIndex());
   }
 
   @Test
   void appendWithGap() {
     long index = 42;
     log_.append(makeInstance(0, index));
-    assertEquals(index, log_.get(index).getIndex());
+    assertEquals(index, log_.at(index).getIndex());
     assertEquals(index + 1, log_.advanceLastIndex());
   }
 
@@ -146,7 +146,7 @@ class LogTest {
     long index = 1, lo_ballot = 0, hi_ballot = 1;
     log_.append(makeInstance(lo_ballot, index, CommandType.Put));
     log_.append(makeInstance(hi_ballot, index, CommandType.Del));
-    assertEquals(CommandType.Del, log_.get(index).getCommand().getCommandType());
+    assertEquals(CommandType.Del, log_.at(index).getCommand().getCommandType());
   }
 
   @Test
@@ -154,7 +154,7 @@ class LogTest {
     long index = 1, lo_ballot = 0, hi_ballot = 1;
     log_.append(makeInstance(hi_ballot, index, CommandType.Put));
     log_.append(makeInstance(lo_ballot, index, CommandType.Del));
-    assertEquals(CommandType.Put, log_.get(index).getCommand().getCommandType());
+    assertEquals(CommandType.Put, log_.at(index).getCommand().getCommandType());
   }
 
   @Test
@@ -163,20 +163,20 @@ class LogTest {
     log_.append(makeInstance(0, index1));
     log_.append(makeInstance(0, index2));
 
-    assertTrue(log_.get(index1).isInProgress());
-    assertTrue(log_.get(index2).isInProgress());
+    assertTrue(log_.at(index1).isInProgress());
+    assertTrue(log_.at(index2).isInProgress());
     assertFalse(log_.isExecutable());
 
     log_.commit(index2);
 
-    assertTrue(log_.get(index1).isInProgress());
-    assertTrue(log_.get(index2).isCommitted());
+    assertTrue(log_.at(index1).isInProgress());
+    assertTrue(log_.at(index2).isCommitted());
     assertFalse(log_.isExecutable());
 
     log_.commit(index1);
 
-    assertTrue(log_.get(index1).isCommitted());
-    assertTrue(log_.get(index2).isCommitted());
+    assertTrue(log_.at(index1).isCommitted());
+    assertTrue(log_.at(index2).isCommitted());
     assertTrue(log_.isExecutable());
   }
 
@@ -192,7 +192,7 @@ class LogTest {
     } catch (InterruptedException | ExecutionException e) {
       throw new RuntimeException(e);
     }
-    assertTrue(log_.get(index).isCommitted());
+    assertTrue(log_.at(index).isCommitted());
   }
 
 
@@ -214,7 +214,7 @@ class LogTest {
     } catch (InterruptedException | ExecutionException e) {
       throw new RuntimeException(e);
     }
-    assertTrue(log_.get(index).isExecuted());
+    assertTrue(log_.at(index).isExecuted());
     assertEquals(index, log_.getLastExecuted());
   }
 
@@ -241,9 +241,9 @@ class LogTest {
     } catch (InterruptedException | ExecutionException e) {
       throw new RuntimeException(e);
     }
-    assertTrue(log_.get(index1).isExecuted());
-    assertTrue(log_.get(index2).isExecuted());
-    assertTrue(log_.get(index3).isExecuted());
+    assertTrue(log_.at(index1).isExecuted());
+    assertTrue(log_.at(index2).isExecuted());
+    assertTrue(log_.at(index3).isExecuted());
     assertEquals(index3, log_.getLastExecuted());
   }
 
@@ -258,9 +258,9 @@ class LogTest {
     log_.commitUntil(index - 1, ballot);
 
     for (long i = 1; i < index; i++) {
-      assertTrue(log_.get(i).isCommitted());
+      assertTrue(log_.at(i).isCommitted());
     }
-    assertFalse(log_.get(index).isCommitted());
+    assertFalse(log_.at(index).isCommitted());
     assertTrue(log_.isExecutable());
   }
 
@@ -273,7 +273,7 @@ class LogTest {
     log_.commitUntil(index - 1, ballot + 1);
 
     for (long i = 1; i < index; i++) {
-      assertFalse(log_.get(i).isCommitted());
+      assertFalse(log_.at(i).isCommitted());
     }
 
     assertFalse(log_.isExecutable());
@@ -307,13 +307,13 @@ class LogTest {
       if (i % 3 == 0) {
         break;
       }
-      assertTrue(log_.get(i).isCommitted());
+      assertTrue(log_.at(i).isCommitted());
     }
     for (; i < index; i++) {
       if (i % 3 == 0) {
         continue;
       }
-      assertFalse(log_.get(i).isCommitted());
+      assertFalse(log_.at(i).isCommitted());
     }
     assertTrue(log_.isExecutable());
   }
@@ -339,7 +339,7 @@ class LogTest {
       throw new RuntimeException(e);
     }
     for (long i = 1; i < 11; i++) {
-      assertTrue(log_.get(i).isExecuted());
+      assertTrue(log_.at(i).isExecuted());
     }
     assertFalse(log_.isExecutable());
   }
@@ -366,7 +366,7 @@ class LogTest {
     }
     log_.trimUntil(index);
     for (long i = 1; i < 11; i++) {
-      assertNull(log_.get(i));
+      assertNull(log_.at(i));
     }
     assertEquals(index, log_.getLastExecuted());
     assertEquals(index, log_.getGlobalLastExecuted());
@@ -397,7 +397,7 @@ class LogTest {
     log_.trimUntil(index);
 
     for (long i = 1; i < 11; i++) {
-      assertNull(log_.get(i));
+      assertNull(log_.at(i));
     }
     assertEquals(index, log_.getGlobalLastExecuted());
     assertEquals(index, log_.getLastExecuted());
@@ -407,7 +407,7 @@ class LogTest {
       log_.append(makeInstance(ballot, i));
     }
     for (long i = 1; i < 11; i++) {
-      assertNull(log_.get(i));
+      assertNull(log_.at(i));
     }
   }
 

@@ -156,7 +156,7 @@ class MultiPaxosTest {
     var r2 = sendAccept(stub.get(), instance);
     assertEquals(REJECT, r2.getType());
     assertTrue(isLeader(peers.get(0)));
-    assertNull(logs.get(0).get(index));
+    assertNull(logs.get(0).at(index));
 
     var r3 = sendCommit(stub.get(), staleBallot, 0, 0);
     assertEquals(REJECT, r3.getType());
@@ -216,9 +216,9 @@ class MultiPaxosTest {
     var r1 = sendCommit(stub.get(), ballot, index2, 0);
     assertEquals(OK, r1.getType());
     assertEquals(0, r1.getLastExecuted());
-    assertTrue(logs.get(0).get(index1).isCommitted());
-    assertTrue(logs.get(0).get(index2).isCommitted());
-    assertTrue(logs.get(0).get(index3).isInProgress());
+    assertTrue(logs.get(0).at(index1).isCommitted());
+    assertTrue(logs.get(0).at(index2).isCommitted());
+    assertTrue(logs.get(0).at(index3).isInProgress());
 
     logs.get(0).execute();
     logs.get(0).execute();
@@ -226,9 +226,9 @@ class MultiPaxosTest {
     var r2 = sendCommit(stub.get(), ballot, index2, index2);
     assertEquals(index2, r2.getLastExecuted());
     assertEquals(OK, r2.getType());
-    assertNull(logs.get(0).get(index1));
-    assertNull(logs.get(0).get(index2));
-    assertTrue(logs.get(0).get(index3).isInProgress());
+    assertNull(logs.get(0).at(index1));
+    assertNull(logs.get(0).at(index2));
+    assertTrue(logs.get(0).at(index3).isInProgress());
 
     stub.close();
     peers.get(0).stopRPCServer();
@@ -301,13 +301,13 @@ class MultiPaxosTest {
 
     var r1 = sendAccept(stub.get(), instance1);
     assertEquals(OK, r1.getType());
-    assertEquals(instance1, logs.get(0).get(index1));
-    assertNull(logs.get(0).get(index2));
+    assertEquals(instance1, logs.get(0).at(index1));
+    assertNull(logs.get(0).at(index2));
 
     var r2 = sendAccept(stub.get(), instance2);
     assertEquals(OK, r2.getType());
-    assertEquals(instance1, logs.get(0).get(index1));
-    assertEquals(instance2, logs.get(0).get(index2));
+    assertEquals(instance1, logs.get(0).at(index1));
+    assertEquals(instance2, logs.get(0).at(index2));
     stub.close();
     peers.get(0).stopRPCServer();
   }
@@ -481,9 +481,9 @@ class MultiPaxosTest {
     assertEquals(kRetry, result.type);
     assertNull(result.leader);
 
-    assertTrue(logs.get(0).get(index).isInProgress());
-    assertNull(logs.get(1).get(index));
-    assertNull(logs.get(2).get(index));
+    assertTrue(logs.get(0).at(index).isInProgress());
+    assertNull(logs.get(1).at(index));
+    assertNull(logs.get(2).at(index));
 
     peers.get(1).startRPCServer();
 
@@ -494,9 +494,9 @@ class MultiPaxosTest {
     assertEquals(kOk, result.type);
     assertNull(result.leader);
 
-    assertTrue(logs.get(0).get(index).isCommitted());
-    assertTrue(logs.get(1).get(index).isInProgress());
-    assertNull(logs.get(2).get(index));
+    assertTrue(logs.get(0).at(index).isCommitted());
+    assertTrue(logs.get(1).at(index).isInProgress());
+    assertNull(logs.get(2).at(index));
 
     peers.get(0).stopRPCServer();
     peers.get(1).stopRPCServer();
@@ -560,13 +560,13 @@ class MultiPaxosTest {
     log.put(index2, i2);
     log.put(index3, i3);
 
-    assertNull(logs.get(0).get(index1));
-    assertNull(logs.get(0).get(index2));
-    assertNull(logs.get(0).get(index3));
+    assertNull(logs.get(0).at(index1));
+    assertNull(logs.get(0).at(index2));
+    assertNull(logs.get(0).at(index3));
 
-    assertNull(logs.get(1).get(index1));
-    assertNull(logs.get(1).get(index2));
-    assertNull(logs.get(1).get(index3));
+    assertNull(logs.get(1).at(index1));
+    assertNull(logs.get(1).at(index2));
+    assertNull(logs.get(1).at(index3));
 
     var newBallot = peers.get(0).nextBallot();
     peers.get(0).replay(newBallot, log);
@@ -579,17 +579,17 @@ class MultiPaxosTest {
     i2.setState(InstanceState.kCommitted);
     i3.setState(InstanceState.kCommitted);
 
-    assertEquals(i1, logs.get(0).get(index1));
-    assertEquals(i2, logs.get(0).get(index2));
-    assertEquals(i3, logs.get(0).get(index3));
+    assertEquals(i1, logs.get(0).at(index1));
+    assertEquals(i2, logs.get(0).at(index2));
+    assertEquals(i3, logs.get(0).at(index3));
 
     i1.setState(InstanceState.kInProgress);
     i2.setState(InstanceState.kInProgress);
     i3.setState(InstanceState.kInProgress);
 
-    assertEquals(i1, logs.get(1).get(index1));
-    assertEquals(i2, logs.get(1).get(index2));
-    assertEquals(i3, logs.get(1).get(index3));
+    assertEquals(i1, logs.get(1).at(index1));
+    assertEquals(i2, logs.get(1).at(index2));
+    assertEquals(i3, logs.get(1).at(index3));
 
     peers.get(0).stopRPCServer();
     peers.get(1).stopRPCServer();
