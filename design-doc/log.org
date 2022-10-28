@@ -1,17 +1,32 @@
 - Log
   # We can think of Log as an unbounded producer-consumer queue. From this
-  # perspective, the execute method acts as the consume method of a queue, and
-  # the commit method acts as a produce method of a queue. Technically,
-  # instances are inserted into the queue via the append method; however, they
-  # do not become executable until they are committed by calling commit on the
-  # instance. Wake up happens only one way: the thread that commits wakes up the
-  # executor thread to execute instances. Since executor thread may block on
-  # calling the execute method of log, we need to wake up the executor when we
-  # want to cleanly shut down the system. To this end, the log has a running
-  # flag and a stop method that sets the running flag to false and signals the
-  # condition variable upon which the executor is sleeping due to calling the
-  # execute method. The execute method will return a nullopt after the log is
-  # stopped and the executor method can exit upon receiving nullopt.
+  # perspective, the execute method below acts as the consume method of the
+  # queue, and the commit method below acts as the produce method of the queue.
+  # Technically, instances are inserted into the queue via the append method;
+  # however, they do not become executable until they are committed by calling
+  # commit on the instance. Wake-up happens only one way: the thread that
+  # commits wakes up the executor thread who executes instances by calling the
+  # execute method.
+  #
+  # Since the executor thread may block on calling the execute method of log, we
+  # need to wake up the executor when we want to cleanly shut down the system.
+  # To this end, the log has a running flag and a stop method that sets the
+  # running flag to false and signals the condition variable upon which the
+  # executor thread is sleeping (due to calling the execute method). The execute
+  # method will return a nullopt after the log is stopped and the executor
+  # method can exit upon receiving nullopt.
+
+  # log invariants
+  #
+  # given that (1) the instances in the log must be executed in order, (2)
+  # last_executed is the index of the last executed instance, and (3)
+  # global_last_executed is the index of the last instance that was executed in
+  # all peers, our log has the following invariants:
+  #
+  # (i1) global_last_executed <= last_executed
+  # (i2) all instances in [global_last_executed, last_executed] are executed
+  # (i3) there is no executed instance after last_executed.
+  # (i4) there are no instances at indices < global_last_executed
 
   - types/protobufs:
 
@@ -31,13 +46,14 @@
       committed state once quorum has voted for it, and changes to executed
       state once the executor thread has its command executed.
 
-    - log_map_t: a map from int to Instance
-
-    - log_vector_t: an array of Instances
-
   - members
 
-    - log_: log_map_t
+    - running_: boolean indicating whether the log is still running.
+
+    - kv_store_: a reference to the key-value store used by the execute command
+      for executing key-value commands from the log.
+
+    - log_: a map from int to Instance.
 
     - last_index_: index of the highest-numbered instance in the log. the log
       starts at index 1; therefore, last_index_ is initialized to 0, signifying
@@ -48,75 +64,62 @@
     - global_last_executed_: index of the last executed instance on all peers
       known to this peer. initialized to 0.
 
-    - mu_: the mutex of the object that needs to be acquired before the object
-      is modified.
+    - mu_: the mutex of the Log object that needs to be acquired before the
+      object is modified.
 
     - cv_executable_: the condition variable on which the execute method sleeps
-      and commit method signals.
+      and which the commit method signals.
 
-    - cv_commitable_: the condition variable on which the commit method sleeps
-      on rare occasions and append method signals
-
-    - running_: boolean indicating whether the log is still running.
-
-  - log invariants
-    # given that (1) the instances in the log must be executed in order, (2)
-    # last_executed_ is the index of the last executed instance, and (3)
-    # global_last_executed_ is the index of the last instance that was executed
-    # in all peers, our log has the following invariants:
-    #
-    # (i1) global_last_executed_ <= last_executed_
-    # (i2) there is no gap in [global_last_executed_, last_executed_]; all are executed
-    # (i3) there is no executed instance after last_executed_.
-    # (i4) there are no instances at indices < global_last_executed_
-
+    - cv_committable_: the condition variable on which the commit method sleeps
+      on rare occasions and the append method signals.
 
   - non-members functions
 
     - insert(log: *Log, instance: Instance) -> bool
-      # description: given |log| and |instance|, inserts |instance| to |log| if
-      # possible, and returns true if an instance was inserted to an empty slot;
+      # description: inserts |instance| to |log| if possible, and returns true
+      # if an instance was inserted to an empty slot;
       # also checks for safety violations.
-      # preconditions:
-      # postconditions:
 
       # case (1): |log| doesn't have an instance at instance.index_, in which
       # case we simply insert the instance to |log|.
       i = instance.index_
-      if log[i] == empty
-        log[i] = instance
+      if log_[i] == empty
+        log_[i] = instance
         return true
 
-      # case (2): |log| has a committed/executed instance at |instance.index_|,
+      # case (2): |log| has a committed/executed instance at |instance.index|,
       # in which case insert should be a no-op, and the command in |log| should
       # match the command in |instance|.
-      if log[i].state_ == (committed or executed)
-        assert(log[i].command_ == instance.command_) << "case2"
+      if log_[i].state_ == (committed or executed)
+       assert(log[i].command_ == instance.command_) << "case2"
         return false
 
-      # case (3): |log| has an in-progress instance at |instance.index_|, in
+      # case (3): |log| has an in-progress instance at |instance.index|, in
       # which case insert should examine the ballot numbers of both instances.
       #
-      # if |instance.ballot_| > |log[i].ballot_| insert replaces the instance
+      # if |instance.ballot| > |log[i].ballot| insert replaces the instance
       # in |log| with |instance|.
-      #
-      # if |instance.ballot_| == |log[i].ballot_| it must be the case that
-      # |instance.command_| == |log[i].command_| and insert is a no-op.
-      #
-      # if |instance.ballot_| < |log[i].ballot_| insert ignores instance because
-      # it is stale.
-      if instance.ballot_ > log[i].ballot_
+
+      if instance.ballot > log[i].ballot
         log[i] = instance
         return false
 
-      if instance.ballot_ == log[i].ballot_
+      # if |instance.ballot| == |log[i].ballot| it must be the case that
+      # |instance.command| == |log[i].command| and insert is a no-op.
+
+      if instance.ballot_ == log[i].ballot
         assert(log[i].command_ == instance.command_) << "case3"
+
+      # if |instance.ballot| < |log[i].ballot| insert ignores the instance
+      # because it is stale.
 
       return false
 
   - public methods
 
-    - constructor()
+    - constructor(kv_store: KVStore)
+      kv_store_ = kv_store
+      running_ = true
       last_index_ = 0
       last_executed_ = 0
       global_last_executed_ = 0
@@ -140,15 +143,8 @@
 
     - append(instance: Instance)
       # description: appends an instance to the log; called from the
-      # accept_handler.
-      # preconditions:
-      # postconditions:
+      # accept_handler which runs on a separate thread.
 
-      * # case (1): instance.index is pruned from log
-        #
-        # append() must be a no-op when called it with an instance at an index
-        # pruned from our log. this can happen in some rare and convoluted
-        # scenarios in both call paths (c1) and (c2).
       mu_.lock()
       i = instance.index_
       if i <= global_last_executed_
@@ -157,38 +153,37 @@
 
       if insert(&log_, instance)
         last_index_ = max(last_index_, i)
-        cv_commitable_.notify_all()
+        cv_committable_.notify_all()
 
     - commit(index_: int)
-      # preconditions: int > 0
       # sets the state of the instance at index to committed and possibly wakes
       # up the executor thread if the log is executable.
 
-      * # commit is called exclusively by the leader, after it sends out accept
-        # to all peers, including itself, and receiving ok responses from the
-        # quorum. the accept handler in every peer inserts an instance into the
-        # log and then responds with an ok if successful. most of the time, the
-        # leader will immediately receive an ok from its own rpc handler before
-        # receiving ok from the remote peers; therefore, by the time it calls
-        # commit, it is likely to have an instance at the index_, and calling
-        # commit is fine. in the rare cases when the leader receives ok
-        # responses from remote peers before itself, we wait on the condition
-        # variable that will eventually be signalled by append called from
-        # accept_handler.
+      # commit is called exclusively by the leader, after it sends out accept
+      # to all peers, including itself, and receiving ok responses from the
+      # quorum. the accept handler in every peer inserts an instance into the
+      # log and then responds with an ok if successful. most of the time, the
+      # leader will immediately receive an ok from its own rpc handler before
+      # receiving ok from the remote peers; therefore, by the time it calls
+      # commit, it is likely to have an instance at the index_, and calling
+      # commit is fine. in the rare cases when the leader receives ok
+      # responses from remote peers before itself, we wait on the condition
+      # variable that will eventually be signalled by append called from
+      # accept_handler.
       mu.lock()
       while log_[index] == empty
         cv_commitable_.wait()
 
-      * # when running prepare, we will ask peers, including ourselves, to send us
-        # their log starting at their global_last_executed_ and merge it to our
-        # log. then we will run accept on all instances starting after
-        # global_last_executed_. hence, we may run accept on an instance that is
-        # already committed or even executed in our log. our accept handler will
-        # not touch log_ for such instances but it will respond with an accept
-        # and eventually, we may run commit for such instances, in which case we
-        # will end up here. for those instances, commit must be a no-op. hence,
-        # we will only update an instances state to committed only if it is in
-        # in-progress state.
+      # when running prepare, we will ask peers, including ourselves, to send us
+      # their log starting at their global_last_executed_ and merge those logs.
+      # then we run accept on all instances in the merged log starting after
+      # global_last_executed_. hence, we may run accept on an instance that is
+      # already committed or even executed in our log. our accept handler will
+      # not touch log_ for such instances but it will respond with an accept and
+      # eventually, we may run commit for such instances, in which case we will
+      # end up here. for those instances, commit must be a no-op. hence, we will
+      # update an instance's state to committed only if it is in in-progress
+      # state.
       if log_[index_].state == in-progress
         log_[index_].state = committed
 
@@ -200,10 +195,10 @@
         cv_executable_.notify_one()
       mu_.unlock()
 
-    - execute(kv: KVStore) -> optional(client-id, result)
+    - execute() -> optional(client-id, result)
       # As described above, this method acts as a consume method of a
       # producer/consumer queue. Therefore, it sleeps until it is woken up by
-      # someone calling commit (i.e. produce) method of the queue. Once woken
+      # someone calling commit (i.e. produce method of the queue). Once woken
       # up, it executes one instance, sets the state of the instance to
       # executed, increments last_executed_, and returns the result and the id
       # of the client that originated the command.
@@ -215,7 +210,7 @@
         return nullopt
 
       instance = &log_[last_executed_+1]
-      result = kv.execute(instance.cmd)
+      result = kv_store_.execute(instance.cmd)
       ++last_executed_
       return (instance.client-id_, result)
 
@@ -224,18 +219,27 @@
       # leader (i.e. leader_last_executed). sets the state of all the instances
       # from last_executed_ until leader_last_executed and wakes up the executor
       # thread if necessary.
+      #
+      # since we send heartbeats to ourselves as well, commit_until will be
+      # called on the leader as well, but it will most likely to have no effect
+      # because the entries will be committed immediately after the leader
+      # receives acks from the quorum.
+
+      assert leader_last_executed >= 0
+      assert ballot >= 0
+
       mu_.lock()
       for (int i = last_executed_ + 1; i <= leader_last_executed; ++i)
-      * # we may receive a heartbeat before we receive the accept message;
+        # we may receive a heartbeat before we receive the accept message;
         # therefore, the heartbeat handler may run this function while there
         # is a gap in the log. when we see a gap, we break out of the loop and
         # try committing the next time we receive heartbeat from the leader;
         # hopefully, by that time, we will have received the accept message
         # and the gap will disappear.
-      if (log_[i] == empty)
-        break
+        if (log_[i] == empty)
+          break
 
-      * # |ballot| will determine whether we will commit instances in the log.
+        # |ballot| will determine whether we will commit instances in the log.
         # we can have three cases with respect to |ballot| and the ballot of
         # instances in the log after last_executed_:
         #
@@ -243,25 +247,25 @@
         # commit_until is always called from the heartbeat_handler, which will
         # reject heartbeats with a lower ballot number than ours. we assert this
         # impossiblity below.
-      assert(ballot >= log_[i].ballot_)
+        assert(ballot >= log_[i].ballot_)
 
-      * # case (2) they are equal: this is the common case. as a follower, we
+        # case (2) they are equal: this is the common case. as a follower, we
         # will usually have in-progress instances in our log; we will
-        # receive |leader_last_executed| that is larger than last_executed_,
-        # and we will catch up by committing instances in our own log.
-      if (log_[i].ballot_ == ballot)
-        log_[i].state = committed
+        # receive |leader_last_executed| that is larger than last_executed_, and
+        # we will catch up by committing instances in our own log.
+        if (log_[i].ballot_ == ballot)
+          log_[i].state = committed
 
-      * # case (3) |ballot| is larger: this is the uncommon case, and it can
+        # case (3) |ballot| is larger: this is the uncommon case, and it can
         # happen as follows: (a) we experience a partition, (b) a new leader
         # emerges and establishes new commands for the instances that are
         # already in our log, and (b) we reconnect. in this scenario, we will
         # have stale commands in our log and we cannot commit them because it
-        # will violate safety. in this scenario, we will do nothing and
-        # return, and as a result, prevent global_last_executed_ from
-        # advancing, until a new leader is elected, and it replays every
-        # instance since global_last_executed_ and we discover the new
-        # commands that we missed during the partition.
+        # will violate safety. in this scenario, we will do nothing and return,
+        # and as a result, prevent global_last_executed_ from advancing, until a
+        # new leader is elected, and that new leader replays every instance
+        # since global_last_executed_ and we discover the new commands that we
+        # missed during the partition.
 
       if (executable())
         cv_executable_.notify_one()
@@ -275,24 +279,20 @@
 
       while global_last_executed_ < leader_global_last_executed
         ++global_last_executed_
-        # case (1): the following assertion follows from (i1) and (i2)
+        # case (1): the following assertion follows from the invariants (i1) and (i2)
         assert(log_[global_last_executed_].state == executed)
         del log_[global_last_executed_]
 
     - instances() -> Instance[]
-      # description: return all instances in the log for a response to a prepare
-      # message; since global_last_executed_ is the tail of the log and
-      # last_index_ is the head of the log, we return all instances in-between.
-      # preconditions:
-      # postconditions:
+      # return all instances in the log for a response to a prepare message;
+      # since global_last_executed_ is the tail of the log and last_index_ is
+      # the head of the log, we return all instances in-between.
       mu_.lock()
       instances = Instance[]
       for i = global_last_executed_ + 1; i <= last_index_; ++i
         if log_[i] != empty
           instances.append(log_[i])
       return instances
-
-  - private methods:
 
     - is_executable(void) -> bool
       # preconditions: mu_ must be held
@@ -302,9 +302,7 @@
       return log_[last_executed_+1] != empty &&
         log_[last_executed_+1].state == committed
 
-  - test methods:
-    # these methods are used only in unit tests
-
+    # this method is used only in unit tests
     - at(index: int) -> pointer to instance
       return a constant pointer to the instance
 
