@@ -1,7 +1,7 @@
 #+title: TODO
 
 * todo refactoring
-** in go use at as the name of the test function that accesses the log entry at index i
+** in java use at as the name of the test function that accesses the log entry at index i
 ** in java: rename instancessincegloballastexecuted -> instances
 ** in java: fix         var current = ++globalLastExecuted;
 ** fix commitable -> committable in java and go
