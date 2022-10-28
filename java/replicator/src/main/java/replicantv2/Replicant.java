@@ -117,7 +117,6 @@ public class Replicant {
       }
       var clientId = r.getKey();
       var result = r.getValue();
-      // TODO: respond the result to the client
       clientHandler.respond(clientId, result.getValue());
     }
   }

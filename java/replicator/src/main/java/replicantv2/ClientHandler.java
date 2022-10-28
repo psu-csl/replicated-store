@@ -94,8 +94,6 @@ public class ClientHandler extends SimpleChannelInboundHandler<String> {
       assert r.type == MultiPaxosResultType.kSomeoneElseLeader;
       ctx.channel().writeAndFlush("leader is ...\n");
     }
-    // TODO: rm this; ycsb waits answer to send next command, verify it...
-    //ctx.channel().writeAndFlush("ack " + msg);
   }
 
   public void respond(Long clientId, String value) {

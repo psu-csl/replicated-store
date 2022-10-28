@@ -276,7 +276,6 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
       cvFollower.signal();
       mu.unlock();
     }
-    // TODO: don't we need lock here?
     ballot = nextBallot;
   }
 
@@ -464,7 +463,6 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
           logger.info(id + " RPC connection failed to " + peer.id);
           state.mu.lock();
           state.numRpcs++;
-          // TODO: be sure whether to signal here or not
           state.cv.signal();
           state.mu.unlock();
           return;
@@ -548,7 +546,6 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
           logger.info(id + " RPC connection failed to " + peer.id);
           state.mu.lock();
           state.numRpcs++;
-          // TODO: be sure whether to signal here or not
           state.cv.signal();
           state.mu.unlock();
           return;
@@ -684,7 +681,6 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
           logger.info(id + " RPC connection failed to " + peer.id);
           state.mu.lock();
           ++state.numRpcs;
-          // TODO: be sure whether to signal here or not
           state.cv.signal();
           state.mu.unlock();
           return;
