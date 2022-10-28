@@ -1,7 +1,7 @@
 package store
 
 import (
-	pb "github.com/psu-csl/replicated-store/go/consensus/multipaxos/comm"
+	pb "github.com/psu-csl/replicated-store/go/multipaxos/comm"
 	"github.com/stretchr/testify/assert"
 	"testing"
 )

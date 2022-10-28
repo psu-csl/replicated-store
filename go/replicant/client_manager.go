@@ -1,7 +1,7 @@
 package replicant
 
 import (
-	"github.com/psu-csl/replicated-store/go/consensus/multipaxos"
+	"github.com/psu-csl/replicated-store/go/multipaxos"
 	"net"
 	"sync"
 )

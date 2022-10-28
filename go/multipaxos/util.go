@@ -1,16 +1,8 @@
 package multipaxos
 
 import (
-	pb "github.com/psu-csl/replicated-store/go/consensus/multipaxos/comm"
+	pb "github.com/psu-csl/replicated-store/go/multipaxos/comm"
 	"sync"
-)
-
-type ResultType int
-
-const (
-	Ok ResultType = iota
-	Retry
-	SomeElseLeader
 )
 
 const (
@@ -33,9 +25,29 @@ func NewRpcPeer(id int64, stub pb.MultiPaxosRPCClient) *RpcPeer {
 	return peer
 }
 
+type ResultType int
+
+const (
+	Ok ResultType = iota
+	Retry
+	SomeElseLeader
+)
+
 type Result struct {
 	Type   ResultType
 	Leader int64
+}
+
+func Leader(ballot int64) int64 {
+	return ballot & IdBits
+}
+
+func IsLeader(ballot int64, id int64) bool {
+	return Leader(ballot) == id
+}
+
+func IsSomeoneElseLeader(ballot int64, id int64) bool {
+	return !IsLeader(ballot, id) && Leader(ballot) < MaxNumPeers
 }
 
 type PrepareState struct {

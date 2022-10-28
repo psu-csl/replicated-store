@@ -2,8 +2,8 @@ package replicant
 
 import (
 	"github.com/psu-csl/replicated-store/go/config"
-	"github.com/psu-csl/replicated-store/go/consensus/multipaxos"
 	consensusLog "github.com/psu-csl/replicated-store/go/log"
+	"github.com/psu-csl/replicated-store/go/multipaxos"
 	"github.com/psu-csl/replicated-store/go/store"
 	logger "github.com/sirupsen/logrus"
 	"net"

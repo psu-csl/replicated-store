@@ -3,10 +3,10 @@ package multipaxos
 import (
 	"context"
 	"github.com/psu-csl/replicated-store/go/config"
-	pb "github.com/psu-csl/replicated-store/go/consensus/multipaxos/comm"
-	"github.com/psu-csl/replicated-store/go/consensus/multipaxos/util"
 	"github.com/psu-csl/replicated-store/go/log"
+	pb "github.com/psu-csl/replicated-store/go/multipaxos/comm"
 	"github.com/psu-csl/replicated-store/go/store"
+	"github.com/psu-csl/replicated-store/go/util"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -556,7 +556,7 @@ func TestReplay(t *testing.T) {
 		index2
 		index3
 	)
-	replayLog := map[int64]*pb.Instance {
+	replayLog := map[int64]*pb.Instance{
 		index1: util.MakeInstanceWithAll(ballot, index1,
 			pb.InstanceState_COMMITTED, pb.CommandType_PUT),
 		index2: util.MakeInstanceWithAll(ballot, index2,
@@ -609,7 +609,7 @@ func TestReplicate(t *testing.T) {
 	peers[1].Start()
 	peers[2].Start()
 
-	time.Sleep(2 * time.Second)
+	time.Sleep(5 * time.Second)
 
 	leader := oneLeader()
 	assert.NotEqualValues(t, NoLeader, leader)

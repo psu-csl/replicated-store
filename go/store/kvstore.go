@@ -1,6 +1,6 @@
 package store
 
-import pb "github.com/psu-csl/replicated-store/go/consensus/multipaxos/comm"
+import pb "github.com/psu-csl/replicated-store/go/multipaxos/comm"
 
 const (
 	NotFound string = "key not found"

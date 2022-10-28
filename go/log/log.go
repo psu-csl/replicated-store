@@ -2,7 +2,7 @@ package log
 
 import (
 	"github.com/golang/protobuf/proto"
-	pb "github.com/psu-csl/replicated-store/go/consensus/multipaxos/comm"
+	pb "github.com/psu-csl/replicated-store/go/multipaxos/comm"
 	"github.com/psu-csl/replicated-store/go/store"
 	logger "github.com/sirupsen/logrus"
 	"sync"

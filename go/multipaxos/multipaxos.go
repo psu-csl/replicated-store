@@ -3,8 +3,8 @@ package multipaxos
 import (
 	"context"
 	"github.com/psu-csl/replicated-store/go/config"
-	pb "github.com/psu-csl/replicated-store/go/consensus/multipaxos/comm"
 	Log "github.com/psu-csl/replicated-store/go/log"
+	pb "github.com/psu-csl/replicated-store/go/multipaxos/comm"
 	logger "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -14,18 +14,6 @@ import (
 	"sync/atomic"
 	"time"
 )
-
-func Leader(ballot int64) int64 {
-	return ballot & IdBits
-}
-
-func IsLeader(ballot int64, id int64) bool {
-	return Leader(ballot) == id
-}
-
-func IsSomeoneElseLeader(ballot int64, id int64) bool {
-	return !IsLeader(ballot, id) && Leader(ballot) < MaxNumPeers
-}
 
 type Multipaxos struct {
 	ready          int32
@@ -83,6 +71,81 @@ func NewMultipaxos(config config.Config, log *Log.Log) *Multipaxos {
 	}
 
 	return &paxos
+}
+
+func (p *Multipaxos) NextBallot() int64 {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	nextBallot := p.ballot
+	nextBallot += RoundIncrement
+	nextBallot = (nextBallot & ^IdBits) | p.id
+	return nextBallot
+}
+
+func (p *Multipaxos) BecomeLeader(nextBallot int64) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	logger.Infof("%v became a leader: ballot: %v -> %v\n", p.id, p.ballot,
+		nextBallot)
+	p.ballot = nextBallot
+	atomic.StoreInt32(&p.ready, 0)
+	p.cvLeader.Signal()
+}
+
+func (p *Multipaxos) BecomeFollower(nextBallot int64) {
+	prevLeader := Leader(p.ballot)
+	nextLeader := Leader(nextBallot)
+	if nextLeader != p.id && (prevLeader == p.id || prevLeader == MaxNumPeers) {
+		logger.Infof("%v became a follower: ballot: %v -> %v\n", p.id,
+			p.ballot, nextBallot)
+		p.cvFollower.Signal()
+	}
+	p.ballot = nextBallot
+}
+
+func (p *Multipaxos) Id() int64 {
+	return p.id
+}
+
+func (p *Multipaxos) Ballot() (int64, int32) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	return p.ballot, p.ready
+}
+
+func (p *Multipaxos) waitUntilLeader() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for atomic.LoadUint32(&p.commitThreadRunning) == 1 && !IsLeader(p.ballot, p.id) {
+		p.cvLeader.Wait()
+	}
+}
+
+func (p *Multipaxos) waitUntilFollower() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for atomic.LoadUint32(&p.prepareThreadRunning) == 1 && IsLeader(p.ballot, p.id) {
+		p.cvFollower.Wait()
+	}
+}
+
+func (p *Multipaxos) sleepForCommitInterval() {
+	time.Sleep(time.Duration(p.CommitInterval) * time.Millisecond)
+}
+
+func (p *Multipaxos) sleepForRandomInterval() {
+	sleepTime := p.CommitInterval + p.CommitInterval / 2 +
+		rand.Int63n(p.CommitInterval / 2)
+	logger.Debug(sleepTime)
+	time.Sleep(time.Duration(sleepTime) * time.Millisecond)
+}
+
+func (p *Multipaxos) receivedCommit() bool {
+	var t int32 = 1
+	return atomic.CompareAndSwapInt32(&p.commitReceived, t, 0)
 }
 
 func (p *Multipaxos) Start() {
@@ -451,82 +514,6 @@ func (p *Multipaxos) Commit(ctx context.Context,
 		response.Type = pb.ResponseType_REJECT
 	}
 	return response, nil
-}
-
-// Helper functions
-func (p *Multipaxos) NextBallot() int64 {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	nextBallot := p.ballot
-	nextBallot += RoundIncrement
-	nextBallot = (nextBallot & ^IdBits) | p.id
-	return nextBallot
-}
-
-func (p *Multipaxos) BecomeLeader(nextBallot int64) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	logger.Infof("%v became a leader: ballot: %v -> %v\n", p.id, p.ballot,
-		nextBallot)
-	p.ballot = nextBallot
-	atomic.StoreInt32(&p.ready, 0)
-	p.cvLeader.Signal()
-}
-
-func (p *Multipaxos) BecomeFollower(nextBallot int64) {
-	prevLeader := Leader(p.ballot)
-	nextLeader := Leader(nextBallot)
-	if nextLeader != p.id && (prevLeader == p.id || prevLeader == MaxNumPeers) {
-		logger.Infof("%v became a follower: ballot: %v -> %v\n", p.id,
-			p.ballot, nextBallot)
-		p.cvFollower.Signal()
-	}
-	p.ballot = nextBallot
-}
-
-func (p *Multipaxos) Id() int64 {
-	return p.id
-}
-
-func (p *Multipaxos) Ballot() (int64, int32) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	return p.ballot, p.ready
-}
-
-func (p *Multipaxos) waitUntilLeader() {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	for atomic.LoadUint32(&p.commitThreadRunning) == 1 && !IsLeader(p.ballot, p.id) {
-		p.cvLeader.Wait()
-	}
-}
-
-func (p *Multipaxos) waitUntilFollower() {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	for atomic.LoadUint32(&p.prepareThreadRunning) == 1 && IsLeader(p.ballot, p.id) {
-		p.cvFollower.Wait()
-	}
-}
-
-func (p *Multipaxos) sleepForCommitInterval() {
-	time.Sleep(time.Duration(p.CommitInterval) * time.Millisecond)
-}
-
-func (p *Multipaxos) sleepForRandomInterval() {
-	sleepTime := p.CommitInterval + p.CommitInterval / 2 +
-		rand.Int63n(p.CommitInterval / 2)
-	logger.Debug(sleepTime)
-	time.Sleep(time.Duration(sleepTime) * time.Millisecond)
-}
-
-func (p *Multipaxos) receivedCommit() bool {
-	var t int32 = 1
-	return atomic.CompareAndSwapInt32(&p.commitReceived, t, 0)
 }
 
 func (p *Multipaxos) Connect(addrs []string) {

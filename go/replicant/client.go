@@ -2,8 +2,8 @@ package replicant
 
 import (
 	"bufio"
-	"github.com/psu-csl/replicated-store/go/consensus/multipaxos"
-	pb "github.com/psu-csl/replicated-store/go/consensus/multipaxos/comm"
+	"github.com/psu-csl/replicated-store/go/multipaxos"
+	pb "github.com/psu-csl/replicated-store/go/multipaxos/comm"
 	"net"
 	"strings"
 )

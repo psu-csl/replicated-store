@@ -1,154 +1,157 @@
 package log
 
 import (
-	pb "github.com/psu-csl/replicated-store/go/consensus/multipaxos/comm"
-	"github.com/psu-csl/replicated-store/go/consensus/multipaxos/util"
+	pb "github.com/psu-csl/replicated-store/go/multipaxos/comm"
 	"github.com/psu-csl/replicated-store/go/store"
+	"github.com/psu-csl/replicated-store/go/util"
 	"github.com/stretchr/testify/assert"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 )
 
 var (
-	log1   *Log
-	store1 *store.MemKVStore
+	log     *Log
+	kvStore *store.MemKVStore
 )
 
 func setup() {
-	store1 = store.NewMemKVStore()
-	log1 = NewLog(store1)
+	kvStore = store.NewMemKVStore()
+	log = NewLog(kvStore)
 }
 
 func TestConstructor(t *testing.T) {
 	setup()
-	assert.EqualValues(t, 0, log1.LastExecuted())
-	assert.EqualValues(t, 0, log1.GlobalLastExecuted())
-	assert.False(t, log1.IsExecutable())
-	assert.Nil(t, log1.log[0])
-	assert.Nil(t, log1.log[3])
-	assert.Nil(t, log1.log[-1])
+	assert.EqualValues(t, 0, log.LastExecuted())
+	assert.EqualValues(t, 0, log.GlobalLastExecuted())
+	assert.False(t, log.IsExecutable())
+	assert.Nil(t, log.At(0))
+	assert.Nil(t, log.At(-1))
+	assert.Nil(t, log.At(3))
 }
 
 func TestInsert(t *testing.T) {
-	instanceLog := make(map[int64]*pb.Instance)
+	log := make(map[int64]*pb.Instance)
 	var (
 		index int64 = 1
 		ballot int64 = 1
 	)
-	assert.True(t, Insert(instanceLog, util.MakeInstanceWithType(ballot, index,
+	assert.True(t, Insert(log, util.MakeInstanceWithType(ballot, index,
 		pb.CommandType_PUT)))
-	assert.Equal(t, pb.CommandType_PUT, instanceLog[index].GetCommand().GetType())
-	assert.False(t, Insert(instanceLog, util.MakeInstanceWithType(ballot, index,
+	assert.Equal(t, pb.CommandType_PUT, log[index].GetCommand().GetType())
+	assert.False(t, Insert(log, util.MakeInstanceWithType(ballot, index,
 		pb.CommandType_PUT)))
 }
 
 func TestInsertUpdateInProgress(t *testing.T) {
-	instanceLog := make(map[int64]*pb.Instance)
+	log := make(map[int64]*pb.Instance)
 	var (
-		index      int64 = 1
-		loBallot   int64 = 1
-		highBallot int64 = 2
+		index  int64 = 1
+		ballot int64 = 1
 	)
-	assert.True(t, Insert(instanceLog, util.MakeInstanceWithType(loBallot,
+	assert.True(t, Insert(log, util.MakeInstanceWithType(ballot,
 		index, pb.CommandType_PUT)))
-	assert.Equal(t, pb.CommandType_PUT, instanceLog[index].GetCommand().GetType())
-	assert.False(t, Insert(instanceLog, util.MakeInstanceWithType(highBallot,
+	assert.Equal(t, pb.CommandType_PUT, log[index].GetCommand().GetType())
+	assert.False(t, Insert(log, util.MakeInstanceWithType(ballot+ 1,
 		index, pb.CommandType_DEL)))
-	assert.Equal(t, pb.CommandType_DEL, instanceLog[index].GetCommand().GetType())
+	assert.Equal(t, pb.CommandType_DEL, log[index].GetCommand().GetType())
 }
 
 func TestInsertUpdateCommitted(t *testing.T) {
-	instanceLog := make(map[int64]*pb.Instance)
+	log := make(map[int64]*pb.Instance)
 	var (
 		index int64 = 1
 		ballot int64 = 1
 	)
-	assert.True(t, Insert(instanceLog, util.MakeInstanceWithAll(ballot, index,
+	assert.True(t, Insert(log, util.MakeInstanceWithAll(ballot, index,
 		pb.InstanceState_COMMITTED, pb.CommandType_PUT)))
-	assert.False(t, Insert(instanceLog, util.MakeInstanceWithAll(ballot, index,
+	assert.False(t, Insert(log, util.MakeInstanceWithAll(ballot, index,
 		pb.InstanceState_INPROGRESS, pb.CommandType_PUT)))
 }
 
 func TestInsertStale(t *testing.T) {
-	instanceLog := make(map[int64]*pb.Instance)
+	log := make(map[int64]*pb.Instance)
 	var (
-		index      int64 = 1
-		loBallot   int64 = 1
-		highBallot int64 = 2
+		index  int64 = 1
+		ballot int64 = 2
 	)
-	assert.True(t, Insert(instanceLog, util.MakeInstanceWithType(highBallot,
+	assert.True(t, Insert(log, util.MakeInstanceWithType(ballot,
 		index, pb.CommandType_PUT)))
-	assert.Equal(t, pb.CommandType_PUT, instanceLog[index].GetCommand().GetType())
-	assert.False(t, Insert(instanceLog, util.MakeInstanceWithType(loBallot,
+	assert.Equal(t, pb.CommandType_PUT, log[index].GetCommand().GetType())
+	assert.False(t, Insert(log, util.MakeInstanceWithType(ballot - 1,
 		index, pb.CommandType_DEL)))
-	assert.Equal(t, pb.CommandType_PUT, instanceLog[index].GetCommand().GetType())
+	assert.Equal(t, pb.CommandType_PUT, log[index].GetCommand().GetType())
 }
 
 func TestInsertCase2Committed(t *testing.T) {
-	instanceLog := make(map[int64]*pb.Instance)
+	log := make(map[int64]*pb.Instance)
 	var (
 		index int64 = 1
-		ballot int64 = 1
+		ballot int64 = 0
 	)
-	assert.True(t, Insert(instanceLog, util.MakeInstanceWithAll(ballot, index,
-		pb.InstanceState_COMMITTED, pb.CommandType_PUT)))
+	inst1 := util.MakeInstanceWithAll(ballot, index,
+		pb.InstanceState_COMMITTED, pb.CommandType_PUT)
+	inst2 := util.MakeInstanceWithAll(ballot, index,
+		pb.InstanceState_INPROGRESS, pb.CommandType_DEL)
+	assert.True(t, Insert(log, inst1))
 	defer expectDeath(t, "Insert case2")
-	assert.False(t, Insert(instanceLog, util.MakeInstanceWithAll(ballot, index,
-		pb.InstanceState_INPROGRESS, pb.CommandType_DEL)))
+	assert.False(t, Insert(log, inst2))
 }
 
 func TestInsertCase2Executed(t *testing.T) {
-	instanceLog := make(map[int64]*pb.Instance)
+	log := make(map[int64]*pb.Instance)
 	var (
 		index int64 = 1
-		ballot int64 = 1
+		ballot int64 = 0
 	)
-	assert.True(t, Insert(instanceLog, util.MakeInstanceWithAll(ballot, index,
-		pb.InstanceState_EXECUTED, pb.CommandType_PUT)))
+	inst1 := util.MakeInstanceWithAll(ballot, index,
+		pb.InstanceState_EXECUTED, pb.CommandType_PUT)
+	inst2 := util.MakeInstanceWithAll(ballot, index,
+		pb.InstanceState_INPROGRESS, pb.CommandType_DEL)
+	assert.True(t, Insert(log, inst1))
 	defer expectDeath(t, "Insert case2")
-	assert.False(t, Insert(instanceLog, util.MakeInstanceWithAll(ballot, index,
-		pb.InstanceState_INPROGRESS, pb.CommandType_DEL)))
+	assert.False(t, Insert(log, inst2))
 }
 
 func TestInsertCase3(t *testing.T) {
-	instanceLog := make(map[int64]*pb.Instance)
+	log := make(map[int64]*pb.Instance)
 	var (
 		index int64 = 1
-		ballot int64 = 1
+		ballot int64 = 0
 	)
-	assert.True(t, Insert(instanceLog, util.MakeInstanceWithAll(ballot, index,
-		pb.InstanceState_INPROGRESS, pb.CommandType_PUT)))
+	inst1 := util.MakeInstanceWithAll(ballot, index,
+		pb.InstanceState_INPROGRESS, pb.CommandType_PUT)
+	inst2 := util.MakeInstanceWithAll(ballot, index,
+		pb.InstanceState_INPROGRESS, pb.CommandType_DEL)
+	assert.True(t, Insert(log, inst1))
 	defer expectDeath(t, "Insert case3")
-	assert.False(t, Insert(instanceLog, util.MakeInstanceWithAll(ballot, index,
-		pb.InstanceState_INPROGRESS, pb.CommandType_DEL)))
+	assert.False(t, Insert(log, inst2))
 }
 
 func TestAppend(t *testing.T) {
 	setup()
-	log1.Append(util.MakeInstance(0, log1.AdvanceLastIndex()))
-	log1.Append(util.MakeInstance(0, log1.AdvanceLastIndex()))
-	assert.Equal(t, int64(1), log1.log[1].GetIndex())
-	assert.Equal(t, int64(2), log1.log[2].GetIndex())
+	log.Append(util.MakeInstance(0, log.AdvanceLastIndex()))
+	log.Append(util.MakeInstance(0, log.AdvanceLastIndex()))
+	assert.Equal(t, int64(1), log.At(1).GetIndex())
+	assert.Equal(t, int64(2), log.At(2).GetIndex())
 }
 
 func TestAppendWithGap(t *testing.T) {
 	setup()
 
 	var index int64 = 42
-	log1.Append(util.MakeInstance(0, index))
-	assert.Equal(t, index, log1.log[index].GetIndex())
-	assert.Equal(t, index + 1, log1.AdvanceLastIndex())
+	log.Append(util.MakeInstance(0, index))
+	assert.Equal(t, index, log.At(index).GetIndex())
+	assert.Equal(t, index + 1, log.AdvanceLastIndex())
 }
 
 func TestAppendFillGaps(t *testing.T) {
 	setup()
 
 	var index int64 = 42
-	log1.Append(util.MakeInstance(0, index))
-	log1.Append(util.MakeInstance(0, index - 10))
-	assert.Equal(t, index + 1, log1.AdvanceLastIndex())
+	log.Append(util.MakeInstance(0, index))
+	log.Append(util.MakeInstance(0, index - 10))
+	assert.Equal(t, index + 1, log.AdvanceLastIndex())
 }
 
 func TestAppendHighBallotOverride(t *testing.T) {
@@ -159,9 +162,9 @@ func TestAppendHighBallotOverride(t *testing.T) {
 		loBallot int64 = 0
 		hiBallot int64 = 1
 	)
-	log1.Append(util.MakeInstanceWithType(loBallot, index, pb.CommandType_PUT))
-	log1.Append(util.MakeInstanceWithType(hiBallot, index, pb.CommandType_DEL))
-	assert.Equal(t, pb.CommandType_DEL, log1.log[index].GetCommand().Type)
+	log.Append(util.MakeInstanceWithType(loBallot, index, pb.CommandType_PUT))
+	log.Append(util.MakeInstanceWithType(hiBallot, index, pb.CommandType_DEL))
+	assert.Equal(t, pb.CommandType_DEL, log.At(index).GetCommand().Type)
 }
 
 func TestAppendLowBallotNoEffect(t *testing.T)  {
@@ -172,31 +175,31 @@ func TestAppendLowBallotNoEffect(t *testing.T)  {
 		loBallot int64 = 0
 		hiBallot int64 = 1
 	)
-	log1.Append(util.MakeInstanceWithType(hiBallot, index, pb.CommandType_PUT))
-	log1.Append(util.MakeInstanceWithType(loBallot, index, pb.CommandType_DEL))
-	assert.Equal(t, pb.CommandType_PUT, log1.log[index].GetCommand().Type)
+	log.Append(util.MakeInstanceWithType(hiBallot, index, pb.CommandType_PUT))
+	log.Append(util.MakeInstanceWithType(loBallot, index, pb.CommandType_DEL))
+	assert.Equal(t, pb.CommandType_PUT, log.At(index).GetCommand().Type)
 }
 
 func TestCommit(t *testing.T) {
 	setup()
 
 	var index1 int64 = 1
-	log1.Append(util.MakeInstance(0, index1))
+	log.Append(util.MakeInstance(0, index1))
 	var index2 int64 = 2
-	log1.Append(util.MakeInstance(0, index2))
-	assert.True(t, log1.log[index1].GetState() == pb.InstanceState_INPROGRESS)
-	assert.True(t, log1.log[index2].GetState() == pb.InstanceState_INPROGRESS)
-	assert.False(t, log1.IsExecutable())
+	log.Append(util.MakeInstance(0, index2))
+	assert.True(t, IsInProgress(log.At(index1)))
+	assert.True(t, IsInProgress(log.At(index2)))
+	assert.False(t, log.IsExecutable())
 
-	log1.Commit(index2)
-	assert.True(t, log1.log[index1].GetState() == pb.InstanceState_INPROGRESS)
-	assert.True(t, log1.log[index2].GetState() == pb.InstanceState_COMMITTED)
-	assert.False(t, log1.IsExecutable())
+	log.Commit(index2)
+	assert.True(t, IsInProgress(log.At(index1)))
+	assert.True(t, IsCommitted(log.At(index2)))
+	assert.False(t, log.IsExecutable())
 
-	log1.Commit(index1)
-	assert.True(t, log1.log[index1].GetState() == pb.InstanceState_COMMITTED)
-	assert.True(t, log1.log[index2].GetState() == pb.InstanceState_COMMITTED)
-	assert.True(t, log1.IsExecutable())
+	log.Commit(index1)
+	assert.True(t, IsCommitted(log.At(index1)))
+	assert.True(t, IsCommitted(log.At(index2)))
+	assert.True(t, log.IsExecutable())
 }
 
 func TestCommitBeforeAppend(t *testing.T) {
@@ -207,72 +210,66 @@ func TestCommitBeforeAppend(t *testing.T) {
 	wg.Add(1)
 	// Do commit first
 	go func(wg *sync.WaitGroup) {
-		log1.Commit(index1)
+		log.Commit(index1)
 		wg.Done()
 	}(&wg)
 	// Give sufficient time to run the go routine
 	time.Sleep(50 * time.Millisecond)
-	log1.Append(util.MakeInstance(0, log1.AdvanceLastIndex()))
+	log.Append(util.MakeInstance(0, log.AdvanceLastIndex()))
 	wg.Wait()
-	assert.True(t, log1.log[index1].GetState() == pb.InstanceState_COMMITTED)
+	assert.True(t, IsCommitted(log.At(index1)))
 }
 
 func TestAppendCommitExecute(t *testing.T) {
 	setup()
-	var index int64 = 1
-	var done int64 = 0
 	var wg sync.WaitGroup
 	wg.Add(1)
-
 	go func(wg *sync.WaitGroup) {
-		for atomic.LoadInt64(&done) != 1 {
-			log1.Execute()
-		}
+		log.Execute()
 		wg.Done()
 	}(&wg)
-	time.Sleep(50 * time.Millisecond)
 
-	log1.Append(util.MakeInstance(0, index))
-	atomic.AddInt64(&done, 1)
-	log1.Commit(index)
+	var index int64 = 1
+	log.Append(util.MakeInstance(0, index))
+	log.Commit(index)
 	wg.Wait()
 
-	assert.True(t, log1.log[index].GetState() == pb.InstanceState_EXECUTED)
-	assert.Equal(t, index, log1.LastExecuted())
+	assert.True(t, IsExecuted(log.At(index)))
+	assert.Equal(t, index, log.LastExecuted())
 }
 
 func TestAppendCommitExecuteOutOfOrder(t *testing.T) {
 	setup()
+
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	go func() {
+		log.Execute()
+		log.Execute()
+		log.Execute()
+		wg.Done()
+	}()
 
 	const (
 		index1 int64 = iota + 1
 		index2
 		index3
 	)
-	var wg sync.WaitGroup
+	log.Append(util.MakeInstance(0, index1))
+	log.Append(util.MakeInstance(0, index2))
+	log.Append(util.MakeInstance(0, index3))
 
-	wg.Add(1)
-	go func() {
-		log1.Execute()
-		log1.Execute()
-		log1.Execute()
-		wg.Done()
-	}()
-
-	log1.Append(util.MakeInstance(0, index1))
-	log1.Append(util.MakeInstance(0, index2))
-	log1.Append(util.MakeInstance(0, index3))
-
-	log1.Commit(index3)
-	log1.Commit(index2)
-	log1.Commit(index1)
+	log.Commit(index3)
+	log.Commit(index2)
+	log.Commit(index1)
 
 	wg.Wait()
 
-	assert.True(t, log1.log[index1].GetState() == pb.InstanceState_EXECUTED)
-	assert.True(t, log1.log[index2].GetState() == pb.InstanceState_EXECUTED)
-	assert.True(t, log1.log[index3].GetState() == pb.InstanceState_EXECUTED)
-	assert.Equal(t, index3, log1.LastExecuted())
+	assert.True(t, IsExecuted(log.At(index1)))
+	assert.True(t, IsExecuted(log.At(index2)))
+	assert.True(t, IsExecuted(log.At(index3)))
+	assert.Equal(t, index3, log.LastExecuted())
 }
 
 func TestCommitUntil(t *testing.T) {
@@ -284,20 +281,20 @@ func TestCommitUntil(t *testing.T) {
 		index3
 	)
 
-	log1.Append(util.MakeInstance(ballot, index1))
-	log1.Append(util.MakeInstance(ballot, index2))
-	log1.Append(util.MakeInstance(ballot, index3))
+	log.Append(util.MakeInstance(ballot, index1))
+	log.Append(util.MakeInstance(ballot, index2))
+	log.Append(util.MakeInstance(ballot, index3))
 
-	log1.CommitUntil(index2, ballot)
+	log.CommitUntil(index2, ballot)
 
-	assert.True(t, log1.log[index1].GetState() == pb.InstanceState_COMMITTED)
-	assert.True(t, log1.log[index2].GetState() == pb.InstanceState_COMMITTED)
-	assert.False(t, log1.log[index3].GetState() == pb.InstanceState_COMMITTED)
-	assert.True(t, log1.IsExecutable())
+	assert.True(t, IsCommitted(log.At(index1)))
+	assert.True(t, IsCommitted(log.At(index2)))
+	assert.False(t, IsCommitted(log.At(index3)))
+	assert.True(t, log.IsExecutable())
 
-	log1.CommitUntil(index3, ballot)
-	assert.True(t, log1.log[index3].GetState() == pb.InstanceState_COMMITTED)
-	assert.True(t, log1.IsExecutable())
+	log.CommitUntil(index3, ballot)
+	assert.True(t, IsCommitted(log.At(index3)))
+	assert.True(t, log.IsExecutable())
 }
 
 func TestCommitUntilHigherBallot(t *testing.T) {
@@ -309,16 +306,16 @@ func TestCommitUntilHigherBallot(t *testing.T) {
 		index3
 	)
 
-	log1.Append(util.MakeInstance(ballot, index1))
-	log1.Append(util.MakeInstance(ballot, index2))
-	log1.Append(util.MakeInstance(ballot, index3))
+	log.Append(util.MakeInstance(ballot, index1))
+	log.Append(util.MakeInstance(ballot, index2))
+	log.Append(util.MakeInstance(ballot, index3))
 
-	log1.CommitUntil(index3, ballot+1)
+	log.CommitUntil(index3, ballot + 1)
 
-	assert.False(t, log1.log[index1].GetState() == pb.InstanceState_COMMITTED)
-	assert.False(t, log1.log[index2].GetState() == pb.InstanceState_COMMITTED)
-	assert.False(t, log1.log[index3].GetState() == pb.InstanceState_COMMITTED)
-	assert.False(t, log1.IsExecutable())
+	assert.False(t, IsCommitted(log.At(index1)))
+	assert.False(t, IsCommitted(log.At(index2)))
+	assert.False(t, IsCommitted(log.At(index3)))
+	assert.False(t, log.IsExecutable())
 }
 
 func TestCommitUntilCase2(t *testing.T) {
@@ -330,12 +327,12 @@ func TestCommitUntilCase2(t *testing.T) {
 		ballot
 	)
 
-	log1.Append(util.MakeInstance(ballot, index1))
-	log1.Append(util.MakeInstance(ballot, index2))
-	log1.Append(util.MakeInstance(ballot, index3))
+	log.Append(util.MakeInstance(ballot, index1))
+	log.Append(util.MakeInstance(ballot, index2))
+	log.Append(util.MakeInstance(ballot, index3))
 
 	defer expectDeath(t, "Commit until test2 - no panic")
-	log1.CommitUntil(index3, ballot-1)
+	log.CommitUntil(index3, ballot - 1)
 }
 
 func TestCommitUntilWithGap(t *testing.T) {
@@ -348,161 +345,154 @@ func TestCommitUntilWithGap(t *testing.T) {
 		index4
 	)
 
-	log1.Append(util.MakeInstance(ballot, index1))
-	log1.Append(util.MakeInstance(ballot, index3))
-	log1.Append(util.MakeInstance(ballot, index4))
+	log.Append(util.MakeInstance(ballot, index1))
+	log.Append(util.MakeInstance(ballot, index3))
+	log.Append(util.MakeInstance(ballot, index4))
 
-	log1.CommitUntil(index4, ballot)
+	log.CommitUntil(index4, ballot)
 
-	assert.True(t, log1.log[index1].GetState() == pb.InstanceState_COMMITTED)
-	assert.False(t, log1.log[index3].GetState() == pb.InstanceState_COMMITTED)
-	assert.False(t, log1.log[index4].GetState() == pb.InstanceState_COMMITTED)
-	assert.True(t, log1.IsExecutable())
+	assert.True(t, IsCommitted(log.At(index1)))
+	assert.False(t, IsCommitted(log.At(index3)))
+	assert.False(t, IsCommitted(log.At(index4)))
+	assert.True(t, log.IsExecutable())
 }
 
 func TestAppendCommitUntilExecute(t *testing.T) {
 	setup()
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		log.Execute()
+		log.Execute()
+		log.Execute()
+		wg.Done()
+	}()
+
 	const (
 		ballot int64 = iota
 		index1
 		index2
 		index3
 	)
-
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		log1.Execute()
-		log1.Execute()
-		log1.Execute()
-		wg.Done()
-	}()
-
-	log1.Append(util.MakeInstance(ballot, index1))
-	log1.Append(util.MakeInstance(ballot, index2))
-	log1.Append(util.MakeInstance(ballot, index3))
-	log1.CommitUntil(index3, ballot)
+	log.Append(util.MakeInstance(ballot, index1))
+	log.Append(util.MakeInstance(ballot, index2))
+	log.Append(util.MakeInstance(ballot, index3))
+	log.CommitUntil(index3, ballot)
 	wg.Wait()
 
-	assert.True(t, log1.log[index1].GetState() == pb.InstanceState_EXECUTED)
-	assert.True(t, log1.log[index2].GetState() == pb.InstanceState_EXECUTED)
-	assert.True(t, log1.log[index3].GetState() == pb.InstanceState_EXECUTED)
-	assert.Equal(t, index3, log1.LastExecuted())
-	assert.False(t, log1.IsExecutable())
+	assert.True(t, IsExecuted(log.At(index1)))
+	assert.True(t, IsExecuted(log.At(index2)))
+	assert.True(t, IsExecuted(log.At(index3)))
+	assert.False(t, log.IsExecutable())
 }
 
 func TestAppendCommitUntilExecuteTrimUntil(t *testing.T) {
 	setup()
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		log.Execute()
+		log.Execute()
+		log.Execute()
+		wg.Done()
+	}()
+
 	const (
 		ballot int64 = iota
 		index1
 		index2
 		index3
 	)
-
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		log1.Execute()
-		log1.Execute()
-		log1.Execute()
-		wg.Done()
-	}()
-
-	log1.Append(util.MakeInstance(ballot, index1))
-	log1.Append(util.MakeInstance(ballot, index2))
-	log1.Append(util.MakeInstance(ballot, index3))
-	log1.CommitUntil(index3, ballot)
+	log.Append(util.MakeInstance(ballot, index1))
+	log.Append(util.MakeInstance(ballot, index2))
+	log.Append(util.MakeInstance(ballot, index3))
+	log.CommitUntil(index3, ballot)
 	wg.Wait()
 
-	log1.TrimUntil(index3)
+	log.TrimUntil(index3)
 
-	assert.Nil(t, log1.log[index1])
-	assert.Nil(t, log1.log[index2])
-	assert.Nil(t, log1.log[index3])
-	assert.Equal(t, index3, log1.LastExecuted())
-	assert.Equal(t, index3, log1.GlobalLastExecuted())
-	assert.False(t, log1.IsExecutable())
+	assert.Nil(t, log.At(index1))
+	assert.Nil(t, log.At(index2))
+	assert.Nil(t, log.At(index3))
+	assert.Equal(t, index3, log.LastExecuted())
+	assert.Equal(t, index3, log.GlobalLastExecuted())
+	assert.False(t, log.IsExecutable())
 }
 
 func TestAppendAtTrimmedIndex(t *testing.T) {
 	setup()
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		log.Execute()
+		log.Execute()
+		wg.Done()
+	}()
+
 	const (
 		ballot int64 = iota
 		index1
 		index2
 	)
+	log.Append(util.MakeInstance(ballot, index1))
+	log.Append(util.MakeInstance(ballot, index2))
+	log.CommitUntil(index2, ballot)
+	wg.Wait()
+
+	log.TrimUntil(index2)
+
+	assert.Nil(t, log.At(index1))
+	assert.Nil(t, log.At(index2))
+	assert.Equal(t, index2, log.LastExecuted())
+	assert.Equal(t, index2, log.GlobalLastExecuted())
+	assert.False(t, log.IsExecutable())
+
+	log.Append(util.MakeInstance(ballot, index1))
+	log.Append(util.MakeInstance(ballot, index2))
+	assert.Nil(t, log.At(index1))
+	assert.Nil(t, log.At(index2))
+}
+
+func TestLog_Instances(t *testing.T) {
+	setup()
 
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
-		log1.Execute()
-		log1.Execute()
+		log.Execute()
+		log.Execute()
 		wg.Done()
 	}()
 
-	log1.Append(util.MakeInstance(ballot, index1))
-	log1.Append(util.MakeInstance(ballot, index2))
-	log1.CommitUntil(index2, ballot)
-	wg.Wait()
-
-	log1.TrimUntil(index2)
-
-	assert.Nil(t, log1.log[index1])
-	assert.Nil(t, log1.log[index2])
-	assert.Equal(t, index2, log1.LastExecuted())
-	assert.Equal(t, index2, log1.GlobalLastExecuted())
-	assert.False(t, log1.IsExecutable())
-
-	log1.Append(util.MakeInstance(ballot, index1))
-	log1.Append(util.MakeInstance(ballot, index2))
-	assert.Nil(t, log1.log[index1])
-	assert.Nil(t, log1.log[index2])
-}
-
-func TestLog_InstancesSinceGlobalLastExecuted(t *testing.T) {
-	setup()
 	var ballot int64 = 0
-	const(
-		index1 int64 = iota + 1
-		index2
-		index3
-	)
-
-	var wg sync.WaitGroup
-
 	expect := make([]*pb.Instance, 0, 3)
-	assert.Equal(t, expect, log1.Instances())
+	assert.Equal(t, expect, log.Instances())
 
+	index1 := log.AdvanceLastIndex()
 	expect = append(expect, util.MakeInstance(ballot, index1))
-	log1.Append(util.MakeInstance(ballot, index1))
+	log.Append(util.MakeInstance(ballot, index1))
+	index2 := log.AdvanceLastIndex()
 	expect = append(expect, util.MakeInstance(ballot, index2))
-	log1.Append(util.MakeInstance(ballot, index2))
+	log.Append(util.MakeInstance(ballot, index2))
+	index3 := log.AdvanceLastIndex()
 	expect = append(expect, util.MakeInstance(ballot, index3))
-	log1.Append(util.MakeInstance(ballot, index3))
+	log.Append(util.MakeInstance(ballot, index3))
 
-	instances := log1.Instances()
+	instances := log.Instances()
 	for index, instance := range expect {
 		assert.True(t, IsEqualInstance(instance, instances[index]))
 	}
 
 	var index int64 = 2
-	log1.CommitUntil(index, ballot)
-	for index, instance := range expect {
-		assert.True(t, IsEqualInstance(instance, instances[index]))
-	}
-
-	wg.Add(1)
-	go func() {
-		log1.Execute()
-		log1.Execute()
-		wg.Done()
-	}()
+	log.CommitUntil(index, ballot)
 	wg.Wait()
+	log.TrimUntil(index)
 
-	log1.TrimUntil(index)
 	expect = expect[index:]
-	instances = log1.Instances()
+	instances = log.Instances()
 	for index, instance := range expect {
 		assert.True(t, IsEqualInstance(instance, instances[index]))
 	}
@@ -513,12 +503,11 @@ func TestCallingStopUnblocksExecutor(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
-		clientId, result := log1.Execute()
-		assert.EqualValues(t, -1, clientId)
+		_, result := log.Execute()
 		assert.Nil(t, result)
 		wg.Done()
 	}()
-	log1.Stop()
+	log.Stop()
 	wg.Wait()
 }
 
