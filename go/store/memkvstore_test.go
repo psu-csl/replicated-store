@@ -16,13 +16,10 @@ const (
 func TestMemKVStore_GetPutDel(t *testing.T) {
 	store := NewMemKVStore()
 
-	// Get a non-exist key
 	assert.Nil(t, store.Get(key1))
 
-	//Delete a non-exist key
 	assert.False(t, store.Del(key1))
 
-	// Put then Get
 	assert.True(t, store.Put(key1, val1))
 	actualVal := *store.Get(key1)
 	assert.Equal(t, val1, actualVal)
@@ -31,14 +28,12 @@ func TestMemKVStore_GetPutDel(t *testing.T) {
 	actualVal = *store.Get(key2)
 	assert.Equal(t, val2, actualVal)
 
-	// Update an existing key
 	assert.True(t, store.Put(key1, val2))
 	actualVal = *store.Get(key1)
 	assert.Equal(t, val2, actualVal)
 	actualVal = *store.Get(key2)
 	assert.Equal(t, val2, actualVal)
 
-	// Delete an existing key
 	assert.True(t, store.Del(key1))
 	assert.Nil(t, store.Get(key1))
 	actualVal = *store.Get(key2)
@@ -59,19 +54,16 @@ func TestMemKVStore_Execute(t *testing.T) {
 	putKey2Val2 := &pb.Command{Key: key2, Value: val2, Type: pb.CommandType_PUT}
 	putKey1Val2 := &pb.Command{Key: key1, Value: val2, Type: pb.CommandType_PUT}
 
-	// Get command for a non-exist key
 	{
 		r := Execute(getKey1, store)
 		assert.True(t, !r.Ok && r.Value == NotFound)
 	}
 
-	// Delete command for a non-exist key
 	{
 		r := Execute(delKey1, store)
 		assert.True(t, !r.Ok && r.Value == NotFound)
 	}
 
-	// Put command then get command
 	{
 		r1 := Execute(putKey1Val1, store)
 		assert.True(t, r1.Ok && r1.Value == Empty)
@@ -86,7 +78,6 @@ func TestMemKVStore_Execute(t *testing.T) {
 		assert.True(t, r2.Ok && r2.Value == val2)
 	}
 
-	// Put command with the same key but a different value
 	{
 		r1 := Execute(putKey1Val2, store)
 		assert.True(t, r1.Ok && r1.Value == Empty)
@@ -98,7 +89,6 @@ func TestMemKVStore_Execute(t *testing.T) {
 		assert.True(t, r3.Ok && r3.Value == val2)
 	}
 
-	// Delete command for an existing key
 	{
 		r1 := Execute(delKey1, store)
 		assert.True(t, r1.Ok && r1.Value == Empty)

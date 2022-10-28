@@ -208,13 +208,12 @@ func TestCommitBeforeAppend(t *testing.T) {
 	var index1 int64 = 1
 	var wg sync.WaitGroup
 	wg.Add(1)
-	// Do commit first
 	go func(wg *sync.WaitGroup) {
 		log.Commit(index1)
 		wg.Done()
 	}(&wg)
-	// Give sufficient time to run the go routine
 	time.Sleep(50 * time.Millisecond)
+	
 	log.Append(util.MakeInstance(0, log.AdvanceLastIndex()))
 	wg.Wait()
 	assert.True(t, IsCommitted(log.At(index1)))
