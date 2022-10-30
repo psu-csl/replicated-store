@@ -2,9 +2,9 @@ package replicant
 
 import (
 	"github.com/psu-csl/replicated-store/go/config"
+	"github.com/psu-csl/replicated-store/go/kvstore"
 	consensusLog "github.com/psu-csl/replicated-store/go/log"
 	"github.com/psu-csl/replicated-store/go/multipaxos"
-	"github.com/psu-csl/replicated-store/go/store"
 	logger "github.com/sirupsen/logrus"
 	"net"
 	"strconv"
@@ -14,7 +14,7 @@ import (
 type Replicant struct {
 	id            int64
 	numPeers      int64
-	store         *store.MemKVStore
+	store         *kvstore.MemKVStore
 	log           *consensusLog.Log
 	multipaxos    *multipaxos.Multipaxos
 	ipPort        string
@@ -24,10 +24,10 @@ type Replicant struct {
 
 func NewReplicant(config config.Config) *Replicant {
 	r := &Replicant{
-		id:            config.Id,
-		numPeers:      int64(len(config.Peers)),
-		store:         store.NewMemKVStore(),
-		ipPort:        config.Peers[config.Id],
+		id:       config.Id,
+		numPeers: int64(len(config.Peers)),
+		store:    kvstore.NewMemKVStore(),
+		ipPort:   config.Peers[config.Id],
 	}
 	r.log = consensusLog.NewLog(r.store)
 	r.multipaxos = multipaxos.NewMultipaxos(config, r.log)

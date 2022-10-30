@@ -3,14 +3,13 @@ package multipaxos
 import (
 	"context"
 	"github.com/psu-csl/replicated-store/go/config"
+	"github.com/psu-csl/replicated-store/go/kvstore"
 	"github.com/psu-csl/replicated-store/go/log"
 	pb "github.com/psu-csl/replicated-store/go/multipaxos/comm"
-	"github.com/psu-csl/replicated-store/go/store"
 	"github.com/psu-csl/replicated-store/go/util"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
-	"sync"
 	"testing"
 	"time"
 )
@@ -21,13 +20,13 @@ var (
 	configs = make([]config.Config, NumPeers)
 	logs    = make([]*log.Log, NumPeers)
 	peers   = make([]*Multipaxos, NumPeers)
-	stores  = make([]*store.MemKVStore, NumPeers)
+	stores  = make([]*kvstore.MemKVStore, NumPeers)
 )
 
 func initPeers() {
 	for i:= int64(0); i < NumPeers; i++ {
 		configs[i] = config.DefaultConfig(i, NumPeers)
-		stores[i] = store.NewMemKVStore()
+		stores[i] = kvstore.NewMemKVStore()
 		logs[i] = log.NewLog(stores[i])
 		peers[i] = NewMultipaxos(configs[i], logs[i])
 	}
@@ -42,7 +41,7 @@ func setup() {
 
 func setupOnePeer(id int64) {
 	configs[id] = config.DefaultConfig(id, NumPeers)
-	stores[id] = store.NewMemKVStore()
+	stores[id] = kvstore.NewMemKVStore()
 	logs[id] = log.NewLog(stores[id])
 	peers[id] = NewMultipaxos(configs[id], logs[id])
 }
@@ -484,7 +483,7 @@ func TestRunAcceptPhase(t *testing.T) {
 
 	r1 := peers[0].RunAcceptPhase(ballot, index1, &pb.Command{Type: pb.CommandType_PUT}, 0)
 	assert.EqualValues(t, Retry, r1.Type)
-	assert.EqualValues(t, NoLeader, r1.Leader)
+	assert.EqualValues(t, -1, r1.Leader)
 
 	assert.True(t, log.IsInProgress(logs[0].At(index1)))
 	assert.Nil(t, logs[1].At(index1))
@@ -496,7 +495,7 @@ func TestRunAcceptPhase(t *testing.T) {
 
 	r2 := peers[0].RunAcceptPhase(ballot, index1, &pb.Command{Type: pb.CommandType_PUT}, 0)
 	assert.EqualValues(t, Ok, r2.Type)
-	assert.EqualValues(t, NoLeader, r2.Leader)
+	assert.EqualValues(t, -1, r2.Leader)
 
 	assert.True(t, log.IsCommitted(logs[0].At(index1)))
 	assert.True(t, log.IsEqualInstance(instance1, logs[1].At(index1)))
@@ -604,7 +603,7 @@ func TestReplicate(t *testing.T) {
 
 	r1 := peers[0].Replicate(&pb.Command{}, 0)
 	assert.Equal(t, Retry, r1.Type)
-	assert.Equal(t, NoLeader, r1.Leader)
+	assert.EqualValues(t, -1, r1.Leader)
 
 	peers[1].Start()
 	peers[2].Start()
@@ -612,7 +611,7 @@ func TestReplicate(t *testing.T) {
 	time.Sleep(5 * time.Second)
 
 	leader := oneLeader()
-	assert.NotEqualValues(t, NoLeader, leader)
+	assert.NotEqualValues(t, -1, leader)
 
 	r2 := peers[leader].Replicate(&pb.Command{}, 0)
 	assert.Equal(t, Ok, r2.Type)
@@ -621,137 +620,6 @@ func TestReplicate(t *testing.T) {
 	r3 := peers[notLeader].Replicate(&pb.Command{}, 0)
 	assert.EqualValues(t, SomeElseLeader, r3.Type)
 	assert.EqualValues(t, leader, r3.Leader)
-}
-
-func TestReplicateSomeOneElseLeader(t *testing.T) {
-	initPeers()
-	peers[0].StartRPCServer()
-	peers[1].StartRPCServer()
-	defer peers[0].StopRPCServer()
-	defer peers[1].StopRPCServer()
-	stub := makeStub(configs[0].Peers[0])
-
-	ballot := peers[1].NextBallot()
-	r1 := sendCommit(stub, ballot, 0, 0)
-	assert.EqualValues(t, pb.ResponseType_OK, r1.GetType())
-	assert.EqualValues(t, 1, LeaderByPeer(peers[0]))
-
-	r2 := peers[0].Replicate(&pb.Command{}, 0)
-	assert.EqualValues(t, SomeElseLeader, r2.Type)
-	assert.EqualValues(t, 1, r2.Leader)
-}
-
-func TestProposeCommand(t *testing.T) {
-	setup()
-	defer tearDown()
-
-	time.Sleep(time.Duration(4 * configs[0].CommitInterval) * time.Millisecond)
-	for oneLeader() == NoLeader {
-		time.Sleep(100 * time.Millisecond)
-	}
-
-	results := make([]Result, 0, len(peers))
-	for _, peer := range peers {
-		results = append(results, peer.Replicate(&pb.Command{}, 0))
-	}
-
-	numOk := 0
-	numSomeoneElseLeader := 0
-	for _, r := range results {
-		if r.Type == Ok {
-			numOk++
-		} else if r.Type == SomeElseLeader {
-			numSomeoneElseLeader++
-		}
-	}
-	assert.EqualValues(t, 1, numOk)
-	assert.EqualValues(t, 2, numSomeoneElseLeader)
-
-	for _, log := range logs {
-		assert.EqualValues(t, 2, log.AdvanceLastIndex())
-	}
-}
-
-func TestTrimAfterExecution(t *testing.T) {
-	setup()
-	defer tearDown()
-
-	time.Sleep(time.Duration(3 * configs[0].CommitInterval) * time.Millisecond)
-	for oneLeader() == NoLeader {
-		time.Sleep(300 * time.Millisecond)
-	}
-
-	leaderId := int64(0)
-	numCmds := 10
-	result := peers[0].Replicate(&pb.Command{}, 0)
-	if result.Type == SomeElseLeader {
-		leaderId = result.Leader
-	}
-
-	for i := 0; i < numCmds; i++ {
-		result = peers[leaderId].Replicate(&pb.Command{}, 0)
-		assert.EqualValues(t, Ok, result.Type)
-	}
-
-	gle := logs[leaderId].AdvanceLastIndex() - 1
-	var wg sync.WaitGroup
-	for _, l := range logs {
-		wg.Add(1)
-		go func(log *log.Log) {
-			for index := int64(0); index < gle; index++ {
-				log.Execute()
-			}
-			wg.Done()
-		}(l)
-	}
-	wg.Wait()
-
-	time.Sleep(time.Duration(3 * configs[0].CommitInterval) * time.Millisecond)
-
-	for _, log := range logs {
-		assert.EqualValues(t, gle, log.GlobalLastExecuted())
-	}
-}
-
-func TestProposeWithFailPeer(t *testing.T) {
-	initPeers()
-	peers[0].StartRPCServer()
-	peers[1].StartRPCServer()
-	peers[0].Connect(configs[0].Peers)
-
-	ballot0 := peers[0].NextBallot()
-	replayLog := peers[0].RunPreparePhase(ballot0)
-	if replayLog != nil {
-		peers[0].Replay(ballot0, replayLog)
-	}
-
-	cmd1 := &pb.Command{Type: pb.CommandType_PUT}
-	peers[0].Replicate(cmd1, 0)
-	assert.EqualValues(t, pb.CommandType_PUT, logs[0].At(1).GetCommand().GetType())
-	assert.EqualValues(t, pb.CommandType_PUT, logs[1].At(1).GetCommand().GetType())
-
-	peers[0].StopRPCServer()
-	peers[2].StartRPCServer()
-	time.Sleep(2 * time.Second)
-
-	ballot2 := peers[2].NextBallot()
-	logMap := peers[2].RunPreparePhase(ballot2)
-	peers[2].Replay(ballot2, logMap)
-	r1 := peers[2].Replicate(&pb.Command{Type: pb.CommandType_DEL}, 2)
-	for r1.Type == Retry {
-		r1 = peers[2].Replicate(&pb.Command{Type: pb.CommandType_DEL}, 2)
-	}
-	assert.EqualValues(t, Ok, r1.Type)
-	assert.EqualValues(t, 2, logs[0].AdvanceLastIndex())
-	assert.EqualValues(t, 3, logs[1].AdvanceLastIndex())
-	assert.EqualValues(t, 3, logs[2].AdvanceLastIndex())
-
-	assert.EqualValues(t, pb.CommandType_DEL, logs[1].At(2).GetCommand().
-		GetType())
-	assert.EqualValues(t, pb.CommandType_PUT, logs[2].At(1).GetCommand().
-		GetType())
-	assert.EqualValues(t, pb.CommandType_DEL, logs[2].At(2).GetCommand().
-		GetType())
 }
 
 func makeStub(target string) pb.MultiPaxosRPCClient {
@@ -771,10 +639,10 @@ func oneLeader() int64 {
 		if IsLeaderByPeer(peer) {
 			numLeader++
 			if numLeader > 1 || peer.Id() != leader {
-				return NoLeader
+				return -1
 			}
 		} else if LeaderByPeer(peer) != leader {
-			return NoLeader
+			return -1
 		}
 	}
 	return leader

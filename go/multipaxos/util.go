@@ -9,7 +9,6 @@ const (
 	IdBits               = 0xff
 	RoundIncrement       = IdBits + 1
 	MaxNumPeers    int64 = 0xf
-	NoLeader       int64 = -1
 )
 
 type RpcPeer struct {

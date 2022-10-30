@@ -1,4 +1,4 @@
-package store
+package kvstore
 
 import pb "github.com/psu-csl/replicated-store/go/multipaxos/comm"
 

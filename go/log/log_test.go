@@ -1,8 +1,8 @@
 package log
 
 import (
+	"github.com/psu-csl/replicated-store/go/kvstore"
 	pb "github.com/psu-csl/replicated-store/go/multipaxos/comm"
-	"github.com/psu-csl/replicated-store/go/store"
 	"github.com/psu-csl/replicated-store/go/util"
 	"github.com/stretchr/testify/assert"
 	"sync"
@@ -12,11 +12,11 @@ import (
 
 var (
 	log     *Log
-	kvStore *store.MemKVStore
+	kvStore *kvstore.MemKVStore
 )
 
 func setup() {
-	kvStore = store.NewMemKVStore()
+	kvStore = kvstore.NewMemKVStore()
 	log = NewLog(kvStore)
 }
 
@@ -455,7 +455,7 @@ func TestAppendAtTrimmedIndex(t *testing.T) {
 	assert.Nil(t, log.At(index2))
 }
 
-func TestLog_Instances(t *testing.T) {
+func TestInstances(t *testing.T) {
 	setup()
 
 	var wg sync.WaitGroup

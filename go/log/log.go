@@ -2,8 +2,8 @@ package log
 
 import (
 	"github.com/golang/protobuf/proto"
+	"github.com/psu-csl/replicated-store/go/kvstore"
 	pb "github.com/psu-csl/replicated-store/go/multipaxos/comm"
-	"github.com/psu-csl/replicated-store/go/store"
 	logger "github.com/sirupsen/logrus"
 	"sync"
 )
@@ -60,7 +60,7 @@ func Insert(log map[int64]*pb.Instance, instance *pb.Instance) bool {
 
 type Log struct {
 	running            bool
-	kvStore            store.KVStore
+	kvStore            kvstore.KVStore
 	log                map[int64]*pb.Instance
 	lastIndex          int64
 	lastExecuted       int64
@@ -70,7 +70,7 @@ type Log struct {
 	cvCommittable      *sync.Cond
 }
 
-func NewLog(s store.KVStore) *Log {
+func NewLog(s kvstore.KVStore) *Log {
 	l := Log{
 		running:            true,
 		kvStore:            s,
@@ -161,7 +161,7 @@ func (l *Log) Commit(index int64) {
 	}
 }
 
-func (l *Log) Execute() (int64, *store.KVResult) {
+func (l *Log) Execute() (int64, *kvstore.KVResult) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -177,7 +177,7 @@ func (l *Log) Execute() (int64, *store.KVResult) {
 	if !ok {
 		logger.Panicf("Instance at Index %v empty\n", l.lastExecuted+ 1)
 	}
-	result := store.Execute(instance.GetCommand(), l.kvStore)
+	result := kvstore.Execute(instance.GetCommand(), l.kvStore)
 	instance.State = pb.InstanceState_EXECUTED
 	l.lastExecuted += 1
 	return instance.ClientId, &result

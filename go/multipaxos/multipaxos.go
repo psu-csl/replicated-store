@@ -21,7 +21,7 @@ type Multipaxos struct {
 	log            *Log.Log
 	id             int64
 	commitReceived int32
-	CommitInterval int64
+	commitInterval int64
 	port           string
 	rpcPeers       []*RpcPeer
 	mu             sync.Mutex
@@ -29,7 +29,7 @@ type Multipaxos struct {
 	cvLeader   *sync.Cond
 	cvFollower *sync.Cond
 
-	server             *grpc.Server
+	rpcServer          *grpc.Server
 	rpcServerRunning   bool
 	rpcServerRunningCv *sync.Cond
 
@@ -46,13 +46,13 @@ func NewMultipaxos(config config.Config, log *Log.Log) *Multipaxos {
 		log:                  log,
 		id:                   config.Id,
 		commitReceived:       0,
-		CommitInterval:       config.CommitInterval,
+		commitInterval:       config.CommitInterval,
 		port:                 config.Peers[config.Id],
 		rpcPeers:             make([]*RpcPeer, len(config.Peers)),
 		rpcServerRunning:     false,
 		prepareThreadRunning: 0,
 		commitThreadRunning:  0,
-		server:               nil,
+		rpcServer:            nil,
 	}
 	paxos.rpcServerRunningCv = sync.NewCond(&paxos.mu)
 	paxos.cvFollower = sync.NewCond(&paxos.mu)
@@ -133,12 +133,12 @@ func (p *Multipaxos) waitUntilFollower() {
 }
 
 func (p *Multipaxos) sleepForCommitInterval() {
-	time.Sleep(time.Duration(p.CommitInterval) * time.Millisecond)
+	time.Sleep(time.Duration(p.commitInterval) * time.Millisecond)
 }
 
 func (p *Multipaxos) sleepForRandomInterval() {
-	sleepTime := p.CommitInterval + p.CommitInterval / 2 +
-		rand.Int63n(p.CommitInterval / 2)
+	sleepTime := p.commitInterval + p.commitInterval/ 2 +
+		rand.Int63n(p.commitInterval/ 2)
 	logger.Debug(sleepTime)
 	time.Sleep(time.Duration(sleepTime) * time.Millisecond)
 }
@@ -166,15 +166,15 @@ func (p *Multipaxos) StartRPCServer() {
 	if err != nil {
 		panic(err)
 	}
-	p.server = grpc.NewServer()
-	pb.RegisterMultiPaxosRPCServer(p.server, p)
+	p.rpcServer = grpc.NewServer()
+	pb.RegisterMultiPaxosRPCServer(p.rpcServer, p)
 
 	p.mu.Lock()
 	p.rpcServerRunning = true
 	p.rpcServerRunningCv.Signal()
 	p.mu.Unlock()
 
-	go p.server.Serve(listener)
+	go p.rpcServer.Serve(listener)
 }
 
 func (p *Multipaxos) StopRPCServer() {
@@ -184,7 +184,7 @@ func (p *Multipaxos) StopRPCServer() {
 	}
 	logger.Infof("%v stopping rpc server at %v", p.id, p.port)
 	p.mu.Unlock()
-	p.server.GracefulStop()
+	p.rpcServer.GracefulStop()
 }
 
 func (p *Multipaxos) StartPrepareThread() {
@@ -230,12 +230,12 @@ func (p *Multipaxos) Replicate(command *pb.Command, clientId int64) Result {
 			return p.RunAcceptPhase(ballot, p.log.AdvanceLastIndex(), command,
 				clientId)
 		}
-		return Result{Type: Retry, Leader: NoLeader}
+		return Result{Type: Retry, Leader: -1}
 	}
 	if IsSomeoneElseLeader(ballot, p.id) {
 		return Result{Type: SomeElseLeader, Leader: Leader(ballot)}
 	}
-	return Result{Type: Retry, Leader: NoLeader}
+	return Result{Type: Retry, Leader: -1}
 }
 
 func (p *Multipaxos) PrepareThread() {
@@ -376,12 +376,12 @@ func (p *Multipaxos) RunAcceptPhase(ballot int64, index int64,
 
 	if state.NumOks > len(p.rpcPeers) / 2 {
 		p.log.Commit(index)
-		return Result{Type: Ok, Leader: NoLeader}
+		return Result{Type: Ok, Leader: -1}
 	}
 	if state.Leader != p.id {
 		return Result{Type: SomeElseLeader, Leader: state.Leader}
 	}
-	return Result{Type: Retry, Leader: NoLeader}
+	return Result{Type: Retry, Leader: -1}
 }
 
 func (p *Multipaxos) RunCommitPhase(ballot int64, globalLastExecuted int64) int64 {
