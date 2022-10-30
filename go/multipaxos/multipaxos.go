@@ -33,8 +33,8 @@ type Multipaxos struct {
 	rpcServerRunning   bool
 	rpcServerRunningCv *sync.Cond
 
-	prepareThreadRunning uint32
-	commitThreadRunning  uint32
+	prepareThreadRunning int32
+	commitThreadRunning  int32
 
 	pb.UnimplementedMultiPaxosRPCServer
 }
@@ -119,7 +119,8 @@ func (p *Multipaxos) Ballot() (int64, int32) {
 func (p *Multipaxos) waitUntilLeader() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	for atomic.LoadUint32(&p.commitThreadRunning) == 1 && !IsLeader(p.ballot, p.id) {
+	for atomic.LoadInt32(&p.commitThreadRunning) == 1 && !IsLeader(p.ballot,
+		p.id) {
 		p.cvLeader.Wait()
 	}
 }
@@ -127,7 +128,8 @@ func (p *Multipaxos) waitUntilLeader() {
 func (p *Multipaxos) waitUntilFollower() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	for atomic.LoadUint32(&p.prepareThreadRunning) == 1 && IsLeader(p.ballot, p.id) {
+	for atomic.LoadInt32(&p.prepareThreadRunning) == 1 && IsLeader(p.ballot,
+		p.id) {
 		p.cvFollower.Wait()
 	}
 }
@@ -192,7 +194,7 @@ func (p *Multipaxos) StartPrepareThread() {
 	if p.prepareThreadRunning == 1 {
 		panic("prepareThreadRunning is true")
 	}
-	atomic.StoreUint32(&p.prepareThreadRunning, 1)
+	atomic.StoreInt32(&p.prepareThreadRunning, 1)
 	go p.PrepareThread()
 }
 
@@ -201,7 +203,7 @@ func (p *Multipaxos) StopPrepareThread() {
 	if p.prepareThreadRunning == 0 {
 		panic("prepareThreadRunning is false")
 	}
-	atomic.StoreUint32(&p.prepareThreadRunning, 0)
+	atomic.StoreInt32(&p.prepareThreadRunning, 0)
 	p.cvFollower.Signal()
 }
 
@@ -210,7 +212,7 @@ func (p *Multipaxos) StartCommitThread() {
 	if p.commitThreadRunning == 1 {
 		panic("commitThreadRunning is true")
 	}
-	atomic.StoreUint32(&p.commitThreadRunning, 1)
+	atomic.StoreInt32(&p.commitThreadRunning, 1)
 	go p.CommitThread()
 }
 
@@ -219,7 +221,7 @@ func (p *Multipaxos) StopCommitThread() {
 	if p.commitThreadRunning == 0 {
 		panic("commitThreadRunning is false")
 	}
-	atomic.StoreUint32(&p.commitThreadRunning, 0)
+	atomic.StoreInt32(&p.commitThreadRunning, 0)
 	p.cvLeader.Signal()
 }
 
@@ -239,9 +241,9 @@ func (p *Multipaxos) Replicate(command *pb.Command, clientId int64) Result {
 }
 
 func (p *Multipaxos) PrepareThread() {
-	for atomic.LoadUint32(&p.prepareThreadRunning) == 1 {
+	for atomic.LoadInt32(&p.prepareThreadRunning) == 1 {
 		p.waitUntilFollower()
-		for atomic.LoadUint32(&p.prepareThreadRunning) == 1 {
+		for atomic.LoadInt32(&p.prepareThreadRunning) == 1 {
 			p.sleepForRandomInterval()
 			if p.receivedCommit() {
 				continue
@@ -258,11 +260,10 @@ func (p *Multipaxos) PrepareThread() {
 }
 
 func (p *Multipaxos) CommitThread() {
-	for atomic.LoadUint32(&p.commitThreadRunning) == 1 {
+	for atomic.LoadInt32(&p.commitThreadRunning) == 1 {
 		p.waitUntilLeader()
-
 		gle := p.log.GlobalLastExecuted()
-		for atomic.LoadUint32(&p.commitThreadRunning) == 1 {
+		for atomic.LoadInt32(&p.commitThreadRunning) == 1 {
 			ballot, _ := p.Ballot()
 			if !IsLeader(ballot, p.id) {
 				break
@@ -435,8 +436,8 @@ func (p *Multipaxos) RunCommitPhase(ballot int64, globalLastExecuted int64) int6
 	return globalLastExecuted
 }
 
-func (p *Multipaxos) Replay(ballot int64, replayLog map[int64]*pb.Instance) {
-	for index, instance := range replayLog {
+func (p *Multipaxos) Replay(ballot int64, log map[int64]*pb.Instance) {
+	for index, instance := range log {
 		result := p.RunAcceptPhase(ballot, index, instance.GetCommand(),
 			instance.GetClientId())
 		for result.Type == Retry {
@@ -457,23 +458,20 @@ func (p *Multipaxos) Prepare(ctx context.Context,
 	defer p.mu.Unlock()
 
 	logger.Infof("%v <--prepare-- %v", p.id, request.GetSender())
+	response := &pb.PrepareResponse{}
 	if request.GetBallot() > p.ballot {
 		p.BecomeFollower(request.GetBallot())
 		logSlice := p.log.Instances()
-		responseLogs := make([]*pb.Instance, 0, len(logSlice))
+		response.Logs = make([]*pb.Instance, 0, len(logSlice))
 		for _, i := range logSlice {
-			responseLogs = append(responseLogs, i)
+			response.Logs = append(response.Logs, i)
 		}
-		return &pb.PrepareResponse{
-			Type: pb.ResponseType_OK,
-			Logs: responseLogs,
-		}, nil
+		response.Type = pb.ResponseType_OK
+	} else {
+		response.Type = pb.ResponseType_REJECT
+		response.Ballot = p.ballot
 	}
-	return &pb.PrepareResponse{
-		Type:   pb.ResponseType_REJECT,
-		Ballot: p.ballot,
-		Logs:   nil,
-	}, nil
+	return response, nil
 }
 
 func (p *Multipaxos) Accept(ctx context.Context,
@@ -487,12 +485,11 @@ func (p *Multipaxos) Accept(ctx context.Context,
 		p.BecomeFollower(request.GetInstance().GetBallot())
 		p.log.Append(request.GetInstance())
 		response.Type = pb.ResponseType_OK
-		return response, nil
 	} else {
 		response.Ballot = p.ballot
 		response.Type = pb.ResponseType_REJECT
-		return response, nil
 	}
+	return response, nil
 }
 
 func (p *Multipaxos) Commit(ctx context.Context,
