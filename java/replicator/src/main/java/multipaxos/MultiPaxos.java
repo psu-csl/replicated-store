@@ -29,6 +29,7 @@ import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 import log.Log;
 import org.slf4j.LoggerFactory;
+import log.Instance;
 
 class BallotResult {
 
@@ -108,7 +109,7 @@ class RpcPeer {
   }
 }
 
-public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
+public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
 
   protected static final long kIdBits = 0xff;
   protected static final long kRoundIncrement = kIdBits + 1;
@@ -117,7 +118,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
   private final ReentrantLock mu;
   private final Condition cvLeader;
   private final Condition cvFollower;
-  private final Log log_;
+  private final Log log;
   private final Server rpcServer;
   private final Condition rpcServerRunningCv;
   private final long commitInterval;
@@ -139,7 +140,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     this.id = config.getId();
     this.ballot = kMaxNumPeers;
     this.commitInterval = config.getCommitInterval();
-    this.log_ = log;
+    this.log = log;
 
     mu = new ReentrantLock();
     cvLeader = mu.newCondition();
@@ -181,31 +182,31 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
   }
 
 
-  public static Command makeProtoCommand(command.Command command) {
-    CommandType commandType = null;
+  public static multipaxos.Command makeProtoCommand(command.Command command) {
+    multipaxos.CommandType commandType = null;
     switch (command.getCommandType()) {
       case Del -> commandType = DEL;
       case Get -> commandType = GET;
       case Put -> commandType = PUT;
     }
-    return Command.newBuilder().setType(commandType).setKey(command.getKey())
+    return multipaxos.Command.newBuilder().setType(commandType).setKey(command.getKey())
         .setValue(command.getValue()).build();
   }
 
-  public static Instance makeProtoInstance(log.Instance inst) {
-    InstanceState state = null;
+  public static multipaxos.Instance makeProtoInstance(log.Instance inst) {
+    multipaxos.InstanceState state = null;
     switch (inst.getState()) {
-      case kInProgress -> state = InstanceState.INPROGRESS;
-      case kCommitted -> state = InstanceState.COMMITTED;
-      case kExecuted -> state = InstanceState.EXECUTED;
+      case kInProgress -> state = multipaxos.InstanceState.INPROGRESS;
+      case kCommitted -> state = multipaxos.InstanceState.COMMITTED;
+      case kExecuted -> state = multipaxos.InstanceState.EXECUTED;
     }
 
-    return Instance.newBuilder().setBallot(inst.getBallot()).setIndex(inst.getIndex())
+    return multipaxos.Instance.newBuilder().setBallot(inst.getBallot()).setIndex(inst.getIndex())
         .setClientId(inst.getClientId()).setState(state)
         .setCommand(makeProtoCommand(inst.getCommand())).build();
   }
 
-  public static command.Command makeCommand(Command cmd) {
+  public static command.Command makeCommand(multipaxos.Command cmd) {
     command.Command command = new command.Command();
     command.Command.CommandType commandType = null;
     switch (cmd.getType()) {
@@ -221,7 +222,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     return command;
   }
 
-  public static log.Instance makeInstance(Instance inst) {
+  public static log.Instance makeInstance(multipaxos.Instance inst) {
     log.Instance instance = new log.Instance();
     instance.setBallot(inst.getBallot());
     instance.setIndex(inst.getIndex());
@@ -419,7 +420,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
   public void commitThread() {
     while (commitThreadRunning.get()) {
       waitUntilLeader();
-      var gle = log_.getGlobalLastExecuted();
+      var gle = log.getGlobalLastExecuted();
       while (commitThreadRunning.get()) {
         var res = ballot();
         var ballot = res.ballot;
@@ -433,8 +434,8 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
   }
 
   public Long runCommitPhase(long ballot, long globalLastExecuted) {
-    var state = new CommitState(this.id, log_.getLastExecuted());
-    CommitRequest.Builder request = CommitRequest.newBuilder();
+    var state = new CommitState(this.id, log.getLastExecuted());
+    multipaxos.CommitRequest.Builder request = multipaxos.CommitRequest.newBuilder();
 
     request.setBallot(ballot);
     request.setSender(this.id);
@@ -442,9 +443,9 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     request.setGlobalLastExecuted(globalLastExecuted);
     for (var peer : rpcPeers) {
       threadPool.submit(() -> {
-        CommitResponse response;
+        multipaxos.CommitResponse response;
         try {
-          response = MultiPaxosRPCGrpc.newBlockingStub(peer.stub).commit(request.build());
+          response = multipaxos.MultiPaxosRPCGrpc.newBlockingStub(peer.stub).commit(request.build());
           logger.info(id + " sent commit to " + peer.id);
         } catch (StatusRuntimeException e) {
           logger.info(id + " RPC connection failed to " + peer.id);
@@ -457,7 +458,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
         state.mu.lock();
         ++state.numRpcs;
         if (response.isInitialized()) {
-          if (response.getType() == ResponseType.OK) {
+          if (response.getType() == multipaxos.ResponseType.OK) {
             ++state.numOks;
 
             if (response.getLastExecuted() < state.minLastExecuted) {
@@ -493,24 +494,24 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
   }
 
 
-  public void commit(CommitRequest commitRequest,
-      StreamObserver<CommitResponse> responseObserver) {
+  public void commit(multipaxos.CommitRequest commitRequest,
+                     StreamObserver<multipaxos.CommitResponse> responseObserver) {
     mu.lock();
     logger.info(id + " <--commit--- " + commitRequest.getSender());
     try {
-      var response = CommitResponse.newBuilder();
+      var response = multipaxos.CommitResponse.newBuilder();
       if (commitRequest.getBallot() >= ballot) {
         commitReceived.set(true);
         becomeFollower(commitRequest.getBallot());
-        log_.commitUntil(commitRequest.getLastExecuted(), commitRequest.getBallot());
-        log_.trimUntil(commitRequest.getGlobalLastExecuted());
-        response.setLastExecuted(log_.getLastExecuted());
-        response.setType(ResponseType.OK);
+        log.commitUntil(commitRequest.getLastExecuted(), commitRequest.getBallot());
+        log.trimUntil(commitRequest.getGlobalLastExecuted());
+        response.setLastExecuted(log.getLastExecuted());
+        response.setType(multipaxos.ResponseType.OK);
       } else {
         response.setBallot(this.ballot);
-        response.setType(ResponseType.REJECT);
+        response.setType(multipaxos.ResponseType.REJECT);
       }
-      response.setLastExecuted(log_.getLastExecuted());
+      response.setLastExecuted(log.getLastExecuted());
       responseObserver.onNext(response.build());
       responseObserver.onCompleted();
     } finally {
@@ -520,14 +521,14 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
 
   public HashMap<Long, log.Instance> runPreparePhase(long ballot) {
     var state = new PrepareState(this.id);
-    PrepareRequest.Builder request = PrepareRequest.newBuilder();
+    multipaxos.PrepareRequest.Builder request = multipaxos.PrepareRequest.newBuilder();
     request.setSender(this.id);
     request.setBallot(ballot);
     for (var peer : rpcPeers) {
       threadPool.submit(() -> {
-        PrepareResponse response;
+        multipaxos.PrepareResponse response;
         try {
-          response = MultiPaxosRPCGrpc.newBlockingStub(peer.stub).prepare(request.build());
+          response = multipaxos.MultiPaxosRPCGrpc.newBlockingStub(peer.stub).prepare(request.build());
           logger.info(id + " sent prepare request to " + peer.id);
         } catch (StatusRuntimeException e) {
           logger.info(id + " RPC connection failed to " + peer.id);
@@ -539,13 +540,13 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
         }
         state.mu.lock();
         ++state.numRpcs;
-        if (response.getType() == ResponseType.OK) {
+        if (response.getType() == multipaxos.ResponseType.OK) {
           ++state.numOks;
           for (int i = 0; i < response.getInstancesCount(); ++i) {
             insert(state.log, makeInstance(response.getInstances(i)));
           }
         } else {
-          assert (response.getType() == ResponseType.REJECT);
+          assert (response.getType() == multipaxos.ResponseType.REJECT);
           mu.lock();
           if (response.getBallot() > ballot) {
             becomeFollower(response.getBallot());
@@ -576,24 +577,24 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
   }
 
   @Override
-  public void prepare(PrepareRequest request, StreamObserver<PrepareResponse> responseObserver) {
+  public void prepare(multipaxos.PrepareRequest request, StreamObserver<multipaxos.PrepareResponse> responseObserver) {
     mu.lock();
     logger.info(id + " <-- prepare-- " + request.getSender());
-    PrepareResponse.Builder responseBuilder = PrepareResponse.newBuilder();
+    multipaxos.PrepareResponse.Builder responseBuilder = multipaxos.PrepareResponse.newBuilder();
     try {
       if (request.getBallot() > ballot) {
         becomeFollower(request.getBallot());
 
-        for (var i : log_.instances()) {
+        for (var i : log.instances()) {
           if (i == null) {
             logger.info("null instance of log");
             continue;
           }
           responseBuilder.addInstances(makeProtoInstance(i));
         }
-        responseBuilder = responseBuilder.setType(ResponseType.OK);
+        responseBuilder = responseBuilder.setType(multipaxos.ResponseType.OK);
       } else {
-        responseBuilder = responseBuilder.setBallot(ballot).setType(ResponseType.REJECT);
+        responseBuilder = responseBuilder.setBallot(ballot).setType(multipaxos.ResponseType.REJECT);
       }
       var response = responseBuilder.build();
       logger.info("sending response : " + response);
@@ -625,17 +626,17 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
   }
 
   @Override
-  public void accept(AcceptRequest request, StreamObserver<AcceptResponse> responseObserver) {
+  public void accept(multipaxos.AcceptRequest request, StreamObserver<multipaxos.AcceptResponse> responseObserver) {
     mu.lock();
     logger.info(this.id + " <--accept---  " + request.getSender());
-    AcceptResponse.Builder responseBuilder = AcceptResponse.newBuilder();
+    multipaxos.AcceptResponse.Builder responseBuilder = multipaxos.AcceptResponse.newBuilder();
     try {
       if (request.getInstance().getBallot() >= this.ballot) {
         becomeFollower(request.getInstance().getBallot());
-        log_.append(makeInstance(request.getInstance()));
-        responseBuilder = responseBuilder.setType(ResponseType.OK);
+        log.append(makeInstance(request.getInstance()));
+        responseBuilder = responseBuilder.setType(multipaxos.ResponseType.OK);
       } else {
-        responseBuilder = responseBuilder.setBallot(ballot).setType(ResponseType.REJECT);
+        responseBuilder = responseBuilder.setBallot(ballot).setType(multipaxos.ResponseType.REJECT);
       }
       var response = responseBuilder.build();
       responseObserver.onNext(response);
@@ -652,18 +653,18 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     instance.setBallot(ballot);
     instance.setIndex(index);
     instance.setClientId(clientId);
-    instance.setState(log.Instance.InstanceState.kInProgress);
+    instance.setState(Instance.InstanceState.kInProgress);
     instance.setCommand(command);
 
-    AcceptRequest.Builder request = AcceptRequest.newBuilder();
+    multipaxos.AcceptRequest.Builder request = multipaxos.AcceptRequest.newBuilder();
     request.setSender(this.id);
     request.setInstance(makeProtoInstance(instance));
 
     for (var peer : rpcPeers) {
       threadPool.submit(() -> {
-        AcceptResponse response;
+        multipaxos.AcceptResponse response;
         try {
-          response = MultiPaxosRPCGrpc.newBlockingStub(peer.stub).accept(request.build());
+          response = multipaxos.MultiPaxosRPCGrpc.newBlockingStub(peer.stub).accept(request.build());
         } catch (StatusRuntimeException e) {
           logger.info(id + " RPC connection failed to " + peer.id);
           state.mu.lock();
@@ -675,7 +676,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
         logger.info(id + " sent accept request to " + peer.id);
         state.mu.lock();
         ++state.numRpcs;
-        if (response.getType() == ResponseType.OK) {
+        if (response.getType() == multipaxos.ResponseType.OK) {
           ++state.numOks;
         } else {
           mu.lock();
@@ -699,7 +700,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
       }
     }
     if (state.numOks > rpcPeers.size() / 2) {
-      log_.commit(index);
+      log.commit(index);
       state.mu.unlock();
       return new Result(MultiPaxosResultType.kOk, null);
     }
@@ -754,7 +755,7 @@ public class MultiPaxos extends MultiPaxosRPCGrpc.MultiPaxosRPCImplBase {
     var ballot = res.ballot;
     if (isLeader(ballot, this.id)) {
       if (isReady) {
-        return runAcceptPhase(ballot, log_.advanceLastIndex(), command, clientId);
+        return runAcceptPhase(ballot, log.advanceLastIndex(), command, clientId);
       }
       return new Result(MultiPaxosResultType.kRetry, null);
     }

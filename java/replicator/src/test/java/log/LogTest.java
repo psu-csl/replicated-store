@@ -25,23 +25,23 @@ import org.junit.jupiter.api.Test;
 class LogTest {
 
   private MemKVStore store_;
-  private Log log_;
+  private Log log;
 
 
   @BeforeEach
   void SetUp() {
     store_ = new MemKVStore();
-    log_ = new Log(store_);
+    log = new Log(store_);
   }
 
   @Test
   void constructor() {
-    assertEquals(log_.getLastExecuted(), 0);
-    assertEquals(log_.getGlobalLastExecuted(), 0);
-    assertFalse(log_.isExecutable());
-    assertNull(log_.at(0L));
-    assertNull(log_.at(-1L));
-    assertNull(log_.at(3L));
+    assertEquals(log.getLastExecuted(), 0);
+    assertEquals(log.getGlobalLastExecuted(), 0);
+    assertFalse(log.isExecutable());
+    assertNull(log.at(0L));
+    assertNull(log.at(-1L));
+    assertNull(log.at(3L));
   }
 
   @Test
@@ -118,80 +118,80 @@ class LogTest {
 
   @Test
   void append() {
-    log_.append(makeInstance(0, log_.advanceLastIndex()));
-    log_.append(makeInstance(0, log_.advanceLastIndex()));
-    assertEquals(1, log_.at(1L).getIndex());
-    assertEquals(2, log_.at(2L).getIndex());
+    log.append(makeInstance(0, log.advanceLastIndex()));
+    log.append(makeInstance(0, log.advanceLastIndex()));
+    assertEquals(1, log.at(1L).getIndex());
+    assertEquals(2, log.at(2L).getIndex());
   }
 
   @Test
   void appendWithGap() {
     long index = 42;
-    log_.append(makeInstance(0, index));
-    assertEquals(index, log_.at(index).getIndex());
-    assertEquals(index + 1, log_.advanceLastIndex());
+    log.append(makeInstance(0, index));
+    assertEquals(index, log.at(index).getIndex());
+    assertEquals(index + 1, log.advanceLastIndex());
   }
 
   @Test
   void appendFillGaps() {
     long index = 42;
-    log_.append(makeInstance(0, index));
-    log_.append(makeInstance(0, index - 10));
-    assertEquals(index + 1, log_.advanceLastIndex());
+    log.append(makeInstance(0, index));
+    log.append(makeInstance(0, index - 10));
+    assertEquals(index + 1, log.advanceLastIndex());
   }
 
   @Test
   void appendHighBallotOverride() {
     long index = 1, lo_ballot = 0, hi_ballot = 1;
-    log_.append(makeInstance(lo_ballot, index, CommandType.Put));
-    log_.append(makeInstance(hi_ballot, index, CommandType.Del));
-    assertEquals(CommandType.Del, log_.at(index).getCommand().getCommandType());
+    log.append(makeInstance(lo_ballot, index, CommandType.Put));
+    log.append(makeInstance(hi_ballot, index, CommandType.Del));
+    assertEquals(CommandType.Del, log.at(index).getCommand().getCommandType());
   }
 
   @Test
   void appendLowBallotNoEffect() {
     long index = 1, lo_ballot = 0, hi_ballot = 1;
-    log_.append(makeInstance(hi_ballot, index, CommandType.Put));
-    log_.append(makeInstance(lo_ballot, index, CommandType.Del));
-    assertEquals(CommandType.Put, log_.at(index).getCommand().getCommandType());
+    log.append(makeInstance(hi_ballot, index, CommandType.Put));
+    log.append(makeInstance(lo_ballot, index, CommandType.Del));
+    assertEquals(CommandType.Put, log.at(index).getCommand().getCommandType());
   }
 
   @Test
   void commit() {
     long index1 = 1, index2 = 2;
-    log_.append(makeInstance(0, index1));
-    log_.append(makeInstance(0, index2));
+    log.append(makeInstance(0, index1));
+    log.append(makeInstance(0, index2));
 
-    assertTrue(log_.at(index1).isInProgress());
-    assertTrue(log_.at(index2).isInProgress());
-    assertFalse(log_.isExecutable());
+    assertTrue(log.at(index1).isInProgress());
+    assertTrue(log.at(index2).isInProgress());
+    assertFalse(log.isExecutable());
 
-    log_.commit(index2);
+    log.commit(index2);
 
-    assertTrue(log_.at(index1).isInProgress());
-    assertTrue(log_.at(index2).isCommitted());
-    assertFalse(log_.isExecutable());
+    assertTrue(log.at(index1).isInProgress());
+    assertTrue(log.at(index2).isCommitted());
+    assertFalse(log.isExecutable());
 
-    log_.commit(index1);
+    log.commit(index1);
 
-    assertTrue(log_.at(index1).isCommitted());
-    assertTrue(log_.at(index2).isCommitted());
-    assertTrue(log_.isExecutable());
+    assertTrue(log.at(index1).isCommitted());
+    assertTrue(log.at(index2).isCommitted());
+    assertTrue(log.isExecutable());
   }
 
   @Test
   void commitBeforeAppend() {
     long index = 1;
     ExecutorService service = Executors.newFixedThreadPool(1);
-    var f = service.submit(() -> log_.commit(index));
+    var f = service.submit(() -> log.commit(index));
     Thread.yield();
-    log_.append(makeInstance(0, log_.advanceLastIndex()));
+    log.append(makeInstance(0, log.advanceLastIndex()));
     try {
       assertNull(f.get());
     } catch (InterruptedException | ExecutionException e) {
       throw new RuntimeException(e);
     }
-    assertTrue(log_.at(index).isCommitted());
+    assertTrue(log.at(index).isCommitted());
   }
 
 
@@ -202,48 +202,48 @@ class LogTest {
     ExecutorService service = Executors.newFixedThreadPool(1);
 
     var f = service.submit(() -> {
-      log_.execute();
+      log.execute();
     });
 
-    log_.append(makeInstance(0, index));
-    log_.commit(index);
+    log.append(makeInstance(0, index));
+    log.commit(index);
 
     try {
       assertNull(f.get());
     } catch (InterruptedException | ExecutionException e) {
       throw new RuntimeException(e);
     }
-    assertTrue(log_.at(index).isExecuted());
-    assertEquals(index, log_.getLastExecuted());
+    assertTrue(log.at(index).isExecuted());
+    assertEquals(index, log.getLastExecuted());
   }
 
   @Test
   void appendCommitExecuteOutOfOrder() {
     ExecutorService service = Executors.newFixedThreadPool(1);
     var f = service.submit(() -> {
-      log_.execute();
-      log_.execute();
-      log_.execute();
+      log.execute();
+      log.execute();
+      log.execute();
     });
 
     long index1 = 1, index2 = 2, index3 = 3;
-    log_.append(makeInstance(0, index1));
-    log_.append(makeInstance(0, index2));
-    log_.append(makeInstance(0, index3));
+    log.append(makeInstance(0, index1));
+    log.append(makeInstance(0, index2));
+    log.append(makeInstance(0, index3));
 
-    log_.commit(index3);
-    log_.commit(index2);
-    log_.commit(index1);
+    log.commit(index3);
+    log.commit(index2);
+    log.commit(index1);
 
     try {
       assertNull(f.get());
     } catch (InterruptedException | ExecutionException e) {
       throw new RuntimeException(e);
     }
-    assertTrue(log_.at(index1).isExecuted());
-    assertTrue(log_.at(index2).isExecuted());
-    assertTrue(log_.at(index3).isExecuted());
-    assertEquals(index3, log_.getLastExecuted());
+    assertTrue(log.at(index1).isExecuted());
+    assertTrue(log.at(index2).isExecuted());
+    assertTrue(log.at(index3).isExecuted());
+    assertEquals(index3, log.getLastExecuted());
   }
 
   @Test
@@ -251,42 +251,42 @@ class LogTest {
     long ballot = 0, index;
 
     for (index = 1; index < 10; index++) {
-      log_.append(makeInstance(ballot, index));
+      log.append(makeInstance(ballot, index));
     }
-    log_.append(makeInstance(ballot, index));
-    log_.commitUntil(index - 1, ballot);
+    log.append(makeInstance(ballot, index));
+    log.commitUntil(index - 1, ballot);
 
     for (long i = 1; i < index; i++) {
-      assertTrue(log_.at(i).isCommitted());
+      assertTrue(log.at(i).isCommitted());
     }
-    assertFalse(log_.at(index).isCommitted());
-    assertTrue(log_.isExecutable());
+    assertFalse(log.at(index).isCommitted());
+    assertTrue(log.isExecutable());
   }
 
   @Test
   void commitUntilHigherBallot() {
     long ballot = 0, index;
     for (index = 1; index < 10; index++) {
-      log_.append(makeInstance(ballot, index));
+      log.append(makeInstance(ballot, index));
     }
-    log_.commitUntil(index - 1, ballot + 1);
+    log.commitUntil(index - 1, ballot + 1);
 
     for (long i = 1; i < index; i++) {
-      assertFalse(log_.at(i).isCommitted());
+      assertFalse(log.at(i).isCommitted());
     }
 
-    assertFalse(log_.isExecutable());
+    assertFalse(log.isExecutable());
   }
 
   @Test
   void commitUntilCase2() {
     long ballot = 5, index;
     for (index = 1; index < 10; index++) {
-      log_.append(makeInstance(ballot, index));
+      log.append(makeInstance(ballot, index));
     }
 
     long finalIndex = index - 1;
-    var thrown = assertThrows(AssertionError.class, () -> log_.commitUntil(finalIndex, ballot - 1));
+    var thrown = assertThrows(AssertionError.class, () -> log.commitUntil(finalIndex, ballot - 1));
     assertEquals("CommitUntil case 2", thrown.getMessage());
   }
 
@@ -297,23 +297,23 @@ class LogTest {
       if (index % 3 == 0) {
         continue;
       }
-      log_.append(makeInstance(ballot, index));
+      log.append(makeInstance(ballot, index));
     }
-    log_.commitUntil(index - 1, ballot);
+    log.commitUntil(index - 1, ballot);
     long i;
     for (i = 1; i < index; i++) {
       if (i % 3 == 0) {
         break;
       }
-      assertTrue(log_.at(i).isCommitted());
+      assertTrue(log.at(i).isCommitted());
     }
     for (; i < index; i++) {
       if (i % 3 == 0) {
         continue;
       }
-      assertFalse(log_.at(i).isCommitted());
+      assertFalse(log.at(i).isCommitted());
     }
-    assertTrue(log_.isExecutable());
+    assertTrue(log.isExecutable());
   }
 
   @Test
@@ -321,14 +321,14 @@ class LogTest {
     ExecutorService executor = Executors.newFixedThreadPool(1);
     List<Future<Map.Entry<Long, KVResult>>> futures = new ArrayList<>();
     for (int i = 0; i < 10; i++) {
-      futures.add(executor.submit(() -> log_.execute()));
+      futures.add(executor.submit(() -> log.execute()));
     }
     long ballot = 0, index;
     for (index = 1; index < 11; index++) {
-      log_.append(makeInstance(ballot, index));
+      log.append(makeInstance(ballot, index));
     }
     index--;
-    log_.commitUntil(index, ballot);
+    log.commitUntil(index, ballot);
     try {
       for (Future<Map.Entry<Long, KVResult>> future : futures) {
         future.get();
@@ -337,9 +337,9 @@ class LogTest {
       throw new RuntimeException(e);
     }
     for (long i = 1; i < 11; i++) {
-      assertTrue(log_.at(i).isExecuted());
+      assertTrue(log.at(i).isExecuted());
     }
-    assertFalse(log_.isExecutable());
+    assertFalse(log.isExecutable());
   }
 
   @Test
@@ -347,14 +347,14 @@ class LogTest {
     ExecutorService executor = Executors.newFixedThreadPool(1);
     List<Future<Map.Entry<Long, KVResult>>> futures = new ArrayList<>();
     for (int i = 0; i < 10; i++) {
-      futures.add(executor.submit(() -> log_.execute()));
+      futures.add(executor.submit(() -> log.execute()));
     }
     long ballot = 0, index;
     for (index = 1; index < 11; index++) {
-      log_.append(makeInstance(ballot, index));
+      log.append(makeInstance(ballot, index));
     }
     index--;
-    log_.commitUntil(index, ballot);
+    log.commitUntil(index, ballot);
     try {
       for (var future : futures) {
         future.get();
@@ -362,13 +362,13 @@ class LogTest {
     } catch (InterruptedException | ExecutionException e) {
       throw new RuntimeException(e);
     }
-    log_.trimUntil(index);
+    log.trimUntil(index);
     for (long i = 1; i < 11; i++) {
-      assertNull(log_.at(i));
+      assertNull(log.at(i));
     }
-    assertEquals(index, log_.getLastExecuted());
-    assertEquals(index, log_.getGlobalLastExecuted());
-    assertFalse(log_.isExecutable());
+    assertEquals(index, log.getLastExecuted());
+    assertEquals(index, log.getGlobalLastExecuted());
+    assertFalse(log.isExecutable());
   }
 
   @Test
@@ -376,15 +376,15 @@ class LogTest {
     ExecutorService executor = Executors.newFixedThreadPool(1);
     List<Future<Map.Entry<Long, KVResult>>> futures = new ArrayList<>();
     for (int i = 0; i < 10; i++) {
-      futures.add(executor.submit(() -> log_.execute()));
+      futures.add(executor.submit(() -> log.execute()));
     }
 
     long ballot = 0, index;
     for (index = 1; index < 11; index++) {
-      log_.append(makeInstance(ballot, index));
+      log.append(makeInstance(ballot, index));
     }
     index--;
-    log_.commitUntil(index, ballot);
+    log.commitUntil(index, ballot);
     try {
       for (var future : futures) {
         future.get();
@@ -392,20 +392,20 @@ class LogTest {
     } catch (ExecutionException | InterruptedException e) {
       throw new RuntimeException(e);
     }
-    log_.trimUntil(index);
+    log.trimUntil(index);
 
     for (long i = 1; i < 11; i++) {
-      assertNull(log_.at(i));
+      assertNull(log.at(i));
     }
-    assertEquals(index, log_.getGlobalLastExecuted());
-    assertEquals(index, log_.getLastExecuted());
-    assertFalse(log_.isExecutable());
+    assertEquals(index, log.getGlobalLastExecuted());
+    assertEquals(index, log.getLastExecuted());
+    assertFalse(log.isExecutable());
 
     for (long i = 1; i < 11; i++) {
-      log_.append(makeInstance(ballot, i));
+      log.append(makeInstance(ballot, i));
     }
     for (long i = 1; i < 11; i++) {
-      assertNull(log_.at(i));
+      assertNull(log.at(i));
     }
   }
 
@@ -414,18 +414,18 @@ class LogTest {
     ExecutorService executor = Executors.newFixedThreadPool(1);
     List<Future<Map.Entry<Long, KVResult>>> futures = new ArrayList<>();
     for (int i = 0; i < 5; i++) {
-      futures.add(executor.submit(() -> log_.execute()));
+      futures.add(executor.submit(() -> log.execute()));
     }
     ArrayList<Instance> expected = new ArrayList<>();
     long ballot = 0;
     for (int i = 0; i < 10; i++) {
-      expected.add(makeInstance(ballot, log_.advanceLastIndex()));
-      log_.append(expected.get(expected.size() - 1));
+      expected.add(makeInstance(ballot, log.advanceLastIndex()));
+      log.append(expected.get(expected.size() - 1));
     }
-    assertEquals(expected, log_.instances());
+    assertEquals(expected, log.instances());
 
     long index = 5;
-    log_.commitUntil(index, ballot);
+    log.commitUntil(index, ballot);
     try {
       for (var future : futures) {
         future.get();
@@ -434,22 +434,22 @@ class LogTest {
       throw new RuntimeException(e);
     }
 
-    log_.trimUntil(index);
+    log.trimUntil(index);
     for (int i = 0; i < index; i++) {
       expected.remove(0);
     }
-    assertEquals(expected, log_.instances());
+    assertEquals(expected, log.instances());
   }
 
   @Test
   void callingStopUnblocksExecutor() {
     ExecutorService executeThread = Executors.newSingleThreadExecutor();
     executeThread.submit(() -> {
-      var r = log_.execute();
+      var r = log.execute();
       assertNull(r);
     });
     Thread.yield();
-    log_.stop();
+    log.stop();
     executeThread.shutdown();
   }
 
