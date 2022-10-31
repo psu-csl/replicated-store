@@ -1,4 +1,4 @@
-package paxos;
+package multipaxos;
 
 
 import static multipaxos.ResponseType.OK;
@@ -9,12 +9,12 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static paxos.MultiPaxos.kMaxNumPeers;
-import static paxos.MultiPaxos.kRoundIncrement;
-import static paxos.MultiPaxos.makeProtoInstance;
-import static paxos.MultiPaxosResultType.kOk;
-import static paxos.MultiPaxosResultType.kRetry;
-import static paxos.MultiPaxosResultType.kSomeoneElseLeader;
+import static multipaxos.MultiPaxos.kMaxNumPeers;
+import static multipaxos.MultiPaxos.kRoundIncrement;
+import static multipaxos.MultiPaxos.makeProtoInstance;
+import static multipaxos.MultiPaxosResultType.kOk;
+import static multipaxos.MultiPaxosResultType.kRetry;
+import static multipaxos.MultiPaxosResultType.kSomeoneElseLeader;
 import static util.TestUtil.makeConfig;
 import static util.TestUtil.makeInstance;
 
@@ -29,16 +29,10 @@ import kvstore.MemKVStore;
 import log.Instance;
 import log.Instance.InstanceState;
 import log.Log;
-import multipaxos.AcceptRequest;
-import multipaxos.AcceptResponse;
-import multipaxos.CommitRequest;
-import multipaxos.CommitResponse;
-import multipaxos.MultiPaxosRPCGrpc;
-import multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCBlockingStub;
-import multipaxos.PrepareRequest;
-import multipaxos.PrepareResponse;
+import multipaxos.MultiPaxosRPCGrpc.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+
 
 class MultiPaxosTest {
 
@@ -50,24 +44,24 @@ class MultiPaxosTest {
 
   public static Stub makeStub(String target) {
     ManagedChannel channel = ManagedChannelBuilder.forTarget(target).usePlaintext().build();
-    return new Stub(channel, MultiPaxosRPCGrpc.newBlockingStub(channel));
+    return new Stub(channel, multipaxos.MultiPaxosRPCGrpc.newBlockingStub(channel));
   }
 
-  public static CommitResponse sendCommit(MultiPaxosRPCBlockingStub stub, long ballot,
-      long lastExecuted, long globalLastExecuted) {
+  public static multipaxos.CommitResponse sendCommit(MultiPaxosRPCBlockingStub stub, long ballot,
+                                                     long lastExecuted, long globalLastExecuted) {
 
-    CommitRequest request = CommitRequest.newBuilder().setBallot(ballot)
+    multipaxos.CommitRequest request = multipaxos.CommitRequest.newBuilder().setBallot(ballot)
         .setLastExecuted(lastExecuted).setGlobalLastExecuted(globalLastExecuted).build();
     return stub.commit(request);
   }
 
-  public static PrepareResponse sendPrepare(MultiPaxosRPCBlockingStub stub, long ballot) {
-    PrepareRequest request = PrepareRequest.newBuilder().setBallot(ballot).build();
+  public static multipaxos.PrepareResponse sendPrepare(MultiPaxosRPCBlockingStub stub, long ballot) {
+    multipaxos.PrepareRequest request = multipaxos.PrepareRequest.newBuilder().setBallot(ballot).build();
     return stub.prepare(request);
   }
 
-  public static AcceptResponse sendAccept(MultiPaxosRPCBlockingStub stub, Instance inst) {
-    AcceptRequest request = AcceptRequest.newBuilder().setInstance(makeProtoInstance(inst)).build();
+  public static multipaxos.AcceptResponse sendAccept(MultiPaxosRPCBlockingStub stub, Instance inst) {
+    multipaxos.AcceptRequest request = multipaxos.AcceptRequest.newBuilder().setInstance(makeProtoInstance(inst)).build();
     return stub.accept(request);
   }
 

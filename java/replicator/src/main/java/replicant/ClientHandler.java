@@ -12,8 +12,8 @@ import java.util.HashMap;
 import java.util.Map;
 import org.codehaus.jackson.map.ObjectMapper;
 import org.slf4j.LoggerFactory;
-import paxos.MultiPaxos;
-import paxos.MultiPaxosResultType;
+import multipaxos.MultiPaxos;
+import multipaxos.MultiPaxosResultType;
 
 @Sharable
 public class ClientHandler extends SimpleChannelInboundHandler<String> {

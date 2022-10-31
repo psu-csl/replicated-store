@@ -1,4 +1,4 @@
-package paxos;
+package multipaxos;
 
 import static command.Command.CommandType.Del;
 import static command.Command.CommandType.Get;
@@ -28,18 +28,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 import log.Log;
-import multipaxos.AcceptRequest;
-import multipaxos.AcceptResponse;
-import multipaxos.Command;
-import multipaxos.CommandType;
-import multipaxos.CommitRequest;
-import multipaxos.CommitResponse;
-import multipaxos.Instance;
-import multipaxos.InstanceState;
-import multipaxos.MultiPaxosRPCGrpc;
-import multipaxos.PrepareRequest;
-import multipaxos.PrepareResponse;
-import multipaxos.ResponseType;
 import org.slf4j.LoggerFactory;
 
 class BallotResult {

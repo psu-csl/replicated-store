@@ -5,7 +5,7 @@ import static util.TestUtil.makeConfig;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import org.junit.jupiter.api.Test;
-import paxos.Configuration;
+import multipaxos.Configuration;
 
 class ReplicantTest {
 

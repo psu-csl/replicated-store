@@ -1,7 +1,5 @@
 package log;
 
-import static paxos.MultiPaxos.makeInstance;
-
 import command.Command;
 
 public class Instance {

@@ -1,4 +1,4 @@
-package paxos;
+package multipaxos;
 
 public class Result {
 

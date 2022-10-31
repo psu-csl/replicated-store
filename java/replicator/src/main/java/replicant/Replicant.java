@@ -20,8 +20,8 @@ import kvstore.KVStore;
 import kvstore.MemKVStore;
 import log.Log;
 import org.slf4j.LoggerFactory;
-import paxos.Configuration;
-import paxos.MultiPaxos;
+import multipaxos.Configuration;
+import multipaxos.MultiPaxos;
 
 public class Replicant {
 

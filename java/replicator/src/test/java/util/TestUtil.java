@@ -6,7 +6,7 @@ import java.util.ArrayList;
 import java.util.List;
 import log.Instance;
 import log.Instance.InstanceState;
-import paxos.Configuration;
+import multipaxos.Configuration;
 
 public class TestUtil {
 

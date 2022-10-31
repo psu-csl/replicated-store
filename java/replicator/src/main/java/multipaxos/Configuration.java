@@ -1,4 +1,4 @@
-package paxos;
+package multipaxos;
 
 import java.util.List;
 import org.codehaus.jackson.annotate.JsonIgnore;
