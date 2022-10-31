@@ -1,11 +1,26 @@
 #+title: TODO
 
 * todo refactoring
+** go over the code base and remove redundant code (DummyPaxos.java)
+** fix function parameter orders (e.g. go NewMultipaxos)
+** fix the MultiPaxos constructor field initialization order (go, java)
 ** make sure that variable declaration order and function definition order in all objects is the same in the design doc
 ** java: add port field to multipaxos
+** java: move rpc server creation to startrpcserver
+** go: paxos -> multipaxos
+** java: in start() function fix order
+** java: do we have to call shutdown rpc peers here?
+** java: move variable setting to true inside condition variables in stopXXXthread
+** fix the concurrency bug in go and c++ in stopXXXthread functions
 
 * TODO
 ** All
+*** get rid of ready state and start serving clients immediately
+     currently, if a new leader is elected, we do not start serving clients
+     until we have replayed all the instances that we found out during phase 1.
+     in theory, we can start serving clients immediately if we figure out the
+     highest index number from the merged log and set the leader's last_index to
+     that.
 *** design a better committable notification system
     - currently, since appending an entry to the log happens in the accept
       handler (i.e. rpc thread), and committing an entry in the log happens in
