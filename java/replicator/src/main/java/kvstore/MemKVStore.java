@@ -3,16 +3,16 @@ package kvstore;
 import command.Command;
 import command.Command.CommandType;
 import command.KVResult;
-import java.util.concurrent.ConcurrentHashMap;
 
+import java.util.HashMap;
 public class MemKVStore implements KVStore {
 
   public static final String kKeyNotFound = "key not found";
   public static final String kEmpty = "";
-  private final ConcurrentHashMap<String, String> store;
+  private final HashMap<String, String> store;
 
   public MemKVStore() {
-    this.store = new ConcurrentHashMap<>();
+    this.store = new HashMap<>();
   }
 
   public String get(String key) {

@@ -4,12 +4,15 @@ import static util.TestUtil.makeConfig;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import multipaxos.Configuration;
 
 class ReplicantTest {
 
   @Test
+  @Disabled
   void start() throws InterruptedException {
     Configuration config = makeConfig(0, 3);
     Replicant replicant = new Replicant(config);
