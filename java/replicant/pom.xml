@@ -121,7 +121,7 @@
 
   <modelVersion>4.0.0</modelVersion>
   <properties>
-    <exec.mainClass>ReplicatorMain</exec.mainClass>
+    <exec.mainClass>ReplicantMain</exec.mainClass>
     <maven.compiler.source>1.17</maven.compiler.source>
     <maven.compiler.target>1.17</maven.compiler.target>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
