@@ -444,6 +444,7 @@ TEST_F(MultiPaxosTest, RunPreparePhase) {
 
   auto [last_index, log] = *peers_[0]->RunPreparePhase(ballot);
 
+  EXPECT_EQ(index5, last_index);
   EXPECT_EQ(i1, log[index1]);
   EXPECT_EQ(i2, log[index2]);
   EXPECT_EQ(peer0_i3.command(), log[index3].command());
