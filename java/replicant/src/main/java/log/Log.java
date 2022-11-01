@@ -222,6 +222,7 @@ public class Log {
       mu.unlock();
     }
   }
+
   public void setLastIndex(long lastIndex){
     mu.lock();
     try{
@@ -230,6 +231,7 @@ public class Log {
       mu.unlock();
     }
   }
+
   public void stop() {
     mu.lock();
     running = false;
