@@ -143,7 +143,8 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
   void PrepareThread();
   void CommitThread();
 
-  std::optional<std::unordered_map<int64_t, multipaxos::Instance>>
+  std::optional<
+      std::pair<int64_t, std::unordered_map<int64_t, multipaxos::Instance>>>
   RunPreparePhase(int64_t ballot);
   Result RunAcceptPhase(int64_t ballot,
                         int64_t index,
