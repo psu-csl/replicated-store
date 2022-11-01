@@ -30,7 +30,7 @@ func NewReplicant(config config.Config) *Replicant {
 		ipPort:   config.Peers[config.Id],
 	}
 	r.log = consensusLog.NewLog(r.store)
-	r.multipaxos = multipaxos.NewMultipaxos(config, r.log)
+	r.multipaxos = multipaxos.NewMultipaxos(r.log, config)
 	r.clientManager = NewClientManager(r.id, r.numPeers, r.multipaxos)
 
 	return r

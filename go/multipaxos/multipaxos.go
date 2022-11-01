@@ -119,8 +119,7 @@ func (p *Multipaxos) Ballot() (int64, int32) {
 func (p *Multipaxos) waitUntilLeader() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	for atomic.LoadInt32(&p.commitThreadRunning) == 1 && !IsLeader(p.ballot,
-		p.id) {
+	for atomic.LoadInt32(&p.commitThreadRunning) == 1 && !IsLeader(p.ballot, p.id) {
 		p.cvLeader.Wait()
 	}
 }
@@ -128,8 +127,7 @@ func (p *Multipaxos) waitUntilLeader() {
 func (p *Multipaxos) waitUntilFollower() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	for atomic.LoadInt32(&p.prepareThreadRunning) == 1 && IsLeader(p.ballot,
-		p.id) {
+	for atomic.LoadInt32(&p.prepareThreadRunning) == 1 && IsLeader(p.ballot, p.id) {
 		p.cvFollower.Wait()
 	}
 }
@@ -203,6 +201,8 @@ func (p *Multipaxos) StopPrepareThread() {
 	if p.prepareThreadRunning == 0 {
 		panic("prepareThreadRunning is false")
 	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	atomic.StoreInt32(&p.prepareThreadRunning, 0)
 	p.cvFollower.Signal()
 }
@@ -221,6 +221,8 @@ func (p *Multipaxos) StopCommitThread() {
 	if p.commitThreadRunning == 0 {
 		panic("commitThreadRunning is false")
 	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	atomic.StoreInt32(&p.commitThreadRunning, 0)
 	p.cvLeader.Signal()
 }

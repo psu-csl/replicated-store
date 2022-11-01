@@ -28,7 +28,7 @@ func initPeers() {
 		configs[i] = config.DefaultConfig(i, NumPeers)
 		stores[i] = kvstore.NewMemKVStore()
 		logs[i] = log.NewLog(stores[i])
-		peers[i] = NewMultipaxos(configs[i], logs[i])
+		peers[i] = NewMultipaxos(logs[i], configs[i])
 	}
 }
 
@@ -43,7 +43,7 @@ func setupOnePeer(id int64) {
 	configs[id] = config.DefaultConfig(id, NumPeers)
 	stores[id] = kvstore.NewMemKVStore()
 	logs[id] = log.NewLog(stores[id])
-	peers[id] = NewMultipaxos(configs[id], logs[id])
+	peers[id] = NewMultipaxos(logs[id], configs[id])
 }
 
 func tearDown() {
