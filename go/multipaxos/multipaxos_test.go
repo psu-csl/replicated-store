@@ -59,13 +59,11 @@ func tearDownServers() {
 }
 
 func LeaderByPeer(peer *Multipaxos) int64 {
-	ballot, _ := peer.Ballot()
-	return Leader(ballot)
+	return Leader(peer.Ballot())
 }
 
 func IsLeaderByPeer(peer *Multipaxos) bool {
-	ballot, _ := peer.Ballot()
-	return IsLeader(ballot, peer.Id())
+	return IsLeader(peer.Ballot(), peer.Id())
 }
 
 func IsSomeoneElseLeaderByPeer(peer *Multipaxos) bool {
@@ -133,8 +131,8 @@ func TestRequestsWithLowerBallotIgnored(t *testing.T) {
 	peers[0].StartRPCServer()
 	stub := makeStub(configs[0].Peers[0])
 
-	peers[0].BecomeLeader(peers[0].NextBallot())
-	peers[0].BecomeLeader(peers[0].NextBallot())
+	peers[0].BecomeLeader(peers[0].NextBallot(), logs[0].LastIndex())
+	peers[0].BecomeLeader(peers[0].NextBallot(), logs[0].LastIndex())
 	staleBallot := peers[1].NextBallot()
 
 	r1 := sendPrepare(stub, staleBallot)
@@ -161,15 +159,15 @@ func TestRequestsWithHigherBallotChangeLeaderToFollower(t *testing.T) {
 	peers[0].StartRPCServer()
 	stub := makeStub(configs[0].Peers[0])
 
-	peers[0].BecomeLeader(peers[0].NextBallot())
+	peers[0].BecomeLeader(peers[0].NextBallot(), logs[0].LastIndex())
 	assert.True(t, IsLeaderByPeer(peers[0]))
 	r1 := sendPrepare(stub, peers[1].NextBallot())
 	assert.EqualValues(t, pb.ResponseType_OK, r1.GetType())
 	assert.False(t, IsLeaderByPeer(peers[0]))
 	assert.EqualValues(t, 1, LeaderByPeer(peers[0]))
 
-	peers[1].BecomeLeader(peers[1].NextBallot())
-	peers[0].BecomeLeader(peers[0].NextBallot())
+	peers[1].BecomeLeader(peers[1].NextBallot(), logs[1].LastIndex())
+	peers[0].BecomeLeader(peers[0].NextBallot(), logs[0].LastIndex())
 	assert.True(t, IsLeaderByPeer(peers[0]))
 	index := logs[0].AdvanceLastIndex()
 	instance := util.MakeInstance(peers[1].NextBallot(), index)
@@ -178,8 +176,8 @@ func TestRequestsWithHigherBallotChangeLeaderToFollower(t *testing.T) {
 	assert.False(t, IsLeaderByPeer(peers[0]))
 	assert.EqualValues(t, 1, LeaderByPeer(peers[0]))
 
-	peers[1].BecomeLeader(peers[1].NextBallot())
-	peers[0].BecomeLeader(peers[0].NextBallot())
+	peers[1].BecomeLeader(peers[1].NextBallot(), logs[1].LastIndex())
+	peers[0].BecomeLeader(peers[0].NextBallot(), logs[0].LastIndex())
 	assert.True(t, IsLeaderByPeer(peers[0]))
 	r3 := sendCommit(stub, peers[1].NextBallot(), 0, 0)
 	assert.EqualValues(t, pb.ResponseType_OK, r3.GetType())
@@ -325,10 +323,10 @@ func TestPrepareResponseWithHigherBallotChangesLeaderToFollower(t *testing.T) {
 	stub1 := makeStub(configs[0].Peers[1])
 
 	peer0Ballot := peers[0].NextBallot()
-	peers[0].BecomeLeader(peer0Ballot)
-	peers[1].BecomeLeader(peers[1].NextBallot())
+	peers[0].BecomeLeader(peer0Ballot, logs[0].LastIndex())
+	peers[1].BecomeLeader(peers[1].NextBallot(), logs[1].LastIndex())
 	peer2Ballot := peers[2].NextBallot()
-	peers[2].BecomeLeader(peer2Ballot)
+	peers[2].BecomeLeader(peer2Ballot, logs[2].LastIndex())
 
 	r := sendCommit(stub1, peer2Ballot, 0, 0)
 	assert.EqualValues(t, pb.ResponseType_OK, r.GetType())
@@ -353,10 +351,10 @@ func TestAcceptResponseWithHigherBallotChangesLeaderToFollower(t *testing.T) {
 	stub1 := makeStub(configs[0].Peers[1])
 
 	peer0Ballot := peers[0].NextBallot()
-	peers[0].BecomeLeader(peer0Ballot)
-	peers[1].BecomeLeader(peers[1].NextBallot())
+	peers[0].BecomeLeader(peer0Ballot, logs[0].LastIndex())
+	peers[1].BecomeLeader(peers[1].NextBallot(), logs[1].LastIndex())
 	peer2Ballot := peers[2].NextBallot()
-	peers[2].BecomeLeader(peer2Ballot)
+	peers[2].BecomeLeader(peer2Ballot, logs[2].LastIndex())
 
 	r := sendCommit(stub1, peer2Ballot, 0, 0)
 	assert.EqualValues(t, pb.ResponseType_OK, r.GetType())
@@ -381,10 +379,10 @@ func TestCommitResponseWithHigherBallotChangesLeaderToFollower(t *testing.T) {
 	stub1 := makeStub(configs[0].Peers[1])
 
 	peer0Ballot := peers[0].NextBallot()
-	peers[0].BecomeLeader(peer0Ballot)
-	peers[1].BecomeLeader(peers[1].NextBallot())
+	peers[0].BecomeLeader(peer0Ballot, logs[0].LastIndex())
+	peers[1].BecomeLeader(peers[1].NextBallot(), logs[1].LastIndex())
 	peer2Ballot := peers[2].NextBallot()
-	peers[2].BecomeLeader(peer2Ballot)
+	peers[2].BecomeLeader(peer2Ballot, logs[2].LastIndex())
 
 	r := sendCommit(stub1, peer2Ballot, 0, 0)
 	assert.EqualValues(t, pb.ResponseType_OK, r.GetType())
@@ -411,9 +409,9 @@ func TestRunPreparePhase(t *testing.T) {
 	)
 
 	ballot0 := peers[0].NextBallot()
-	peers[0].BecomeLeader(ballot0)
+	peers[0].BecomeLeader(ballot0, logs[0].LastIndex())
 	ballot1 := peers[1].NextBallot()
-	peers[1].BecomeLeader(ballot1)
+	peers[1].BecomeLeader(ballot1, logs[1].LastIndex())
 
 	expectedLog := make(map[int64]*pb.Instance)
 
@@ -442,9 +440,9 @@ func TestRunPreparePhase(t *testing.T) {
 		pb.InstanceState_EXECUTED, pb.CommandType_DEL)
 
 	ballot0 = peers[0].NextBallot()
-	peers[0].BecomeLeader(ballot0)
+	peers[0].BecomeLeader(ballot0, logs[0].LastIndex())
 	ballot1 = peers[1].NextBallot()
-	peers[1].BecomeLeader(ballot1)
+	peers[1].BecomeLeader(ballot1, logs[1].LastIndex())
 
 	logs[0].Append(util.MakeInstanceWithAll(ballot0, index5,
 		pb.InstanceState_INPROGRESS, pb.CommandType_GET))
@@ -454,13 +452,14 @@ func TestRunPreparePhase(t *testing.T) {
 		pb.InstanceState_INPROGRESS, pb.CommandType_PUT)
 
 	ballot := peers[0].NextBallot()
-	assert.Nil(t, peers[0].RunPreparePhase(ballot))
+	_, logMap := peers[0].RunPreparePhase(ballot)
+	assert.Nil(t, logMap)
 
 	peers[1].StartRPCServer()
 	defer peers[1].StopRPCServer()
 	peers[0].Connect(configs[0].Peers)
 
-	logMap := peers[0].RunPreparePhase(ballot)
+	_, logMap = peers[0].RunPreparePhase(ballot)
 	for index, instance := range logMap {
 		if index == 3 || index == 4 {
 			assert.True(t, log.IsEqualCommand(expectedLog[index].GetCommand(
