@@ -99,7 +99,10 @@ void MultiPaxos::StartPrepareThread() {
 void MultiPaxos::StopPrepareThread() {
   DLOG(INFO) << id_ << " stopping prepare thread";
   CHECK(prepare_thread_running_);
-  prepare_thread_running_ = false;
+  {
+    std::unique_lock lock(mu_);
+    prepare_thread_running_ = false;
+  }
   cv_follower_.notify_one();
   prepare_thread_.join();
 }
@@ -114,7 +117,10 @@ void MultiPaxos::StartCommitThread() {
 void MultiPaxos::StopCommitThread() {
   DLOG(INFO) << id_ << " stopping commit thread";
   CHECK(commit_thread_running_);
-  commit_thread_running_ = false;
+  {
+    std::unique_lock lock(mu_);
+    commit_thread_running_ = false;
+  }
   cv_leader_.notify_one();
   commit_thread_.join();
 }

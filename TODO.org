@@ -11,7 +11,7 @@
 ** java: in start() function fix order
 ** java: do we have to call shutdown rpc peers here?
 ** java: move variable setting to true inside condition variables in stopXXXthread
-** fix the concurrency bug in go and c++ in stopXXXthread functions
+** fix the concurrency bug in go in stopXXXthread functions
 
 * TODO
 ** All
