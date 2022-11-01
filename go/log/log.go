@@ -112,7 +112,7 @@ func (l *Log) SetLastIndex(lastIndex int64) {
 	defer l.mu.Unlock()
 
 	if lastIndex > l.lastIndex {
-		l.lastIndex = index
+		l.lastIndex = lastIndex
 	}
 }
 
