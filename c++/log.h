@@ -1,6 +1,7 @@
 #ifndef LOG_H_
 #define LOG_H_
 
+#include <glog/logging.h>
 #include <condition_variable>
 #include <cstdint>
 #include <mutex>
@@ -44,6 +45,11 @@ class Log {
   int64_t AdvanceLastIndex() {
     std::scoped_lock lock(mu_);
     return ++last_index_;
+  }
+
+  void SetLastIndex(int64_t last_index) {
+    std::scoped_lock lock(mu_);
+    last_index_ = std::max(last_index_, last_index);
   }
 
   void Stop() {
