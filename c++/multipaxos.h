@@ -73,12 +73,12 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
     return next_ballot;
   }
 
-  void BecomeLeader(int64_t next_ballot) {
+  void BecomeLeader(int64_t next_ballot, int64_t last_index) {
     std::scoped_lock lock(mu_);
     DLOG(INFO) << id_ << " became a leader: ballot: " << ballot_ << " -> "
                << next_ballot;
     ballot_ = next_ballot;
-    ready_ = false;
+    log_->SetLastIndex(last_index);
     cv_leader_.notify_one();
   }
 
@@ -96,9 +96,9 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
 
   int64_t Id() const { return id_; }
 
-  std::tuple<int64_t, bool> Ballot() const {
+  int64_t Ballot() const {
     std::scoped_lock lock(mu_);
-    return {ballot_, ready_};
+    return ballot_;
   }
 
   void WaitUntilLeader() {
@@ -167,7 +167,6 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
                       const multipaxos::CommitRequest*,
                       multipaxos::CommitResponse*) override;
 
-  std::atomic<bool> ready_;
   int64_t ballot_;
   Log* log_;
   int64_t id_;
@@ -196,10 +195,11 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
 
 struct prepare_state_t {
   explicit prepare_state_t(int64_t leader)
-      : num_rpcs_(0), num_oks_(0), leader_(leader) {}
+      : num_rpcs_(0), num_oks_(0), leader_(leader), last_index_(0) {}
   size_t num_rpcs_;
   size_t num_oks_;
   int64_t leader_;
+  int64_t last_index_;
   std::unordered_map<int64_t, multipaxos::Instance> log_;
   std::mutex mu_;
   std::condition_variable cv_;

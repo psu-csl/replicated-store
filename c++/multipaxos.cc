@@ -32,8 +32,7 @@ using multipaxos::AcceptRequest;
 using multipaxos::AcceptResponse;
 
 MultiPaxos::MultiPaxos(Log* log, json const& config)
-    : ready_(false),
-      ballot_(kMaxNumPeers),
+    : ballot_(kMaxNumPeers),
       log_(log),
       id_(config["id"]),
       commit_received_(false),
@@ -126,13 +125,10 @@ void MultiPaxos::StopCommitThread() {
 }
 
 Result MultiPaxos::Replicate(Command command, int64_t client_id) {
-  auto [ballot, ready] = Ballot();
-  if (IsLeader(ballot, id_)) {
-    if (ready)
-      return RunAcceptPhase(ballot, log_->AdvanceLastIndex(),
-                            std::move(command), client_id);
-    return Result{ResultType::kRetry, std::nullopt};
-  }
+  auto ballot = Ballot();
+  if (IsLeader(ballot, id_))
+    return RunAcceptPhase(ballot, log_->AdvanceLastIndex(), std::move(command),
+                          client_id);
   if (IsSomeoneElseLeader(ballot, id_))
     return Result{ResultType::kSomeoneElseLeader, Leader(ballot)};
   return Result{ResultType::kRetry, std::nullopt};
@@ -146,10 +142,11 @@ void MultiPaxos::PrepareThread() {
       if (ReceivedCommit())
         continue;
       auto next_ballot = NextBallot();
-      auto log = RunPreparePhase(next_ballot);
-      if (log) {
-        BecomeLeader(next_ballot);
-        Replay(next_ballot, *log);
+      auto r = RunPreparePhase(next_ballot);
+      if (r) {
+        auto [last_index, log] = *r;
+        BecomeLeader(next_ballot, last_index);
+        Replay(next_ballot, log);
         break;
       }
     }
@@ -161,7 +158,7 @@ void MultiPaxos::CommitThread() {
     WaitUntilLeader();
     auto gle = log_->GlobalLastExecuted();
     while (commit_thread_running_) {
-      auto [ballot, ready] = Ballot();
+      auto ballot = Ballot();
       if (!IsLeader(ballot, id_))
         break;
       gle = RunCommitPhase(ballot, gle);
@@ -170,7 +167,8 @@ void MultiPaxos::CommitThread() {
   }
 }
 
-std::optional<std::unordered_map<int64_t, multipaxos::Instance>>
+std::optional<
+    std::pair<int64_t, std::unordered_map<int64_t, multipaxos::Instance>>>
 MultiPaxos::RunPreparePhase(int64_t ballot) {
   auto state = std::make_shared<prepare_state_t>(id_);
 
@@ -190,8 +188,11 @@ MultiPaxos::RunPreparePhase(int64_t ballot) {
         if (s.ok()) {
           if (response.type() == OK) {
             ++state->num_oks_;
-            for (int i = 0; i < response.instances_size(); ++i)
+            for (int i = 0; i < response.instances_size(); ++i) {
+              state->last_index_ =
+                  std::max(state->last_index_, response.instance(i).index());
               Insert(&state->log_, std::move(response.instances(i)));
+            }
           } else {
             std::scoped_lock lock(mu_);
             if (response.ballot() > ballot_) {
@@ -210,7 +211,7 @@ MultiPaxos::RunPreparePhase(int64_t ballot) {
            state->num_rpcs_ != rpc_peers_.size())
       state->cv_.wait(lock);
     if (state->num_oks_ > rpc_peers_.size() / 2)
-      return std::move(state->log_);
+      return std::make_pair(state->last_index_, std::move(state->log_));
   }
   return std::nullopt;
 }
@@ -330,8 +331,6 @@ void MultiPaxos::Replay(
     if (r.type_ == ResultType::kSomeoneElseLeader)
       return;
   }
-  ready_ = true;
-  DLOG(INFO) << id_ << " leader is ready to serve";
 }
 
 Status MultiPaxos::Prepare(ServerContext*,

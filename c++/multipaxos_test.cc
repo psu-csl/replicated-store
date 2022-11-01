@@ -36,13 +36,11 @@ using multipaxos::ResponseType::REJECT;
 static const int kNumPeers = 3;
 
 int64_t Leader(MultiPaxos const& peer) {
-  auto [ballot, is_ready] = peer.Ballot();
-  return Leader(ballot);
+  return Leader(peer.Ballot());
 }
 
 bool IsLeader(MultiPaxos const& peer) {
-  auto [ballot, is_ready] = peer.Ballot();
-  return IsLeader(ballot, peer.Id());
+  return IsLeader(peer.Ballot(), peer.Id());
 }
 
 bool IsSomeoneElseLeader(MultiPaxos const& peer) {
