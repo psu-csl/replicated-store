@@ -2,16 +2,14 @@
 
 * todo refactoring
 ** go over the code base and remove redundant code (DummyPaxos.java)
-** fix function parameter orders (e.g. go NewMultipaxos)
+** fix function parameter orders
 ** fix the MultiPaxos constructor field initialization order (go, java)
 ** make sure that variable declaration order and function definition order in all objects is the same in the design doc
 ** java: add port field to multipaxos
 ** java: move rpc server creation to startrpcserver
-** go: paxos -> multipaxos
 ** java: in start() function fix order
 ** java: do we have to call shutdown rpc peers here?
 ** java: move variable setting to true inside condition variables in stopXXXthread
-** fix the concurrency bug in go in stopXXXthread functions
 
 * TODO
 ** All
