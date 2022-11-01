@@ -66,13 +66,11 @@ class MultiPaxosTest {
   }
 
   public static long leader(MultiPaxos peer) {
-    var r = peer.ballot();
-    return MultiPaxos.leader(r.ballot);
+    return MultiPaxos.leader(peer.ballot());
   }
 
   public static boolean isLeader(MultiPaxos peer) {
-    var r = peer.ballot();
-    return MultiPaxos.isLeader(r.ballot, peer.getId());
+    return MultiPaxos.isLeader(peer.ballot(), peer.getId());
   }
 
   public static boolean isSomeoneElseLeader(MultiPaxos peer) {
@@ -136,8 +134,8 @@ class MultiPaxosTest {
     peers.get(0).startRPCServer();
     var stub = makeStub(configs.get(0).getPeers().get(0));
 
-    peers.get(0).becomeLeader(peers.get(0).nextBallot());
-    peers.get(0).becomeLeader(peers.get(0).nextBallot());
+    peers.get(0).becomeLeader(peers.get(0).nextBallot(), logs.get(0).getLastIndex());
+    peers.get(0).becomeLeader(peers.get(0).nextBallot(), logs.get(0).getLastIndex());
 
     var staleBallot = peers.get(1).nextBallot();
 
@@ -165,15 +163,15 @@ class MultiPaxosTest {
     peers.get(0).startRPCServer();
     var stub = makeStub(configs.get(0).getPeers().get(0));
 
-    peers.get(0).becomeLeader(peers.get(0).nextBallot());
+    peers.get(0).becomeLeader(peers.get(0).nextBallot(), logs.get(0).getLastIndex());
     assertTrue(isLeader(peers.get(0)));
     var r1 = sendPrepare(stub.get(), peers.get(1).nextBallot());
     assertEquals(OK, r1.getType());
     assertFalse(isLeader(peers.get(0)));
     assertEquals(1, leader(peers.get(0)));
 
-    peers.get(1).becomeLeader(peers.get(1).nextBallot());
-    peers.get(0).becomeLeader(peers.get(0).nextBallot());
+    peers.get(1).becomeLeader(peers.get(1).nextBallot(), logs.get(0).getLastIndex());
+    peers.get(0).becomeLeader(peers.get(0).nextBallot(),logs.get(0).getLastIndex());
     assertTrue(isLeader(peers.get(0)));
     var index = logs.get(0).advanceLastIndex();
     var instance = makeInstance(peers.get(1).nextBallot(), index);
@@ -182,8 +180,8 @@ class MultiPaxosTest {
     assertFalse(isLeader(peers.get(0)));
     assertEquals(1, leader(peers.get(0)));
 
-    peers.get(1).becomeLeader(peers.get(1).nextBallot());
-    peers.get(0).becomeLeader(peers.get(0).nextBallot());
+    peers.get(1).becomeLeader(peers.get(1).nextBallot(),logs.get(1).getLastIndex());
+    peers.get(0).becomeLeader(peers.get(0).nextBallot(), logs.get(0).getLastIndex());
     assertTrue(isLeader(peers.get(0)));
     var r3 = sendCommit(stub.get(), peers.get(1).nextBallot(), 0, 0);
     assertEquals(OK, r3.getType());
@@ -314,10 +312,10 @@ class MultiPaxosTest {
     var stub1 = makeStub(configs.get(0).getPeers().get(1));
 
     var peer0Ballot = peers.get(0).nextBallot();
-    peers.get(0).becomeLeader(peer0Ballot);
-    peers.get(1).becomeLeader(peers.get(1).nextBallot());
+    peers.get(0).becomeLeader(peer0Ballot, logs.get(0).getLastIndex());
+    peers.get(1).becomeLeader(peers.get(1).nextBallot(), logs.get(1).getLastIndex());
     var peer2Ballot = peers.get(2).nextBallot();
-    peers.get(2).becomeLeader(peer2Ballot);
+    peers.get(2).becomeLeader(peer2Ballot, logs.get(2).getLastIndex());
 
     var r = sendCommit(stub1.get(), peer2Ballot, 0, 0);
     assertEquals(OK, r.getType());
@@ -343,10 +341,10 @@ class MultiPaxosTest {
     var stub1 = makeStub(configs.get(0).getPeers().get(1));
 
     var peer0Ballot = peers.get(0).nextBallot();
-    peers.get(0).becomeLeader(peer0Ballot);
-    peers.get(1).becomeLeader(peers.get(1).nextBallot());
+    peers.get(0).becomeLeader(peer0Ballot,logs.get(0).getLastIndex());
+    peers.get(1).becomeLeader(peers.get(1).nextBallot(),logs.get(1).getLastIndex());
     var peer2Ballot = peers.get(2).nextBallot();
-    peers.get(2).becomeLeader(peer2Ballot);
+    peers.get(2).becomeLeader(peer2Ballot,logs.get(2).getLastIndex());
 
     var cr = sendCommit(stub1.get(), peer2Ballot, 0, 0);
     assertEquals(OK, cr.getType());
@@ -374,10 +372,10 @@ class MultiPaxosTest {
     var stub1 = makeStub(configs.get(0).getPeers().get(1));
 
     var peer0Ballot = peers.get(0).nextBallot();
-    peers.get(0).becomeLeader(peer0Ballot);
-    peers.get(1).becomeLeader(peers.get(1).nextBallot());
+    peers.get(0).becomeLeader(peer0Ballot,logs.get(0).getLastIndex());
+    peers.get(1).becomeLeader(peers.get(1).nextBallot(),logs.get(1).getLastIndex());
     var peer2Ballot = peers.get(2).nextBallot();
-    peers.get(2).becomeLeader(peer2Ballot);
+    peers.get(2).becomeLeader(peer2Ballot,logs.get(2).getLastIndex());
 
     var r = sendCommit(stub1.get(), peer2Ballot, 0, 0);
     assertEquals(OK, r.getType());
@@ -400,9 +398,9 @@ class MultiPaxosTest {
     peers.get(0).startRPCServer();
 
     var peer0Ballot = peers.get(0).nextBallot();
-    peers.get(0).becomeLeader(peer0Ballot);
+    peers.get(0).becomeLeader(peer0Ballot,logs.get(0).getLastIndex());
     var peer1Ballot = peers.get(1).nextBallot();
-    peers.get(1).becomeLeader(peer1Ballot);
+    peers.get(1).becomeLeader(peer1Ballot,logs.get(1).getLastIndex());
 
     long index1 = 1;
     var i1 = makeInstance(peer0Ballot, index1, CommandType.Put);
@@ -431,9 +429,9 @@ class MultiPaxosTest {
 
     long index5 = 5;
     peer0Ballot = peers.get(0).nextBallot();
-    peers.get(0).becomeLeader(peer0Ballot);
+    peers.get(0).becomeLeader(peer0Ballot,logs.get(0).getLastIndex());
     peer1Ballot = peers.get(1).nextBallot();
-    peers.get(1).becomeLeader(peer1Ballot);
+    peers.get(1).becomeLeader(peer1Ballot,logs.get(1).getLastIndex());
 
     var peer0i5 = makeInstance(peer0Ballot, index5, InstanceState.kInProgress, CommandType.Get);
     var peer1i5 = makeInstance(peer1Ballot, index5, InstanceState.kInProgress, CommandType.Put);
@@ -451,8 +449,8 @@ class MultiPaxosTest {
 
     ballot = peers.get(0).nextBallot();
 
-    var log = peers.get(0).runPreparePhase(ballot);
-
+    var res = peers.get(0).runPreparePhase(ballot);
+    var log = res.getValue();
     assertEquals(i1, log.get(index1));
     assertEquals(i2, log.get(index2));
     assertEquals(peer0i3.getCommand(), log.get(index3).getCommand());
