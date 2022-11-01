@@ -52,6 +52,11 @@ class Log {
     last_index_ = std::max(last_index_, last_index);
   }
 
+  int64_t LastIndex() const {
+    std::scoped_lock lock(mu_);
+    return last_index_;
+  }
+
   void Stop() {
     std::scoped_lock lock(mu_);
     running_ = false;
