@@ -39,8 +39,8 @@ type Multipaxos struct {
 	pb.UnimplementedMultiPaxosRPCServer
 }
 
-func NewMultipaxos(config config.Config, log *Log.Log) *Multipaxos {
-	paxos := Multipaxos{
+func NewMultipaxos(log *Log.Log, config config.Config) *Multipaxos {
+	multipaxos := Multipaxos{
 		ready:                0,
 		ballot:               MaxNumPeers,
 		log:                  log,
@@ -54,10 +54,10 @@ func NewMultipaxos(config config.Config, log *Log.Log) *Multipaxos {
 		commitThreadRunning:  0,
 		rpcServer:            nil,
 	}
-	paxos.rpcServerRunningCv = sync.NewCond(&paxos.mu)
-	paxos.cvFollower = sync.NewCond(&paxos.mu)
-	paxos.cvLeader = sync.NewCond(&paxos.mu)
-	rand.Seed(paxos.id)
+	multipaxos.rpcServerRunningCv = sync.NewCond(&multipaxos.mu)
+	multipaxos.cvFollower = sync.NewCond(&multipaxos.mu)
+	multipaxos.cvLeader = sync.NewCond(&multipaxos.mu)
+	rand.Seed(multipaxos.id)
 
 	var opts []grpc.DialOption
 	opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -67,10 +67,10 @@ func NewMultipaxos(config config.Config, log *Log.Log) *Multipaxos {
 			panic("dial error")
 		}
 		client := pb.NewMultiPaxosRPCClient(conn)
-		paxos.rpcPeers[id] = NewRpcPeer(int64(id), client)
+		multipaxos.rpcPeers[id] = NewRpcPeer(int64(id), client)
 	}
 
-	return &paxos
+	return &multipaxos
 }
 
 func (p *Multipaxos) NextBallot() int64 {
