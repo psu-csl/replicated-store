@@ -451,6 +451,8 @@ class MultiPaxosTest {
 
     var res = peers.get(0).runPreparePhase(ballot);
     var log = res.getValue();
+    var lastIndex = res.getKey();
+    assertEquals(lastIndex,5);
     assertEquals(i1, log.get(index1));
     assertEquals(i2, log.get(index2));
     assertEquals(peer0i3.getCommand(), log.get(index3).getCommand());
