@@ -190,7 +190,7 @@ MultiPaxos::RunPreparePhase(int64_t ballot) {
             ++state->num_oks_;
             for (int i = 0; i < response.instances_size(); ++i) {
               state->last_index_ =
-                  std::max(state->last_index_, response.instance(i).index());
+                  std::max(state->last_index_, response.instances(i).index());
               Insert(&state->log_, std::move(response.instances(i)));
             }
           } else {
