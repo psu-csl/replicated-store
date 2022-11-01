@@ -1,10 +1,8 @@
 #+title: TODO
 
-* todo refactoring
-** make sure that variable declaration order and function definition order in all objects is the same in the design doc
-
 * TODO
 ** All
+*** add unit test for log::set_index
 *** get rid of ready state and start serving clients immediately
      currently, if a new leader is elected, we do not start serving clients
      until we have replayed all the instances that we found out during phase 1.
