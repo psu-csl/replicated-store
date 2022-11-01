@@ -230,8 +230,8 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
   public void stopPrepareThread() {
     logger.info(id + " stopping prepare thread");
     assert (prepareThreadRunning.get());
-    prepareThreadRunning.set(false);
     mu.lock();
+    prepareThreadRunning.set(false);
     cvFollower.signal();
     mu.unlock();
     prepareThread.shutdown();
@@ -251,8 +251,8 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
   public void stopCommitThread() {
     logger.info(id + " stopping commit thread");
     assert (commitThreadRunning.get());
-    commitThreadRunning.set(false);
     mu.lock();
+    commitThreadRunning.set(false);
     cvLeader.signal();
     mu.unlock();
     commitThread.shutdown();
