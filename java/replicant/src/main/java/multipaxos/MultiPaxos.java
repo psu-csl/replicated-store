@@ -3,6 +3,7 @@ package multipaxos;
 import static command.Command.CommandType.Del;
 import static command.Command.CommandType.Get;
 import static command.Command.CommandType.Put;
+import static java.lang.Math.max;
 import static log.Log.insert;
 import static multipaxos.CommandType.DEL;
 import static multipaxos.CommandType.GET;
@@ -65,14 +66,17 @@ class PrepareState {
   public long numRpcs;
   public long numOks;
   public long leader;
+  public long lastIndex;
   public HashMap<Long, log.Instance> log;
   public ReentrantLock mu;
   public Condition cv;
+
 
   public PrepareState(long leader) {
     this.numRpcs = 0;
     this.numOks = 0;
     this.leader = leader;
+    this.lastIndex = 0;
     this.log = new HashMap<>();
     this.mu = new ReentrantLock();
     this.cv = mu.newCondition();
@@ -115,7 +119,6 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
   protected static final long kRoundIncrement = kIdBits + 1;
   protected static final long kMaxNumPeers = 0xf;
   private static final Logger logger = (Logger) LoggerFactory.getLogger(MultiPaxos.class);
-  private final AtomicBoolean ready;
   private long ballot;
   private final Log log;
   private final long id;
@@ -141,7 +144,6 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
   private final ExecutorService commitThread;
 
   public MultiPaxos(Log log, Configuration config) {
-    ready = new AtomicBoolean(false);
     this.ballot = kMaxNumPeers;
     this.log = log;
     this.id = config.getId();
@@ -263,14 +265,10 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
     }
   }
   public Result replicate(command.Command command, long clientId) {
-    var res = ballot();
-    var isReady = res.isReady;
-    var ballot = res.ballot;
+    var ballot = ballot();
     if (isLeader(ballot, this.id)) {
-      if (isReady) {
         return runAcceptPhase(ballot, log.advanceLastIndex(), command, clientId);
-      }
-      return new Result(MultiPaxosResultType.kRetry, null);
+
     }
     if (isSomeoneElseLeader(ballot, this.id)) {
       return new Result(MultiPaxosResultType.kSomeoneElseLeader, leader(ballot));
@@ -286,9 +284,11 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
           continue;
         }
         var nextBallot = nextBallot();
-        var log = runPreparePhase(nextBallot);
-        if (log != null) {
-          becomeLeader(nextBallot);
+        var r = runPreparePhase(nextBallot);
+        if (r != null) {
+          var lastIndex = r.getKey();
+          var log = r.getValue();
+          becomeLeader(nextBallot,lastIndex);
           replay(nextBallot, log);
           break;
         }
@@ -300,8 +300,7 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
       waitUntilLeader();
       var gle = log.getGlobalLastExecuted();
       while (commitThreadRunning.get()) {
-        var res = ballot();
-        var ballot = res.ballot;
+        var ballot = ballot();
         if (!isLeader(ballot, this.id)) {
           break;
         }
@@ -310,7 +309,7 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
       }
     }
   }
-  public HashMap<Long, log.Instance> runPreparePhase(long ballot) {
+  public Map.Entry<Long,HashMap<Long, log.Instance>> runPreparePhase(long ballot) {
     var state = new PrepareState(this.id);
     multipaxos.PrepareRequest.Builder request = multipaxos.PrepareRequest.newBuilder();
     request.setSender(this.id);
@@ -334,6 +333,7 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
         if (response.getType() == multipaxos.ResponseType.OK) {
           ++state.numOks;
           for (int i = 0; i < response.getInstancesCount(); ++i) {
+            state.lastIndex=max(state.lastIndex,response.getInstances(i).getIndex());
             insert(state.log, makeInstance(response.getInstances(i)));
           }
         } else {
@@ -361,7 +361,7 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
 
     if (state.numOks > rpcPeers.size() / 2) {
       state.mu.unlock();
-      return state.log;
+      return new HashMap.SimpleEntry<>(state.lastIndex,state.log);
     }
     state.mu.unlock();
     return null;
@@ -500,7 +500,6 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
         return;
       }
     }
-    this.ready.set(true);
     logger.info(this.id + " leaderTest is ready to server");
   }
   @Override
@@ -597,12 +596,12 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
       mu.unlock();
     }
   }
-  public void becomeLeader(long nextBallot) {
+  public void becomeLeader(long nextBallot, long lastIndex) {
     mu.lock();
     try {
       logger.info(id + " became a leader: ballot: " + ballot + " -> " + nextBallot);
       ballot = nextBallot;
-      ready.set(false);
+      log.setLastIndex(lastIndex);
       cvLeader.signal();
     } finally {
       mu.unlock();
@@ -623,10 +622,10 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
     return id;
   }
 
-  public BallotResult ballot() {
+  public long ballot() {
     mu.lock();
     try {
-      return new BallotResult(this.ballot, this.ready.get());
+      return this.ballot;
     } finally {
       mu.unlock();
     }
