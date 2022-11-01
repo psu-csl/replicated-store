@@ -16,7 +16,6 @@ import (
 )
 
 type Multipaxos struct {
-	ready          int32
 	ballot         int64
 	log            *Log.Log
 	id             int64
@@ -41,7 +40,6 @@ type Multipaxos struct {
 
 func NewMultipaxos(log *Log.Log, config config.Config) *Multipaxos {
 	multipaxos := Multipaxos{
-		ready:                0,
 		ballot:               MaxNumPeers,
 		log:                  log,
 		id:                   config.Id,
@@ -83,14 +81,14 @@ func (p *Multipaxos) NextBallot() int64 {
 	return nextBallot
 }
 
-func (p *Multipaxos) BecomeLeader(nextBallot int64) {
+func (p *Multipaxos) BecomeLeader(nextBallot int64, lastIndex int64) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
 	logger.Infof("%v became a leader: ballot: %v -> %v\n", p.id, p.ballot,
 		nextBallot)
 	p.ballot = nextBallot
-	atomic.StoreInt32(&p.ready, 0)
+	p.log.SetLastIndex(lastIndex)
 	p.cvLeader.Signal()
 }
 
@@ -109,11 +107,11 @@ func (p *Multipaxos) Id() int64 {
 	return p.id
 }
 
-func (p *Multipaxos) Ballot() (int64, int32) {
+func (p *Multipaxos) Ballot() int64 {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	return p.ballot, p.ready
+	return p.ballot
 }
 
 func (p *Multipaxos) waitUntilLeader() {
@@ -228,13 +226,10 @@ func (p *Multipaxos) StopCommitThread() {
 }
 
 func (p *Multipaxos) Replicate(command *pb.Command, clientId int64) Result {
-	ballot, ready := p.Ballot()
+	ballot := p.Ballot()
 	if IsLeader(ballot, p.id) {
-		if ready == 1 {
 			return p.RunAcceptPhase(ballot, p.log.AdvanceLastIndex(), command,
 				clientId)
-		}
-		return Result{Type: Retry, Leader: -1}
 	}
 	if IsSomeoneElseLeader(ballot, p.id) {
 		return Result{Type: SomeElseLeader, Leader: Leader(ballot)}
@@ -251,9 +246,9 @@ func (p *Multipaxos) PrepareThread() {
 				continue
 			}
 			nextBallot := p.NextBallot()
-			replayLog := p.RunPreparePhase(nextBallot)
+			lastIndex, replayLog := p.RunPreparePhase(nextBallot)
 			if replayLog != nil {
-				p.BecomeLeader(nextBallot)
+				p.BecomeLeader(nextBallot, lastIndex)
 				p.Replay(nextBallot, replayLog)
 				break
 			}
@@ -266,7 +261,7 @@ func (p *Multipaxos) CommitThread() {
 		p.waitUntilLeader()
 		gle := p.log.GlobalLastExecuted()
 		for atomic.LoadInt32(&p.commitThreadRunning) == 1 {
-			ballot, _ := p.Ballot()
+			ballot := p.Ballot()
 			if !IsLeader(ballot, p.id) {
 				break
 			}
@@ -276,7 +271,8 @@ func (p *Multipaxos) CommitThread() {
 	}
 }
 
-func (p *Multipaxos) RunPreparePhase(ballot int64) map[int64]*pb.Instance {
+func (p *Multipaxos) RunPreparePhase(ballot int64) (int64,
+	map[int64]*pb.Instance) {
 	state := NewPrepareState(p.id)
 
 	request := pb.PrepareRequest{
@@ -300,6 +296,9 @@ func (p *Multipaxos) RunPreparePhase(ballot int64) map[int64]*pb.Instance {
 					state.NumOks += 1
 					receivedInstances := response.GetLogs()
 					for _, instance := range receivedInstances {
+						if instance.Index > state.LastIndex {
+							state.LastIndex = instance.Index
+						}
 						Log.Insert(state.Log, instance)
 					}
 				} else {
@@ -322,9 +321,9 @@ func (p *Multipaxos) RunPreparePhase(ballot int64) map[int64]*pb.Instance {
 	}
 
 	if state.NumOks > len(p.rpcPeers)/2 {
-		return state.Log
+		return state.LastIndex, state.Log
 	}
-	return nil
+	return -1, nil
 }
 
 func (p *Multipaxos) RunAcceptPhase(ballot int64, index int64,
@@ -450,8 +449,6 @@ func (p *Multipaxos) Replay(ballot int64, log map[int64]*pb.Instance) {
 			return
 		}
 	}
-	atomic.StoreInt32(&p.ready, 1)
-	logger.Infof("%v leader is ready to serve", p.id)
 }
 
 func (p *Multipaxos) Prepare(ctx context.Context,
