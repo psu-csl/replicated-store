@@ -107,6 +107,15 @@ func (l *Log) AdvanceLastIndex() int64 {
 	return l.lastIndex
 }
 
+func (l *Log) SetLastIndex(lastIndex int64) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	if lastIndex > l.lastIndex {
+		l.lastIndex = index
+	}
+}
+
 func (l *Log) Stop() {
 	l.mu.Lock()
 	defer l.mu.Unlock()
