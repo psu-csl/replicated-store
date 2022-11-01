@@ -137,27 +137,26 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
   private long ballot;
 
   public MultiPaxos(Log log, Configuration config) {
-    this.id = config.getId();
+    ready = new AtomicBoolean(false);
     this.ballot = kMaxNumPeers;
-    this.commitInterval = config.getCommitInterval();
     this.log = log;
+    this.id = config.getId();
+    commitReceived = new AtomicBoolean(false);
+    this.commitInterval = config.getCommitInterval();
+    // add port here
+    threadPool = Executors.newFixedThreadPool(config.getThreadPoolSize());
+    rpcServerRunning = false;
+    prepareThreadRunning = new AtomicBoolean(false);
+    commitThreadRunning = new AtomicBoolean(false);
 
     mu = new ReentrantLock();
     cvLeader = mu.newCondition();
     cvFollower = mu.newCondition();
-    commitThread = Executors.newSingleThreadExecutor();
     prepareThread = Executors.newSingleThreadExecutor();
-    commitReceived = new AtomicBoolean(false);
-
-    rpcServerRunning = false;
+    commitThread = Executors.newSingleThreadExecutor();
     rpcServerThread = Executors.newSingleThreadExecutor();
-    ready = new AtomicBoolean(false);
-    commitThreadRunning = new AtomicBoolean(false);
-    prepareThreadRunning = new AtomicBoolean(false);
-
     rpcServerRunningCv = mu.newCondition();
 
-    threadPool = Executors.newFixedThreadPool(config.getThreadPoolSize());
     rpcPeers = new ArrayList<>();
     long rpcId = 0;
     for (var peer : config.getPeers()) {
