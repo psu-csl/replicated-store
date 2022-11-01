@@ -170,8 +170,8 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
     }
   }
   public void start() {
-    startCommitThread();
     startPrepareThread();
+    startCommitThread();
     startRPCServer();
   }
   public void stop() {
