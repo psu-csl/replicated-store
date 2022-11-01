@@ -115,28 +115,30 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
   protected static final long kRoundIncrement = kIdBits + 1;
   protected static final long kMaxNumPeers = 0xf;
   private static final Logger logger = (Logger) LoggerFactory.getLogger(MultiPaxos.class);
-  private final ReentrantLock mu;
-  private final Condition cvLeader;
-  private final Condition cvFollower;
-  private final Log log;
-  private Server rpcServer;
-  private final Condition rpcServerRunningCv;
-  private final long commitInterval;
-  private final ExecutorService commitThread;
-  private final ExecutorService prepareThread;
-  private final List<RpcPeer> rpcPeers;
-  private final ExecutorService threadPool;
-  private final ExecutorService rpcServerThread;
   private final AtomicBoolean ready;
-  private final AtomicBoolean commitThreadRunning;
-
-  private final AtomicBoolean prepareThreadRunning;
+  private long ballot;
+  private final Log log;
   private final long id;
   private final AtomicBoolean commitReceived;
-  private boolean rpcServerRunning;
-  private long ballot;
-
+  private final long commitInterval;
   private final int port;
+  private final List<RpcPeer> rpcPeers;
+  private final ReentrantLock mu;
+  private final ExecutorService threadPool;
+
+  private final Condition cvLeader;
+  private final Condition cvFollower;
+
+  private Server rpcServer;
+  private boolean rpcServerRunning;
+  private final Condition rpcServerRunningCv;
+  private final ExecutorService rpcServerThread;
+
+  private final AtomicBoolean prepareThreadRunning;
+  private final ExecutorService prepareThread;
+
+  private final AtomicBoolean commitThreadRunning;
+  private final ExecutorService commitThread;
 
   public MultiPaxos(Log log, Configuration config) {
     ready = new AtomicBoolean(false);
