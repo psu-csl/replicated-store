@@ -214,6 +214,14 @@ public class Log {
     }
   }
 
+  public void setLastIndex(long lastIndex){
+    mu.lock();
+    try{
+      this.lastIndex = max(this.lastIndex, lastIndex);
+    }finally {
+      mu.unlock();
+    }
+  }
   public void stop() {
     mu.lock();
     running = false;
