@@ -1,7 +1,6 @@
 #+title: TODO
 
 * todo refactoring
-** fix function parameter orders
 ** fix the MultiPaxos constructor field initialization order (go)
 ** make sure that variable declaration order and function definition order in all objects is the same in the design doc
 ** java: do we have to call shutdown rpc peers here?
