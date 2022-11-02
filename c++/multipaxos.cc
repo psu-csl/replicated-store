@@ -136,7 +136,11 @@ Result MultiPaxos::Replicate(Command command, int64_t client_id) {
 
 void MultiPaxos::PrepareThread() {
   while (prepare_thread_running_) {
-    WaitUntilFollower();
+    {
+      std::unique_lock lock(mu_);
+      while (prepare_thread_running_ && IsLeader(ballot_, id_))
+        cv_follower_.wait(lock);
+    }
     while (prepare_thread_running_) {
       SleepForRandomInterval();
       if (ReceivedCommit())
@@ -155,7 +159,11 @@ void MultiPaxos::PrepareThread() {
 
 void MultiPaxos::CommitThread() {
   while (commit_thread_running_) {
-    WaitUntilLeader();
+    {
+      std::unique_lock lock(mu_);
+      while (commit_thread_running_ && !IsLeader(ballot_, id_))
+        cv_leader_.wait(lock);
+    }
     auto gle = log_->GlobalLastExecuted();
     while (commit_thread_running_) {
       auto ballot = Ballot();

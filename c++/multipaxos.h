@@ -101,18 +101,6 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
     ballot_ = new_ballot;
   }
 
-  void WaitUntilLeader() {
-    std::unique_lock lock(mu_);
-    while (commit_thread_running_ && !IsLeader(ballot_, id_))
-      cv_leader_.wait(lock);
-  }
-
-  void WaitUntilFollower() {
-    std::unique_lock lock(mu_);
-    while (prepare_thread_running_ && IsLeader(ballot_, id_))
-      cv_follower_.wait(lock);
-  }
-
   void SleepForCommitInterval() const {
     std::this_thread::sleep_for(std::chrono::milliseconds(commit_interval_));
   }
