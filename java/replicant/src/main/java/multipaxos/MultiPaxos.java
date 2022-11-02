@@ -609,12 +609,12 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
       mu.unlock();
     }
   }
-  public void becomeLeader(long newBallot, long lastIndex) {
+  public void becomeLeader(long newBallot, long newLastIndex) {
     mu.lock();
     try {
       logger.info(id + " became a leader: ballot: " + ballot + " -> " + newBallot);
       ballot = newBallot;
-      log.setLastIndex(lastIndex);
+      log.setLastIndex(newLastIndex);
       cvLeader.signal();
     } finally {
       mu.unlock();
