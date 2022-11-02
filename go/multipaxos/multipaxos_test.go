@@ -459,7 +459,8 @@ func TestRunPreparePhase(t *testing.T) {
 	defer peers[1].StopRPCServer()
 	peers[0].Connect(configs[0].Peers)
 
-	_, logMap = peers[0].RunPreparePhase(ballot)
+	lastIndex, logMap := peers[0].RunPreparePhase(ballot)
+	assert.EqualValues(t, 5, lastIndex)
 	for index, instance := range logMap {
 		if index == 3 || index == 4 {
 			assert.True(t, log.IsEqualCommand(expectedLog[index].GetCommand(
