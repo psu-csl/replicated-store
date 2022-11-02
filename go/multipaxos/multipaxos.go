@@ -71,6 +71,17 @@ func NewMultipaxos(log *Log.Log, config config.Config) *Multipaxos {
 	return &multipaxos
 }
 
+func (p *Multipaxos) Id() int64 {
+	return p.id
+}
+
+func (p *Multipaxos) Ballot() int64 {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	return p.ballot
+}
+
 func (p *Multipaxos) NextBallot() int64 {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -101,17 +112,6 @@ func (p *Multipaxos) BecomeFollower(newBallot int64) {
 		p.cvFollower.Signal()
 	}
 	p.ballot = newBallot
-}
-
-func (p *Multipaxos) Id() int64 {
-	return p.id
-}
-
-func (p *Multipaxos) Ballot() int64 {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	return p.ballot
 }
 
 func (p *Multipaxos) waitUntilLeader() {
