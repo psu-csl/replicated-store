@@ -136,6 +136,14 @@
       acquire mu_ and release on exit
       return ++last_index_
 
+    - set_last_index(last_index: int)
+      acquire mu_ and release on exit
+      last_index_ = last_index
+
+    - last_index(void)
+      acquire mu_ and release on exit
+      return last_index_
+
     - stop()
       acquire mu_ and release on exit
       set running_ to false
