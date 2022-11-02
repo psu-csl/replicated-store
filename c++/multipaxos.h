@@ -80,22 +80,22 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
     return next_ballot;
   }
 
-  void BecomeLeader(int64_t next_ballot, int64_t last_index) {
+  void BecomeLeader(int64_t new_ballot, int64_t last_index) {
     std::scoped_lock lock(mu_);
     DLOG(INFO) << id_ << " became a leader: ballot: " << ballot_ << " -> "
-               << next_ballot;
-    ballot_ = next_ballot;
+               << new_ballot;
+    ballot_ = new_ballot;
     log_->SetLastIndex(last_index);
     cv_leader_.notify_one();
   }
 
-  void BecomeFollower(int64_t next_ballot) {
-    auto prev_leader = Leader(ballot_);
-    auto next_leader = Leader(next_ballot);
-    if (next_leader != id_ &&
-        (prev_leader == id_ || prev_leader == kMaxNumPeers)) {
+  void BecomeFollower(int64_t new_ballot) {
+    auto old_leader_id = Leader(ballot_);
+    auto new_leader_id = Leader(new_ballot);
+    if (new_leader_id != id_ &&
+        (old_leader_id == id_ || old_leader_id == kMaxNumPeers)) {
       DLOG(INFO) << id_ << " became a follower: ballot: " << ballot_ << " -> "
-                 << next_ballot;
+                 << new_ballot;
       cv_follower_.notify_one();
     }
     ballot_ = new_ballot;
