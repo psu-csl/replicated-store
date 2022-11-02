@@ -609,27 +609,27 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
       mu.unlock();
     }
   }
-  public void becomeLeader(long nextBallot, long lastIndex) {
+  public void becomeLeader(long newBallot, long lastIndex) {
     mu.lock();
     try {
-      logger.info(id + " became a leader: ballot: " + ballot + " -> " + nextBallot);
-      ballot = nextBallot;
+      logger.info(id + " became a leader: ballot: " + ballot + " -> " + newBallot);
+      ballot = newBallot;
       log.setLastIndex(lastIndex);
       cvLeader.signal();
     } finally {
       mu.unlock();
     }
   }
-  public void becomeFollower(long nextBallot) {
-    var prevLeader = leader(ballot);
-    var nextLeader = leader(nextBallot);
-    if (nextLeader != id && (prevLeader == id || prevLeader == kMaxNumPeers)) {
-      logger.info(id + " became a follower: ballot: " + ballot + " -> " + nextBallot);
+  public void becomeFollower(long newBallot) {
+    var oldLeaderId = leader(ballot);
+    var newLeaderId = leader(newBallot);
+    if (newLeaderId != id && (oldLeaderId == id || oldLeaderId == kMaxNumPeers)) {
+      logger.info(id + " became a follower: ballot: " + ballot + " -> " + newBallot);
       mu.lock();
       cvFollower.signal();
       mu.unlock();
     }
-    ballot = nextBallot;
+    ballot = newBallot;
   }
    public void waitUntilLeader() {
     mu.lock();
