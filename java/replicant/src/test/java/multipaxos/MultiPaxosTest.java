@@ -66,7 +66,7 @@ class MultiPaxosTest {
   }
 
   public static long leader(MultiPaxos peer) {
-    return MultiPaxos.leader(peer.ballot());
+    return MultiPaxos.extractLeaderId(peer.ballot());
   }
 
   public static boolean isLeader(MultiPaxos peer) {

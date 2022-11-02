@@ -271,7 +271,7 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
 
     }
     if (isSomeoneElseLeader(ballot, this.id)) {
-      return new Result(MultiPaxosResultType.kSomeoneElseLeader, leader(ballot));
+      return new Result(MultiPaxosResultType.kSomeoneElseLeader, extractLeaderId(ballot));
     }
     return new Result(MultiPaxosResultType.kRetry, null);
   }
@@ -341,7 +341,7 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
           mu.lock();
           if (response.getBallot() > ballot) {
             becomeFollower(response.getBallot());
-            state.leader = leader(this.ballot);
+            state.leader = extractLeaderId(this.ballot);
           }
           mu.unlock();
         }
@@ -402,7 +402,7 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
           mu.lock();
           if (response.getBallot() > this.ballot) {
             becomeFollower(response.getBallot());
-            state.leader = leader(this.ballot);
+            state.leader = extractLeaderId(this.ballot);
           }
           mu.unlock();
         }
@@ -465,7 +465,7 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
             mu.lock();
             if (response.getBallot() >= this.ballot) {
               becomeFollower(response.getBallot());
-              state.leader = leader(this.ballot);
+              state.leader = extractLeaderId(this.ballot);
             }
             mu.unlock();
           }
@@ -577,13 +577,13 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
     }
   }
 
-  public static long leader(long ballot) {
+  public static long extractLeaderId(long ballot) {
     return ballot & kIdBits;
   }
   public static boolean isLeader(long ballot, long id) {
-    return leader(ballot) == id;
+    return extractLeaderId(ballot) == id;
   }public static boolean isSomeoneElseLeader(long ballot, long id) {
-    return !isLeader(ballot, id) && leader(ballot) < kMaxNumPeers;
+    return !isLeader(ballot, id) && extractLeaderId(ballot) < kMaxNumPeers;
   }
 
   public long getId() {
@@ -621,8 +621,8 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
     }
   }
   public void becomeFollower(long newBallot) {
-    var oldLeaderId = leader(ballot);
-    var newLeaderId = leader(newBallot);
+    var oldLeaderId = extractLeaderId(ballot);
+    var newLeaderId = extractLeaderId(newBallot);
     if (newLeaderId != id && (oldLeaderId == id || oldLeaderId == kMaxNumPeers)) {
       logger.info(id + " became a follower: ballot: " + ballot + " -> " + newBallot);
       mu.lock();
