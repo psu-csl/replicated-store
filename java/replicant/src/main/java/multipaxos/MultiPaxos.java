@@ -585,6 +585,19 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
   }public static boolean isSomeoneElseLeader(long ballot, long id) {
     return !isLeader(ballot, id) && leader(ballot) < kMaxNumPeers;
   }
+
+  public long getId() {
+    return id;
+  }
+
+  public long ballot() {
+    mu.lock();
+    try {
+      return this.ballot;
+    } finally {
+      mu.unlock();
+    }
+  }
   public long nextBallot() {
     mu.lock();
     try {
@@ -618,19 +631,7 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
     }
     ballot = nextBallot;
   }
-  public long getId() {
-    return id;
-  }
-
-  public long ballot() {
-    mu.lock();
-    try {
-      return this.ballot;
-    } finally {
-      mu.unlock();
-    }
-  }
-  public void waitUntilLeader() {
+   public void waitUntilLeader() {
     mu.lock();
     try {
       while (commitThreadRunning.get() && !isLeader(this.ballot, this.id)) {
