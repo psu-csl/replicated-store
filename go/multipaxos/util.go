@@ -37,16 +37,16 @@ type Result struct {
 	Leader int64
 }
 
-func Leader(ballot int64) int64 {
+func ExtractLeaderId(ballot int64) int64 {
 	return ballot & IdBits
 }
 
 func IsLeader(ballot int64, id int64) bool {
-	return Leader(ballot) == id
+	return ExtractLeaderId(ballot) == id
 }
 
 func IsSomeoneElseLeader(ballot int64, id int64) bool {
-	return !IsLeader(ballot, id) && Leader(ballot) < MaxNumPeers
+	return !IsLeader(ballot, id) && ExtractLeaderId(ballot) < MaxNumPeers
 }
 
 type PrepareState struct {

@@ -104,8 +104,8 @@ func (p *Multipaxos) BecomeLeader(newBallot int64, newLastIndex int64) {
 }
 
 func (p *Multipaxos) BecomeFollower(newBallot int64) {
-	oldLeaderId := Leader(p.ballot)
-	newLeaderId := Leader(newBallot)
+	oldLeaderId := ExtractLeaderId(p.ballot)
+	newLeaderId := ExtractLeaderId(newBallot)
 	if newLeaderId != p.id && (oldLeaderId == p.id || oldLeaderId == MaxNumPeers) {
 		logger.Infof("%v became a follower: ballot: %v -> %v\n", p.id,
 			p.ballot, newBallot)
@@ -232,7 +232,7 @@ func (p *Multipaxos) Replicate(command *pb.Command, clientId int64) Result {
 				clientId)
 	}
 	if IsSomeoneElseLeader(ballot, p.id) {
-		return Result{Type: SomeElseLeader, Leader: Leader(ballot)}
+		return Result{Type: SomeElseLeader, Leader: ExtractLeaderId(ballot)}
 	}
 	return Result{Type: Retry, Leader: -1}
 }
@@ -305,7 +305,7 @@ func (p *Multipaxos) RunPreparePhase(ballot int64) (int64,
 					p.mu.Lock()
 					if response.GetBallot() > p.ballot {
 						p.BecomeFollower(response.GetBallot())
-						state.Leader = Leader(p.ballot)
+						state.Leader = ExtractLeaderId(p.ballot)
 					}
 					p.mu.Unlock()
 				}
@@ -361,7 +361,7 @@ func (p *Multipaxos) RunAcceptPhase(ballot int64, index int64,
 					p.mu.Lock()
 					if response.GetBallot() > p.ballot {
 						p.BecomeFollower(response.GetBallot())
-						state.Leader = Leader(p.ballot)
+						state.Leader = ExtractLeaderId(p.ballot)
 					}
 					p.mu.Unlock()
 				}
@@ -418,7 +418,7 @@ func (p *Multipaxos) RunCommitPhase(ballot int64, globalLastExecuted int64) int6
 					p.mu.Lock()
 					if response.GetBallot() > p.ballot {
 						p.BecomeFollower(response.GetBallot())
-						state.Leader = Leader(p.ballot)
+						state.Leader = ExtractLeaderId(p.ballot)
 					}
 					p.mu.Unlock()
 				}

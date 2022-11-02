@@ -59,7 +59,7 @@ func tearDownServers() {
 }
 
 func LeaderByPeer(peer *Multipaxos) int64 {
-	return Leader(peer.Ballot())
+	return ExtractLeaderId(peer.Ballot())
 }
 
 func IsLeaderByPeer(peer *Multipaxos) bool {
