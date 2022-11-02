@@ -2,47 +2,85 @@
 
   - types/protobufs
 
-    - commit_request
+    - commit_request protobuf
       - ballot_: ballot of the leader sending the commit RPC
       - last_executed_: last_executed_ of the leader sending the commit RPC
       - global_last_executed_: global_last_executed of the leader sending the
         commit RPC
       - sender: id of the sender
 
-    - commit_response
+    - commit_response protobuf
       - type_: enum {ok, reject}
       - ballot_: ballot of the peer (valid only if type_ == reject)
       - last_executed_: last_executed_ of the follower responding to the commit
         RPC
 
-    - prepare_request
+    - prepare_request protobuf
       - ballot_: ballot of the sender
       - sender: id of the sender
 
-    - prepare_response
+    - prepare_response protobuf
       - type_: enum {ok, reject}
       - ballot_: ballot of the peer (valid only if type_ == reject)
       - instances_: Instances of the peer since global_last_executed_ (valid
         only if type_ == ok)
 
-    - accept_request
+    - accept_request protobuf
       - instance_: Instance sent by the leader
       - sender_: id of the leader
 
-    - accept_response
+    - accept_response protobuf
       - type_: enum {ok, reject}
       - ballot_: ballot of the peer (valid only if type_ == reject)
 
-  - members
-    - ready_: atomic<bool>; a flag that indicates if the peer---after becoming a
-      leader---is ready to respond to client requests. we need this flag because
-      once a peer becomes a leader, it may not yet be able to serve client
-      requests since it may need to recover the log and replay the instances it
-      received as a response to the prepare request, to catch up with the rest
-      of the peers. during this replay, the ready_ flag is false and this peer
-      responds to the clients with "retry". as soon as this peer has caught up,
-      we set ready_ to true and start responding to the clients.
+    - result
+      - type_: enum {ok, retry, someone_else_leader}
+      - leader_: optional int
 
+    # when running multipaxos phases, we send out requests to multiple peers and
+    # receive responses from them. for each phase we need to keep track of
+    # certain variables, such as the number of responses received and so on.
+    # since we launch a separate thread for each request made to a peer, these
+    # threads need to share these variables and update them based on the
+    # response. we cannot make these variables class members because these
+    # thread in theory may outlive the multipaxos object (threadsanitizer
+    # complains). therefore, for each phase we collect all the variables we need
+    # to keep track of in a single struct and allocate using a reference-counted
+    # pointer, and pass to each thread a reference-counted pointer to the
+    # struct. these structs are protected by a lock and each thread first
+    # acquires the lock before updating the struct. the last thread that
+    # finishes, deallocates the struct.
+    - prepare_state
+      - num_rpc_: number of RPC responses received
+      - num_oks_: number of positive prepare responses
+      - leader_: current leader
+      - last_index_: highest index observed in instances received
+      - log_: the merged log of positive responses
+      - mu_: mutex protecting this struct
+      - cv_: condition variable that each thread will signal upon completion
+        (run_prepare_phase() sleeps on this and wakes up when a thread signals
+        it and checks to see if quorum is reached, e.g.)
+
+    - accept_state
+      - num_rpc_: number of RPC responses received
+      - num_oks_: number of positive prepare responses
+      - leader_: current leader
+      - mu_: mutex protecting this struct
+      - cv_: condition variable that each thread will signal upon completion
+        (run_accept_phase() sleeps on this and wakes up when a thread signals it
+        and checks to see if quorum is reached, e.g).
+
+    - commit_state
+      - num_rpc_: number of RPC responses received
+      - num_oks_: number of positive prepare responses
+      - leader_: current leader
+      - min_last_executed: the smallest last_executed of positive responses
+      - mu_: mutex protecting this struct
+      - cv_: condition variable that each thread will signal upon completion
+        (run_commit_phase() sleeps on this and wakes up when a thread signals it
+        and checks to see if all peers have responded, e.g).
+
+  - members
     - ballot_: int64_t; current ballot number known to the peer;
       initialized |max_num_peers_|, which indicates that there is no current
       leader, since valid leader ids are in [0, max_num_peers_). it is a 64-bit
@@ -119,10 +157,24 @@
 
     - max_num_peers_ = 0xf: maximum number of peers.
 
+  - non-member functions
+
+    - extract_leader_id(ballot: int) -> int
+      # returns the id embedded in the ballot
+      return ballot & id_bits_
+
+    - is_leader(ballot: int, id: int) -> bool
+      # returns true if the peer id embedded in the ballot is the same as the id
+      # parameter and false otherwise.
+      return extract_leader_id(ballot_) == id_
+
+    - is_someone_else_leader(ballot: int, id: int) -> bool
+      # returns true if there is some leader and that leader's id is different
+      # that the id parameter and false otherwise.
+
   - methods
 
     - constructor(log: *Log, cfg: config)
-      ready_ = false
       ballot_ = max_num_peers_
       log_ = log
       id_ = config["id"]
@@ -198,6 +250,15 @@
       mu_.unlock()
       commit_thread_.join()
 
+    - id() -> int
+      # return the id of this peer; used only in unit tests
+      return id_
+
+    - ballot() -> int
+      # return the current ballot
+      acquire mu_ and release on exit
+      return ballot_
+
     - next_ballot() -> int
       # description: gets the next ballot number by incrementing the round
       # portion of |ballot_| by |round_increment_| and setting the |id_| bits to
@@ -210,64 +271,215 @@
       mu_.unlock()
       return next_ballot
 
-    - become_leader(ballot: int)
+    - become_leader(new_ballot: int, new_last_index: int)
       # this function is called at the end of a successful prepare phase, once
-      # we have received prepare responses from the majority. it sets the
-      # ballot_ to its argument, which is the new ballot number, and it sets
-      # ready_ to false because this peer needs to replay all the instances it
-      # has received from peers in response to prepare message and until all
-      # those instances are replayed, this new leader is not ready to answer the
-      # client's queries. it also notifies cv_leader_ so that the commit thread
-      # would start sending out commits to the peers to suppress new leader
-      # elections.
+      # we have received prepare responses from the quroum. it sets the ballot_
+      # to the new ballot number (its first argument), and it also sets the last
+      # index of its log to the highest index number observed in the instances
+      # that it has received as a response to the prepare request (its second
+      # argument). finally, it signals the cv_leader_ condition variable that
+      # wakes up commit_thread_, which starts sending out commit messages to
+      # supress leader election.
       mu_.lock()
-      ballot_ = ballot
-      ready_ = false
+      ballot_ = new_ballot
+      log_->set_last_index(new_last_index)
       cv_leader_.notify_one()
-
-
-    - is_leader() -> bool
-      # description: returns true if this peer is leader
-      # preconditions:
-      # postconditions:
-      mu_.lock() # unlocks on return
-      return is_leader_lockless()
-
-    - is_leader_lockless() -> bool
-      # description: returns true if this peer is leader
-      # preconditions: lock is not acquired
-      # postconditions:
-      return (ballot_ & id_bits) == id_
-
-    - is_someone_else_leader() -> bool
-      # description: returns true if we are not a leader and someone else is.
-      # this cannot simply be !is_leader() because it's not necessarily the case
-      # that if this peer is not leader, then someone else must be: at startup
-      # there is no leader.
-      # preconditions:
-      # postconditions:
-      mu_.lock() # unlocks on return
-      id = ballot_ & id_bits_
-      return id != id_ && id < max_num_peers_
-
-    - wait_until_leader()
-      # description: waits until this peer becomes a leader
-      # preconditions:
-      # postconditions:
-      mu_.lock()
-      while running_ && !is_leader_lockless()
-        cv_leader_.wait(mu_)
       mu_.unlock()
 
-    - replicate(cmd: command, client-id: int) -> accept_result_t
-      if i_am_leader()
-        if ready_
-          return accept(cmd, log_.advance_last_index(), client-id)
-        return accept_result_t{type_: retry, leader_: N/A}
-      if someone_else_is_leader()
-        return accept_result_t{type_: reject, leader_: leader()}
-      # election in progress
-      return accept_result_t{type_: retry, leader_: N/A}
+    - become_follower(new_ballot: int)
+      # this function is called when we receive a message from another peer with
+      # a higher ballot number. this can happen in two places: (1) when we get a
+      # response to an RPC that we sent out when running one of the three phases
+      # (i.e. in one of run_prepare_phase, run_accept_phase, or
+      # run_commit_phase) or (2) when we handle an RPC request from another peer
+      # that runs one of the three phases (i.e. RPC handler for each message
+      # type). in both scenarios, we already hold the global mu_ lock when we
+      # call this function, which is why, unlike become_leader, it does not
+      # require acquiring the lock. it sets this peers ballot to its argument,
+      # and it checks to see if this peer just became a follower and if so, it
+      # signals cv_follower_ condition variable to wake up prepare_thread_,
+      # which starts waiting for commit messages from the new leader.
+      old_leader_id = extract_leader_id(ballot_)
+      new_leader_id = extract_leader_id(new_ballot)
+      if new_leader_id != id_ || old_leader_id == max_num_peers_:
+        cv_follower_.notify_one()
+      ballot_ = new_ballot
+
+    - sleep_for_commit_interval()
+      # sleeps for commit_interval_, which was retrieved from the configuration
+      # file; this is called by the commit thread to sleep between sending
+      # commit messages.
+      sleep(commit_interval_)
+
+    - sleep_for_random_interval()
+      # sleeps for a random interval that is chosen randomly to be in the range
+      # of [1.5 * commit_interval_, 2 * commit_interval_]; this is called by the
+      # prepare thread to sleep between checking if it has received a commit
+      # message from the leader
+      ci = commit_interval_
+      sleep(ci + ci / 2 + rand(0, ci / 2))
+
+    - received_commit() -> bool
+      # returns true if commit_received_ has changed since this function was
+      # last called. commit_received_ is set to true by the commit RPC handler
+      # upon receiving a commit message; this function is called by the prepare
+      # handler after sleeping for random amount (per
+      # sleep_for_random_interval() function) to see if a new commit message was
+      # received.
+      return commit_received_.exchange(false)
+
+    - replicate(cmd: command, client-id: int) -> result
+      # this is the main entry point of the multipaxos object. it is called for
+      # each client request received at the peer and can be called concurrently.
+      # in the common case, this function runs the accept phase and returns ok
+      # enum if the command is committed.
+      ballot = ballot()
+      if is_leader(ballot, id_):
+        return run_accept_phase(ballot, log_->advance_last_index(), command, client-id)
+      if is_someone_else_leader(ballot, id_):
+        return result {type_: someone_else_leader, leader_: extract_leader_id(ballot)}
+      # the first ever election is in progress; this only happens when the peers
+      # first boot and there is no elected leader for some random period of
+      # time, until a new leader emerges. once a leader is elected, there is
+      # always some peer that is the leader.
+      return result{type_: retry, leader_: N/A}
+
+    - prepare_thread()
+      # this function is run by the prepare_thread_ thread. it is a loop that
+      # sleeps until this peer becomes a follower and then within this loop
+      # starts another loop which keeps running the prepare phase until a leader
+      # emerges. if this peer becomes a leader, the inner loop is exited and the
+      # outer loop goes back to sleeping until becoming a follower. if some
+      # other peer becomes a leader, then the inner loop keeps running and
+      # checking that commit messages (heartbeats) are regularly received from
+      # the current leader.
+      while prepare_thread_running_:
+        # wait until this peer becomes a follower; whenever we are woken up we
+        # also check that the prepare_thread_running_ flag is still set in
+        # addition to checking if we are still a leader so that the thread can
+        # be gracefully shut down by setting the prepare_thread_running_ flag to
+        # false.
+        mu_.lock()
+        while prepare_thread_running_ && is_leader(ballot_, id_):
+          cv_follower_.wait(mu_)
+        mu_.unlock()
+        # at this point, we are a follower
+        while prepare_thread_running_:
+          sleep_for_random_interval()
+          if received_commit():
+            continue
+          # we haven't received a commit so we should start leader election
+          next_ballot = next_ballot()
+          r = run_prepare_phase(next_ballot)
+          if r:
+            # prepare phase succeeded and we got back the highest index of
+            # instances seen in prepare responses and a merged log of all
+            # responses.
+            [last_index, log] = *r
+            become_leader(next_ballot, last_index)
+            replay(next_ballot, log)
+            break
+
+    - commit_thread()
+      # this function is run by the commit_thread_ thread. it has a similar
+      # structure to the prepare_thread() function. it is a loop that sleeps
+      # until this peer becomes a leader and then within this loop starts
+      # another loop which keeps running the commit phase until it becomes a
+      # follower again. when it becomes a follower, the inner loop is exited,
+      # and the outer loop goes back to sleeping until becoming a leader.
+      #
+      # this function serves three purposes: (1) once it becomes a leader, it
+      # keeps sending commit messages, acting as a heartbeat and letting other
+      # peers know that it is still an active leader; (2) it also communicates
+      # to other peers the instances that were committed at the leader, so that
+      # the other peers could commit those instances as well; (3) it also helps
+      # to advance global_last_executed_ and trim the log; to this end, it
+      # receives last_executed_ from all peers, computes the minimum of these
+      # and sends out the new global_last_executed_ at each iteration.
+      while commit_thread_running_:
+        # wait until this peer becomes a leader; whenever we are woken up we
+        # also check that the commit_thread_running_ flag is still set in
+        # addition to checking that we are still a follower so that the thread
+        # can be gracefully shut down by setting the commit_thread_running_ flag
+        # to false.
+        mu_.lock()
+        while commit_thread_running_ && !is_leader(ballot_, id):
+          cv_leader_.wait(mu_)
+        mu_.unlock()
+        # at this point, we are a leader. before entering the loop sends commit
+        # messages, get global_last_execute_.
+        gle = log_->global_last_executed()
+        while commit_thread_running_:
+          ballot = ballot()
+          # if we are not a leader any more, exit the inner loop and go back to
+          # the outer loop and wait until we become a leader again.
+          if !is_leader(ballot, id_):
+            break;
+          # run the commit phase, obtain the new global_last_executed for the
+          # next iteration.
+          gle = run_commit_phase(ballot, gle)
+          # sleep before sending commit messages again.
+          sleep_for_commit_interval()
+
+    - run_prepare_phase(ballot: int) -> optional pair{int, map{int -> instance}
+      # runs the prepare phase using the ballot argument for the outgoing
+      # prepare requests, and if successful, it returns the highest index seen
+      # in among the received instances and a log that is the result of merging
+      # all of the logs received from other peers.
+      prepare_state state
+      state.id_ = id_
+
+      prepare_request request
+      request.set_sender(id_)
+      request.set_ballot(ballot)
+
+      # for each peer run a closure in a separate thread that sends out an RPC
+      # request and updates the state and signals the main thread.
+      for peer in rpc_peers_:
+        tp_.post(lambda {
+          # call RPC stub
+          prepare_response response
+          peer->prepare(request, response)
+          state.mu_.lock()
+          state.num_rpcs_++
+          if response.ok():
+            state.num_oks++
+            for instance in response.instances:
+              state.last_index = max(state.last_index, instance.index)
+              log::insert(state.log_, instance)
+          else:
+            mu_.lock()
+            if response.ballot > ballot_:
+              become_follower(response.ballot)
+              state.leader_ = extract_leader_id(ballot_)
+            mu_.unlock()
+          state.mu_.unlock()
+          state.cv_.notify_one()
+
+       # the main thread sleeps on the condition state.cv_ condition variable
+       # and woken up each time a thread completes and checks to see if an
+       # important condition has changed
+       state.mu_.lock()
+       # sleep while this peer is still a leader and quorum is not reached and
+       # not all peers have responded; since we send each RPC to ourselves as
+       # well, our condition check is <= and not <.
+       while state.leader_ == id &&
+         state.num_oks <= rpc_peers_.size() / 2 &&
+           state.num_rpcs != rpc_peers_.size():
+         state.cv_.wait(mu_)
+       # we exited the loop meaning one of the conditions has changed
+       # if we reached the quorum, respond with the highest index observed and
+       # the merged log.
+       if state.num_oks > rpc_peers_.size() / 2:
+         return {state.last_index_, state.log_}
+       # we haven't reached the quorum and have exited the while loop, so either
+       # someone else became a leader or we didn't get a positive response from
+       # the quorum, which means prepare phase failed, and thus we return a null
+       # value for the optional
+       return nullopt
+       state.mu_.unlock()
+
+    - run_accept_phase(ballot: int, global_last_executed: int)
 
     - commit_handler(request: commit_rpc_request)
       # description: handler for the commit RPC
@@ -282,53 +494,6 @@
         log_.commit_until(request_.last_executed_, ballot_)
         log_.trim_until(request_.global_last_executed)
       return commit_rpc_response{last_executed_: log_.last_executed()}
-
-    - commit_thread()
-      while (running_)
-        wait_until_leader()
-        # this peer is a leader now
-        #
-        # initialize global_last_executed and update it later on each iteration;
-        # we send a commit to ourselves as well, which results in trimming of
-        # our log.
-        global_last_executed = log_.global_last_executed()
-        while (running_)
-          commit_num_rpcs_ = 0
-          commit_responses_ = []
-
-          mu_.lock()
-          commit_request_.set_ballot(ballot_)
-          mu_.unlock
-          commit_request_.set_last_executed(log_.last_executed())
-          commit_request_.set_global_last_executed(global_last_executed)
-
-          for each peer p
-            post a closure to a thread pool {
-              status = p.Commit(commit_request_)
-              commit_mu_.lock()
-              ++commit_num_rpcs_
-              if status.ok
-                commit_responses_.push_back(status.response)
-              commit_cv_.notify_one()
-            }
-            commit_mu_.unlock()
-
-          commit_mu_.lock()
-          # for commits, we have to wait until we have sent rpcs to all of
-          # the peers; this is unlike accept or prepare rpcs because with
-          # commits we receive last_executed from peers, and if we want to
-          # advance global_last_executed, we need to receive last_executed from
-          # all peers so that we could be sure the new global_last_executed is a
-          # global minimum.
-          while (is_leader() && commit_num_rpcs_ != peers_.size())
-            commit_cv_.wait(hb_mu)
-          if commit_responses_.size() == peer_.size()
-            global_last_executed = min(ok_responses)
-          commit_mu_.unlock()
-
-          sleep(commit_interval_)
-          if !is_leader()
-            break
 
     - prepare_handler(request: prepare_rpc_request)
       # description: handler for the prepare RPC
@@ -377,26 +542,6 @@
         return prepare_result_t{type_: reject}
       # multiple timeout responses
       return prepare_result_t{type_: timeout}
-
-    - prepare_thread()
-      for (;;) {
-        sleep until follower
-        for (;;) {
-          sleep(commit_interval_ + random(10, commit_interval_))
-          if time::now() - last_commit_ < commit_interval_:
-            continue
-          prepare_result_t result = prepare()
-          if result.type_ != ok:
-            continue
-          # we are a leader
-          wake up commit_thread
-          ready_ = false
-          log_.merge(result.logs_)
-          if (replay())
-            ready_ = true
-          break
-        }
-      }
 
     - accept_handler(request: accept_rpc_request)
       # description: handler for the accept RPC
