@@ -81,26 +81,26 @@ func (p *Multipaxos) NextBallot() int64 {
 	return nextBallot
 }
 
-func (p *Multipaxos) BecomeLeader(nextBallot int64, lastIndex int64) {
+func (p *Multipaxos) BecomeLeader(newBallot int64, newLastIndex int64) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
 	logger.Infof("%v became a leader: ballot: %v -> %v\n", p.id, p.ballot,
-		nextBallot)
-	p.ballot = nextBallot
-	p.log.SetLastIndex(lastIndex)
+		newBallot)
+	p.ballot = newBallot
+	p.log.SetLastIndex(newLastIndex)
 	p.cvLeader.Signal()
 }
 
-func (p *Multipaxos) BecomeFollower(nextBallot int64) {
-	prevLeader := Leader(p.ballot)
-	nextLeader := Leader(nextBallot)
-	if nextLeader != p.id && (prevLeader == p.id || prevLeader == MaxNumPeers) {
+func (p *Multipaxos) BecomeFollower(newBallot int64) {
+	oldLeaderId := Leader(p.ballot)
+	newLeaderId := Leader(newBallot)
+	if newLeaderId != p.id && (oldLeaderId == p.id || oldLeaderId == MaxNumPeers) {
 		logger.Infof("%v became a follower: ballot: %v -> %v\n", p.id,
-			p.ballot, nextBallot)
+			p.ballot, newBallot)
 		p.cvFollower.Signal()
 	}
-	p.ballot = nextBallot
+	p.ballot = newBallot
 }
 
 func (p *Multipaxos) Id() int64 {
