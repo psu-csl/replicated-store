@@ -65,6 +65,13 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
   MultiPaxos(MultiPaxos&& mp) = delete;
   MultiPaxos& operator=(MultiPaxos&& mp) = delete;
 
+  int64_t Id() const { return id_; }
+
+  int64_t Ballot() const {
+    std::scoped_lock lock(mu_);
+    return ballot_;
+  }
+
   int64_t NextBallot() {
     std::scoped_lock lock(mu_);
     int64_t next_ballot = ballot_;
@@ -91,14 +98,7 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
                  << next_ballot;
       cv_follower_.notify_one();
     }
-    ballot_ = next_ballot;
-  }
-
-  int64_t Id() const { return id_; }
-
-  int64_t Ballot() const {
-    std::scoped_lock lock(mu_);
-    return ballot_;
+    ballot_ = new_ballot;
   }
 
   void WaitUntilLeader() {
