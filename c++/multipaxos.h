@@ -45,16 +45,16 @@ struct Result {
   std::optional<int64_t> leader_;
 };
 
-inline int64_t Leader(int64_t ballot) {
+inline int64_t ExtractLeaderId(int64_t ballot) {
   return ballot & kIdBits;
 }
 
 inline bool IsLeader(int64_t ballot, int64_t id) {
-  return Leader(ballot) == id;
+  return ExtractLeaderId(ballot) == id;
 }
 
 inline bool IsSomeoneElseLeader(int64_t ballot, int64_t id) {
-  return !IsLeader(ballot, id) && Leader(ballot) < kMaxNumPeers;
+  return !IsLeader(ballot, id) && ExtractLeaderId(ballot) < kMaxNumPeers;
 }
 
 class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
@@ -90,8 +90,8 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
   }
 
   void BecomeFollower(int64_t new_ballot) {
-    auto old_leader_id = Leader(ballot_);
-    auto new_leader_id = Leader(new_ballot);
+    auto old_leader_id = ExtractLeaderId(ballot_);
+    auto new_leader_id = ExtractLeaderId(new_ballot);
     if (new_leader_id != id_ &&
         (old_leader_id == id_ || old_leader_id == kMaxNumPeers)) {
       DLOG(INFO) << id_ << " became a follower: ballot: " << ballot_ << " -> "

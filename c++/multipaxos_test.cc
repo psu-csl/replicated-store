@@ -36,7 +36,7 @@ using multipaxos::ResponseType::REJECT;
 static const int kNumPeers = 3;
 
 int64_t Leader(MultiPaxos const& peer) {
-  return Leader(peer.Ballot());
+  return ExtractLeaderId(peer.Ballot());
 }
 
 bool IsLeader(MultiPaxos const& peer) {

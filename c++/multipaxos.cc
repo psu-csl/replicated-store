@@ -130,7 +130,7 @@ Result MultiPaxos::Replicate(Command command, int64_t client_id) {
     return RunAcceptPhase(ballot, log_->AdvanceLastIndex(), std::move(command),
                           client_id);
   if (IsSomeoneElseLeader(ballot, id_))
-    return Result{ResultType::kSomeoneElseLeader, Leader(ballot)};
+    return Result{ResultType::kSomeoneElseLeader, ExtractLeaderId(ballot)};
   return Result{ResultType::kRetry, std::nullopt};
 }
 
@@ -197,7 +197,7 @@ MultiPaxos::RunPreparePhase(int64_t ballot) {
             std::scoped_lock lock(mu_);
             if (response.ballot() > ballot_) {
               BecomeFollower(response.ballot());
-              state->leader_ = Leader(ballot_);
+              state->leader_ = ExtractLeaderId(ballot_);
             }
           }
         }
@@ -249,7 +249,7 @@ Result MultiPaxos::RunAcceptPhase(int64_t ballot,
             std::scoped_lock lock(mu_);
             if (response.ballot() > ballot_) {
               BecomeFollower(response.ballot());
-              state->current_leader_ = Leader(ballot_);
+              state->current_leader_ = ExtractLeaderId(ballot_);
             }
           }
         }
@@ -301,7 +301,7 @@ int64_t MultiPaxos::RunCommitPhase(int64_t ballot,
             std::scoped_lock lock(mu_);
             if (response.ballot() > ballot_) {
               BecomeFollower(response.ballot());
-              state->leader_ = Leader(ballot_);
+              state->leader_ = ExtractLeaderId(ballot_);
             }
           }
         }
