@@ -277,7 +277,16 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
   }
   void prepareThread() {
     while (prepareThreadRunning.get()) {
-      waitUntilFollower();
+      mu.lock();
+      try {
+        while (prepareThreadRunning.get() && isLeader(this.ballot, this.id)) {
+          cvFollower.await();
+        }
+      } catch (InterruptedException e) {
+        e.printStackTrace();
+      } finally {
+        mu.unlock();
+      }
       while (prepareThreadRunning.get()) {
         sleepForRandomInterval();
         if (receivedCommit()) {
@@ -297,7 +306,16 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
   }
   public void commitThread() {
     while (commitThreadRunning.get()) {
-      waitUntilLeader();
+      mu.lock();
+      try {
+        while (commitThreadRunning.get() && !isLeader(this.ballot, this.id)) {
+          cvLeader.await();
+        }
+      } catch (InterruptedException e) {
+        e.printStackTrace();
+      } finally {
+        mu.unlock();
+      }
       var gle = log.getGlobalLastExecuted();
       while (commitThreadRunning.get()) {
         var ballot = ballot();
@@ -630,30 +648,6 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
       mu.unlock();
     }
     ballot = newBallot;
-  }
-   public void waitUntilLeader() {
-    mu.lock();
-    try {
-      while (commitThreadRunning.get() && !isLeader(this.ballot, this.id)) {
-        cvLeader.await();
-      }
-    } catch (InterruptedException e) {
-      e.printStackTrace();
-    } finally {
-      mu.unlock();
-    }
-  }
-  public void waitUntilFollower() {
-    mu.lock();
-    try {
-      while (prepareThreadRunning.get() && isLeader(this.ballot, this.id)) {
-        cvFollower.await();
-      }
-    } catch (InterruptedException e) {
-      e.printStackTrace();
-    } finally {
-      mu.unlock();
-    }
   }
   public void sleepForCommitInterval() {
     try {
