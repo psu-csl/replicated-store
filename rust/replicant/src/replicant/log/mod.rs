@@ -146,13 +146,10 @@ impl Instance {
     }
 }
 
-pub fn insert(
-    map_log: &mut HashMap<i64, Instance>,
-    instance: Instance,
-) -> bool {
-    let it = map_log.get(&instance.index);
+pub fn insert(log: &mut HashMap<i64, Instance>, instance: Instance) -> bool {
+    let it = log.get(&instance.index);
     if it.is_none() {
-        map_log.insert(instance.index, instance);
+        log.insert(instance.index, instance);
         return true;
     }
     let it = it.unwrap();
@@ -161,7 +158,7 @@ pub fn insert(
         return false;
     }
     if instance.ballot > it.ballot {
-        map_log.insert(instance.index, instance);
+        log.insert(instance.index, instance);
         return false;
     }
     if instance.ballot == it.ballot {
@@ -182,12 +179,12 @@ struct LogInner {
 impl LogInner {
     fn new(kv_store: Box<dyn KVStore + Sync + Send>) -> Self {
         LogInner {
-            log: HashMap::new(),
             running: true,
+            kv_store,
+            log: HashMap::new(),
             last_index: 0,
             last_executed: 0,
             global_last_executed: 0,
-            kv_store,
         }
     }
 
@@ -239,6 +236,16 @@ impl Log {
     pub fn advance_last_index(&self) -> i64 {
         let mut inner = self.inner.lock().unwrap();
         inner.last_index += 1;
+        inner.last_index
+    }
+
+    pub fn set_last_index(&self, last_index: i64) {
+        let mut inner = self.inner.lock().unwrap();
+        inner.last_index = last_index;
+    }
+
+    pub fn last_index(&self) -> i64 {
+        let inner = self.inner.lock().unwrap();
         inner.last_index
     }
 

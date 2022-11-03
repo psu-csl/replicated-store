@@ -118,8 +118,9 @@
   - public methods
 
     - constructor(kv_store: KVStore)
-      kv_store_ = kv_store
       running_ = true
+      kv_store_ = kv_store
+      log_ = empty map
       last_index_ = 0
       last_executed_ = 0
       global_last_executed_ = 0
