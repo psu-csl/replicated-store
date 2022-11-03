@@ -55,19 +55,6 @@ void Replicant::StopServer() {
   client_manager_.StopAll();
 }
 
-void Replicant::AcceptClient() {
-  auto self(shared_from_this());
-  acceptor_.async_accept(asio::make_strand(*io_context_),
-                         [this, self](std::error_code ec, tcp::socket socket) {
-                           if (!acceptor_.is_open())
-                             return;
-                           if (!ec) {
-                             client_manager_.Start(std::move(socket));
-                             AcceptClient();
-                           }
-                         });
-}
-
 void Replicant::StartExecutorThread() {
   DLOG(INFO) << id_ << " starting executor thread";
   executor_thread_ = std::thread(&Replicant::ExecutorThread, this);
@@ -89,4 +76,17 @@ void Replicant::ExecutorThread() {
     if (client)
       client->Write(result.value_);
   }
+}
+
+void Replicant::AcceptClient() {
+  auto self(shared_from_this());
+  acceptor_.async_accept(asio::make_strand(*io_context_),
+                         [this, self](std::error_code ec, tcp::socket socket) {
+                           if (!acceptor_.is_open())
+                             return;
+                           if (!ec) {
+                             client_manager_.Start(std::move(socket));
+                             AcceptClient();
+                           }
+                         });
 }
