@@ -30,38 +30,6 @@ public class ClientManager extends SimpleChannelInboundHandler<String> {
     this.numPeers = numPeers;
     this.multiPaxos = multiPaxos;
   }
-
-  public static Command parse(String request) {
-
-    if (request == null) {
-      return null;
-    }
-    String[] tokens = request.split(" ");//"\\s+");
-    String command = tokens[0];
-    String key = tokens[1];
-    Command res = new Command();
-    res.setKey(key);
-    switch (command) {
-      case "get":
-        res.setCommandType(CommandType.Get);
-        break;
-      case "del":
-        res.setCommandType(CommandType.Del);
-        break;
-      case "put":
-        res.setCommandType(CommandType.Put);
-        String value = tokens[2];
-        if (value == null) {
-          return null;
-        }
-        res.setValue(value);
-        break;
-      default:
-        return null;
-    }
-    return res;
-  }
-
   private long nextClientId() {
     var id = nextClientId;
     nextClientId += numPeers;
@@ -73,7 +41,7 @@ public class ClientManager extends SimpleChannelInboundHandler<String> {
     var id = nextClientId();
     logger.info("client joined " + ctx);
     ctx.channel().attr(clientIdAttrKey).set(id);
-    clients.put(id, new Client(ctx.channel()));
+    clients.put(id, new Client(id,ctx.channel(),multiPaxos));
   }
 
   @Override
@@ -86,17 +54,11 @@ public class ClientManager extends SimpleChannelInboundHandler<String> {
 
   @Override
   public void channelRead0(ChannelHandlerContext ctx, String msg) {
-    var command = parse(msg);
     var clientId = ctx.channel().attr(clientIdAttrKey).get();
-    var r = multiPaxos.replicate(command, clientId);
-    if (r.type == MultiPaxosResultType.kOk) {
-      ctx.channel().flush();
-    } else if (r.type == MultiPaxosResultType.kRetry) {
-      ctx.channel().writeAndFlush("retry\n");
-    } else {
-      assert r.type == MultiPaxosResultType.kSomeoneElseLeader;
-      ctx.channel().writeAndFlush("leader is ...\n");
-    }
+    var client = clients.get(clientId);
+    if(client!=null)
+      client.read(msg);
+
   }
 
 
