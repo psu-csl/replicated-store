@@ -77,6 +77,14 @@ public class ClientManager extends SimpleChannelInboundHandler<String> {
   }
 
   @Override
+  public void channelUnregistered(ChannelHandlerContext ctx) throws Exception {
+    var id = ctx.channel().attr(clientIdAttrKey).get();
+    var it = channels.get(id);
+    assert it!=null;
+    channels.remove(id);
+  }
+
+  @Override
   public void channelRead0(ChannelHandlerContext ctx, String msg) {
     var command = parse(msg);
     var clientId = ctx.channel().attr(clientIdAttrKey).get();
