@@ -8,9 +8,9 @@ import io.netty.channel.ChannelHandler.Sharable;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.util.AttributeKey;
-import java.util.HashMap;
-import java.util.Map;
-import org.codehaus.jackson.map.ObjectMapper;
+
+import java.util.concurrent.ConcurrentHashMap;
+
 import org.slf4j.LoggerFactory;
 import multipaxos.MultiPaxos;
 import multipaxos.MultiPaxosResultType;
@@ -18,8 +18,8 @@ import multipaxos.MultiPaxosResultType;
 @Sharable
 public class ClientManager extends SimpleChannelInboundHandler<String> {
 
-  private static final Logger logger = (Logger) LoggerFactory.getLogger(ClientHandler.class);
-  private final Map<Long, Channel> channels = new HashMap<>();
+  private static final Logger logger = (Logger) LoggerFactory.getLogger(ClientManager.class);
+  private final ConcurrentHashMap<Long, Channel> channels = new ConcurrentHashMap<>();
   private final long numPeers;
   private final MultiPaxos multiPaxos;
   private long nextClientId;
