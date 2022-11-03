@@ -148,8 +148,8 @@ void MultiPaxos::PrepareThread() {
       auto next_ballot = NextBallot();
       auto r = RunPreparePhase(next_ballot);
       if (r) {
-        auto [last_index, log] = *r;
-        BecomeLeader(next_ballot, last_index);
+        auto [max_last_index, log] = *r;
+        BecomeLeader(next_ballot, max_last_index);
         Replay(next_ballot, log);
         break;
       }
@@ -197,8 +197,8 @@ MultiPaxos::RunPreparePhase(int64_t ballot) {
           if (response.type() == OK) {
             ++state->num_oks_;
             for (int i = 0; i < response.instances_size(); ++i) {
-              state->last_index_ =
-                  std::max(state->last_index_, response.instances(i).index());
+              state->max_last_index_ = std::max(state->max_last_index_,
+                                                response.instances(i).index());
               Insert(&state->log_, std::move(response.instances(i)));
             }
           } else {
@@ -219,7 +219,7 @@ MultiPaxos::RunPreparePhase(int64_t ballot) {
            state->num_rpcs_ != rpc_peers_.size())
       state->cv_.wait(lock);
     if (state->num_oks_ > rpc_peers_.size() / 2)
-      return std::make_pair(state->last_index_, std::move(state->log_));
+      return std::make_pair(state->max_last_index_, std::move(state->log_));
   }
   return std::nullopt;
 }

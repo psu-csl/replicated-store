@@ -184,11 +184,11 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
 
 struct prepare_state_t {
   explicit prepare_state_t(int64_t leader)
-      : num_rpcs_(0), num_oks_(0), leader_(leader), last_index_(0) {}
+      : num_rpcs_(0), num_oks_(0), leader_(leader), max_last_index_(0) {}
   size_t num_rpcs_;
   size_t num_oks_;
   int64_t leader_;
-  int64_t last_index_;
+  int64_t max_last_index_;
   std::unordered_map<int64_t, multipaxos::Instance> log_;
   std::mutex mu_;
   std::condition_variable cv_;
