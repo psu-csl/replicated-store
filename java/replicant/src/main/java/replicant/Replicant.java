@@ -58,8 +58,6 @@ public class Replicant {
   }
 
   private void startServer() {
-
-
     try {
       ServerBootstrap b = new ServerBootstrap();
       b.group(bossGroup, workerGroup).channel(NioServerSocketChannel.class).childHandler(
@@ -102,7 +100,6 @@ public class Replicant {
     executorThread.shutdown();
   }
 
-
   private void executorThread() {
     while (true) {
       var r = log.execute();
@@ -113,7 +110,6 @@ public class Replicant {
       var result = r.getValue();
       var client = clientManager.get(id);
       client.write(result.getValue()+"\n");
-      //clientHandler.respond(clientId, result.getValue());
     }
   }
 
