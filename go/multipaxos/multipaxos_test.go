@@ -32,13 +32,6 @@ func initPeers() {
 	}
 }
 
-func setup() {
-	initPeers()
-	peers[0].Start()
-	peers[1].Start()
-	peers[2].Start()
-}
-
 func setupOnePeer(id int64) {
 	configs[id] = config.DefaultConfig(id, NumPeers)
 	stores[id] = kvstore.NewMemKVStore()
@@ -106,6 +99,19 @@ func sendAccept(stub pb.MultiPaxosRPCClient,
 		return nil
 	}
 	return response
+}
+
+func Connect(multipaxos *Multipaxos, addrs []string) {
+	var opts []grpc.DialOption
+	opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	for i, addr := range addrs {
+		conn, err := grpc.Dial(addr, opts...)
+		if err != nil {
+			panic("dial error")
+		}
+		client := pb.NewMultiPaxosRPCClient(conn)
+		multipaxos.rpcPeers[i] = NewRpcPeer(int64(i), client)
+	}
 }
 
 func TestNewMultipaxos(t *testing.T) {
@@ -318,7 +324,7 @@ func TestPrepareResponseWithHigherBallotChangesLeaderToFollower(t *testing.T) {
 		peer.StartRPCServer()
 	}
 	for id, peer := range peers {
-		peer.Connect(configs[id].Peers)
+		Connect(peer, configs[id].Peers)
 	}
 	stub1 := makeStub(configs[0].Peers[1])
 
@@ -346,7 +352,7 @@ func TestAcceptResponseWithHigherBallotChangesLeaderToFollower(t *testing.T) {
 		peer.StartRPCServer()
 	}
 	for id, peer := range peers {
-		peer.Connect(configs[id].Peers)
+		Connect(peer, configs[id].Peers)
 	}
 	stub1 := makeStub(configs[0].Peers[1])
 
@@ -375,7 +381,7 @@ func TestCommitResponseWithHigherBallotChangesLeaderToFollower(t *testing.T) {
 	for _, peer := range peers {
 		peer.StartRPCServer()
 	}
-	peers[0].Connect(configs[0].Peers)
+	Connect(peers[0], configs[0].Peers)
 	stub1 := makeStub(configs[0].Peers[1])
 
 	peer0Ballot := peers[0].NextBallot()
@@ -457,7 +463,7 @@ func TestRunPreparePhase(t *testing.T) {
 
 	peers[1].StartRPCServer()
 	defer peers[1].StopRPCServer()
-	peers[0].Connect(configs[0].Peers)
+	Connect(peers[0], configs[0].Peers)
 
 	lastIndex, logMap := peers[0].RunPreparePhase(ballot)
 	assert.EqualValues(t, 5, lastIndex)
@@ -491,7 +497,7 @@ func TestRunAcceptPhase(t *testing.T) {
 
 	peers[1].StartRPCServer()
 	defer peers[1].StopRPCServer()
-	peers[0].Connect(configs[0].Peers)
+	Connect(peers[0], configs[0].Peers)
 
 	r2 := peers[0].RunAcceptPhase(ballot, index1, &pb.Command{Type: pb.CommandType_PUT}, 0)
 	assert.EqualValues(t, Ok, r2.Type)
@@ -546,7 +552,7 @@ func TestReplay(t *testing.T) {
 	peers[1].StartRPCServer()
 	defer peers[0].StopRPCServer()
 	defer peers[1].StopRPCServer()
-	peers[0].Connect(configs[0].Peers)
+	Connect(peers[0], configs[0].Peers)
 
 	ballot := peers[0].NextBallot()
 

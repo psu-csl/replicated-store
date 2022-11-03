@@ -502,16 +502,3 @@ func (p *Multipaxos) Commit(ctx context.Context,
 	}
 	return response, nil
 }
-
-func (p *Multipaxos) Connect(addrs []string) {
-	var opts []grpc.DialOption
-	opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	for i, addr := range addrs {
-		conn, err := grpc.Dial(addr, opts...)
-		if err != nil {
-			panic("dial error")
-		}
-		client := pb.NewMultiPaxosRPCClient(conn)
-		p.rpcPeers[i] = NewRpcPeer(int64(i), client)
-	}
-}
