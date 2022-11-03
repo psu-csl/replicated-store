@@ -510,15 +510,14 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
   public void replay(long ballot, HashMap<Long, log.Instance> log) {
 
     for (Map.Entry<Long, log.Instance> entry : log.entrySet()) {
-      var res = runAcceptPhase(ballot, entry.getValue().getIndex(), entry.getValue().getCommand(),
+      var r = runAcceptPhase(ballot, entry.getValue().getIndex(), entry.getValue().getCommand(),
               entry.getValue().getClientId());
-      while(res.type == MultiPaxosResultType.kRetry)
-        res = runAcceptPhase(ballot, entry.getValue().getIndex(), entry.getValue().getCommand(),entry.getValue().getClientId());
-      if (res.type == MultiPaxosResultType.kSomeoneElseLeader) {
+      while(r.type == MultiPaxosResultType.kRetry)
+        r = runAcceptPhase(ballot, entry.getValue().getIndex(), entry.getValue().getCommand(),entry.getValue().getClientId());
+      if (r.type == MultiPaxosResultType.kSomeoneElseLeader) {
         return;
       }
     }
-    logger.info(this.id + " leaderTest is ready to server");
   }
   @Override
   public void prepare(multipaxos.PrepareRequest request, StreamObserver<multipaxos.PrepareResponse> responseObserver) {
