@@ -586,7 +586,6 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
         response.setBallot(this.ballot);
         response.setType(multipaxos.ResponseType.REJECT);
       }
-      response.setLastExecuted(log.getLastExecuted());
       responseObserver.onNext(response.build());
       responseObserver.onCompleted();
     } finally {
