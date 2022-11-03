@@ -13,26 +13,21 @@ import (
 
 type Replicant struct {
 	id            int64
-	numPeers      int64
-	store         *kvstore.MemKVStore
 	log           *consensusLog.Log
 	multipaxos    *multipaxos.Multipaxos
 	ipPort        string
-	listener      net.Listener
+	acceptor      net.Listener
 	clientManager *ClientManager
 }
 
 func NewReplicant(config config.Config) *Replicant {
 	r := &Replicant{
 		id:       config.Id,
-		numPeers: int64(len(config.Peers)),
-		store:    kvstore.NewMemKVStore(),
 		ipPort:   config.Peers[config.Id],
 	}
-	r.log = consensusLog.NewLog(r.store)
+	r.log = consensusLog.NewLog(kvstore.NewMemKVStore())
 	r.multipaxos = multipaxos.NewMultipaxos(r.log, config)
-	r.clientManager = NewClientManager(r.id, r.numPeers, r.multipaxos)
-
+	r.clientManager = NewClientManager(r.id, int64(len(config.Peers)), r.multipaxos)
 	return r
 }
 
@@ -51,32 +46,32 @@ func (r *Replicant) Stop() {
 func (r *Replicant) StartServer() {
 	pos := strings.Index(r.ipPort, ":")
 	if pos == -1 {
-		panic("no separator : in the listener port")
+		panic("no separator : in the acceptor port")
 	}
 	pos += 1
 	port, err := strconv.Atoi(r.ipPort[pos:])
 	if err != nil {
-		panic("parsing listener port failed")
+		panic("parsing acceptor port failed")
 	}
 	port += 1
 
-	listener, err := net.Listen("tcp", ":" + strconv.Itoa(port))
+	acceptor, err := net.Listen("tcp", ":" + strconv.Itoa(port))
 	if err != nil {
-		logger.Fatalf("listener error: %v", err)
+		logger.Fatalln(err)
 	}
-	logger.Infof("replicant %v starting server at port %v\n", r.id, port)
-	r.listener = listener
+	logger.Infof("%v starting server at port %v\n", r.id, port)
+	r.acceptor = acceptor
 	r.AcceptClient()
 }
 
 func (r *Replicant) StopServer() {
-	r.listener.Close()
+	r.acceptor.Close()
 	r.clientManager.StopAll()
 }
 
 func (r *Replicant) AcceptClient() {
 	for {
-		conn, err := r.listener.Accept()
+		conn, err := r.acceptor.Accept()
 		if err != nil {
 			logger.Error(err)
 			break
@@ -86,10 +81,12 @@ func (r *Replicant) AcceptClient() {
 }
 
 func (r *Replicant) StartExecutorThread() {
+	logger.Infof("%v starting executor thread\n", r.id)
 	go r.executorThread()
 }
 
 func (r *Replicant) StopExecutorThread() {
+	logger.Infof("%v stopping executor thread\n", r.id)
 	r.log.Stop()
 }
 

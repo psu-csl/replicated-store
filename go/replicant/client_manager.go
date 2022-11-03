@@ -2,6 +2,7 @@ package replicant
 
 import (
 	"github.com/psu-csl/replicated-store/go/multipaxos"
+	logger "github.com/sirupsen/logrus"
 	"net"
 	"sync"
 )
@@ -32,41 +33,44 @@ func (cm *ClientManager) NextClientId() int64 {
 	return id
 }
 
-func (cm *ClientManager) Start(conn net.Conn) {
+func (cm *ClientManager) Start(socket net.Conn) {
 	id := cm.NextClientId()
-	client := NewClient(id, conn, cm.multipaxos, cm)
+	client := NewClient(id, socket, cm.multipaxos, cm)
 
 	cm.mu.Lock()
 	cm.clients[id] = client
 	cm.mu.Unlock()
-
+	logger.Infof("client_manager started client %v\n", id)
 	client.Start()
 }
 
 func (cm *ClientManager) Get(id int64) *Client {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
-	if client, ok := cm.clients[id]; ok {
-		return client
+	client, ok := cm.clients[id]
+	if !ok {
+		return nil
 	}
-	return nil
+	return client
 }
 
 func (cm *ClientManager) Stop(id int64) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
-	if client, ok := cm.clients[id]; ok {
-		client.Stop()
-		delete(cm.clients, id)
-		return
+	logger.Infof("client_manager stopped client %v\n", id)
+	client, ok := cm.clients[id]
+	if !ok {
+		panic("no client to stop")
 	}
-	panic("no client to stop")
+	client.Stop()
+	delete(cm.clients, id)
 }
 
 func (cm *ClientManager) StopAll() {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 	for id, client := range cm.clients {
+		logger.Infof("client_manager stopping all clients %v\n", id)
 		client.Stop()
 		delete(cm.clients, id)
 	}
