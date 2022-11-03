@@ -268,8 +268,8 @@ func (p *Multipaxos) RunPreparePhase(ballot int64) (int64,
 	state := NewPrepareState(p.id)
 
 	request := pb.PrepareRequest{
-		Ballot: ballot,
 		Sender: p.id,
+		Ballot: ballot,
 	}
 
 	for _, peer := range p.rpcPeers {
