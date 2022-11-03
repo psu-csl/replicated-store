@@ -2,6 +2,11 @@
 
 * TODO
 ** All
+*** in replay() function, if there is a gap send out a no-op command
+     it is possible that at the end of prepare phase, the new leader ends up
+     with a log that contains a gap; in this case the new leader should issue a
+     no-op command for the gap so that the instances could be executed on the
+     state machine.
 *** add unit test for log::set_index
 *** get rid of ready state and start serving clients immediately
      currently, if a new leader is elected, we do not start serving clients
