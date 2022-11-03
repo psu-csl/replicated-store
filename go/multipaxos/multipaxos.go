@@ -121,7 +121,6 @@ func (p *Multipaxos) sleepForCommitInterval() {
 func (p *Multipaxos) sleepForRandomInterval() {
 	sleepTime := p.commitInterval + p.commitInterval/ 2 +
 		rand.Int63n(p.commitInterval/ 2)
-	logger.Debug(sleepTime)
 	time.Sleep(time.Duration(sleepTime) * time.Millisecond)
 }
 
