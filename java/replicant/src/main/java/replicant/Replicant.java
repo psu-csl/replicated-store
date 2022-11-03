@@ -16,7 +16,7 @@ import io.netty.handler.codec.string.StringEncoder;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import kvstore.KVStore;
+
 import kvstore.MemKVStore;
 import log.Log;
 import org.slf4j.LoggerFactory;
@@ -28,10 +28,8 @@ public class Replicant {
   private static final Logger logger = (Logger) LoggerFactory.getLogger(Replicant.class);
   private final EventLoopGroup bossGroup = new NioEventLoopGroup();
   private final EventLoopGroup workerGroup = new NioEventLoopGroup();
-  private final long numPeers;
-
   private final long id;
-  private final Log log = new Log(new MemKVStore());
+  private final Log log;
   private final MultiPaxos multiPaxos;
   private final String ipPort;
   private ClientManager clientManager;
@@ -40,6 +38,8 @@ public class Replicant {
 
   public Replicant(Configuration config) {
     this.id = config.getId();
+    this.log = new Log(new MemKVStore());
+    this.multiPaxos = new MultiPaxos(log, config);
     this.ipPort = config.getPeers().get((int) id);
     clientManager = new ClientManager(id, config.getPeers().size(), multiPaxos);
 
@@ -52,6 +52,7 @@ public class Replicant {
   }
 
   public void stop() {
+    stopServer();
     stopExecutorThread();
     multiPaxos.stop();
   }
