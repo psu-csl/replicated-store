@@ -658,7 +658,7 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
   }
   public void sleepForRandomInterval() {
     Random random = new Random();
-    var sleepTime = random.nextInt(0, (int) commitInterval);
+    var sleepTime = random.nextInt(0, (int) commitInterval/2);
     try {
       Thread.sleep(commitInterval + commitInterval / 2 + sleepTime);
     } catch (InterruptedException e) {
