@@ -397,7 +397,6 @@ func (p *Multipaxos) RunCommitPhase(ballot int64, globalLastExecuted int64) int6
 
 			state.Mu.Lock()
 			defer state.Mu.Unlock()
-			defer state.Cv.Signal()
 
 			state.NumRpcs += 1
 			if err == nil {
@@ -415,6 +414,7 @@ func (p *Multipaxos) RunCommitPhase(ballot int64, globalLastExecuted int64) int6
 					p.mu.Unlock()
 				}
 			}
+			state.Cv.Signal()
 		}(peer)
 	}
 
