@@ -81,11 +81,11 @@ func (r *Replicant) StopExecutorThread() {
 
 func (r *Replicant) executorThread() {
 	for {
-		clientId, result := r.log.Execute()
+		id, result := r.log.Execute()
 		if result == nil {
 			break
 		}
-		client := r.clientManager.Get(clientId)
+		client := r.clientManager.Get(id)
 		if client != nil {
 			client.Write(result.Value)
 		}
