@@ -12,6 +12,7 @@ use rpc::{CommitRequest, CommitResponse};
 use rpc::{PrepareRequest, PrepareResponse};
 use serde_json::json;
 use serde_json::Value as json;
+use std::cmp;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -57,7 +58,6 @@ struct RpcPeer {
 
 struct MultiPaxosInner {
     ballot: Mutex<i64>,
-    ready: AtomicBool,
     log: Arc<Log>,
     id: i64,
     commit_received: AtomicBool,
@@ -96,7 +96,6 @@ impl MultiPaxosInner {
         }
         Self {
             ballot: Mutex::new(0),
-            ready: AtomicBool::new(false),
             log,
             id,
             commit_received: AtomicBool::new(false),
@@ -118,14 +117,14 @@ impl MultiPaxosInner {
         next_ballot
     }
 
-    fn become_leader(&self, next_ballot: i64) {
+    fn become_leader(&self, new_ballot: i64, new_last_index: i64) {
         let mut ballot = self.ballot.lock().unwrap();
         info!(
             "{} became a leader: ballot: {} -> {}",
-            self.id, *ballot, next_ballot
+            self.id, *ballot, new_ballot
         );
-        *ballot = next_ballot;
-        self.ready.store(false, Ordering::Relaxed);
+        *ballot = new_ballot;
+        self.log.set_last_index(new_last_index);
         self.became_leader.notify_one();
     }
 
@@ -144,9 +143,9 @@ impl MultiPaxosInner {
         *ballot = next_ballot;
     }
 
-    fn ballot(&self) -> (i64, bool) {
+    fn ballot(&self) -> i64 {
         let ballot = self.ballot.lock().unwrap();
-        (*ballot, self.ready.load(Ordering::Relaxed))
+        *ballot
     }
 
     async fn sleep_for_commit_interval(&self) {
@@ -173,8 +172,10 @@ impl MultiPaxosInner {
                     continue;
                 }
                 let next_ballot = self.next_ballot();
-                if let Some(log) = self.run_prepare_phase(next_ballot).await {
-                    self.become_leader(next_ballot);
+                if let Some((last_index, log)) =
+                    self.run_prepare_phase(next_ballot).await
+                {
+                    self.become_leader(next_ballot, last_index);
                     self.replay(next_ballot, log).await;
                     break;
                 }
@@ -187,7 +188,7 @@ impl MultiPaxosInner {
             self.became_leader.notified().await;
             let mut gle = self.log.global_last_executed();
             while self.commit_task_running.load(Ordering::Relaxed) {
-                let (ballot, _) = self.ballot();
+                let ballot = self.ballot();
                 if !is_leader(ballot, self.id) {
                     break;
                 }
@@ -200,7 +201,7 @@ impl MultiPaxosInner {
     async fn run_prepare_phase(
         &self,
         ballot: i64,
-    ) -> Option<HashMap<i64, Instance>> {
+    ) -> Option<(i64, HashMap<i64, Instance>)> {
         let num_peers = self.rpc_peers.len();
         let mut responses = JoinSet::new();
 
@@ -216,6 +217,7 @@ impl MultiPaxosInner {
 
         let mut num_oks = 0;
         let mut log = HashMap::new();
+        let mut last_index = 0;
 
         while let Some(response) = responses.join_next().await {
             if let Ok(Ok(response)) = response {
@@ -223,6 +225,7 @@ impl MultiPaxosInner {
                 if response.r#type == ResponseType::Ok as i32 {
                     num_oks += 1;
                     for instance in response.instances {
+                        last_index = cmp::max(last_index, instance.index);
                         insert(&mut log, instance);
                     }
                 } else {
@@ -234,7 +237,7 @@ impl MultiPaxosInner {
                 }
             }
             if num_oks > num_peers / 2 {
-                return Some(log);
+                return Some((last_index, log));
             }
         }
         None
@@ -363,8 +366,6 @@ impl MultiPaxosInner {
                 return;
             }
         }
-        self.ready.store(true, Ordering::Relaxed);
-        info!("{} leader is ready to serve", self.id);
     }
 }
 
@@ -559,20 +560,17 @@ impl MultiPaxos {
         command: &Command,
         client_id: i64,
     ) -> ResultType {
-        let (ballot, ready) = self.multi_paxos.ballot();
+        let ballot = self.multi_paxos.ballot();
         if is_leader(ballot, self.multi_paxos.id) {
-            if ready {
-                return self
-                    .multi_paxos
-                    .run_accept_phase(
-                        ballot,
-                        self.multi_paxos.log.advance_last_index(),
-                        command,
-                        client_id,
-                    )
-                    .await;
-            }
-            return ResultType::Retry;
+            return self
+                .multi_paxos
+                .run_accept_phase(
+                    ballot,
+                    self.multi_paxos.log.advance_last_index(),
+                    command,
+                    client_id,
+                )
+                .await;
         }
         if is_someone_else_leader(ballot, self.multi_paxos.id) {
             return ResultType::SomeoneElseLeader(leader(ballot));
@@ -584,8 +582,8 @@ impl MultiPaxos {
         self.multi_paxos.next_ballot()
     }
 
-    fn become_leader(&self, next_ballot: i64) {
-        self.multi_paxos.become_leader(next_ballot);
+    fn become_leader(&self, new_ballot: i64, new_last_index: i64) {
+        self.multi_paxos.become_leader(new_ballot, new_last_index);
     }
 }
 
@@ -610,12 +608,12 @@ mod tests {
     }
 
     fn is_leader(peer: &MultiPaxos) -> bool {
-        let (ballot, _) = peer.multi_paxos.ballot();
+        let ballot = peer.multi_paxos.ballot();
         super::is_leader(ballot, peer.multi_paxos.id)
     }
 
     fn leader(peer: &MultiPaxos) -> i64 {
-        let (ballot, _) = peer.multi_paxos.ballot();
+        let ballot = peer.multi_paxos.ballot();
         super::leader(ballot)
     }
 
@@ -700,8 +698,14 @@ mod tests {
 
         let handle0 = peer0.start_rpc_server_task();
 
-        peer0.become_leader(peer0.next_ballot());
-        peer0.become_leader(peer0.next_ballot());
+        peer0.become_leader(
+            peer0.next_ballot(),
+            peer0.multi_paxos.log.last_index(),
+        );
+        peer0.become_leader(
+            peer0.next_ballot(),
+            peer0.multi_paxos.log.last_index(),
+        );
 
         let stale_ballot = peer1.next_ballot();
 
@@ -733,7 +737,10 @@ mod tests {
 
         let handle0 = peer0.start_rpc_server_task();
 
-        peer0.become_leader(peer0.next_ballot());
+        peer0.become_leader(
+            peer0.next_ballot(),
+            peer0.multi_paxos.log.last_index(),
+        );
         assert!(is_leader(&peer0));
 
         let r = send_prepare(&mut stub, peer1.next_ballot()).await;
@@ -741,18 +748,30 @@ mod tests {
         assert!(!is_leader(&peer0));
         assert_eq!(1, leader(&peer0));
 
-        peer1.become_leader(peer1.next_ballot());
+        peer1.become_leader(
+            peer1.next_ballot(),
+            peer1.multi_paxos.log.last_index(),
+        );
 
-        peer0.become_leader(peer0.next_ballot());
+        peer0.become_leader(
+            peer0.next_ballot(),
+            peer0.multi_paxos.log.last_index(),
+        );
         assert!(is_leader(&peer0));
         let index = peer0.multi_paxos.log.advance_last_index();
         let instance = Instance::inprogress_get(peer1.next_ballot(), index);
         let r = send_accept(&mut stub, instance).await;
         assert_eq!(ResponseType::Ok as i32, r.r#type);
 
-        peer1.become_leader(peer1.next_ballot());
+        peer1.become_leader(
+            peer1.next_ballot(),
+            peer1.multi_paxos.log.last_index(),
+        );
 
-        peer0.become_leader(peer0.next_ballot());
+        peer0.become_leader(
+            peer0.next_ballot(),
+            peer0.multi_paxos.log.last_index(),
+        );
         assert!(is_leader(&peer0));
         let r = send_commit(&mut stub, peer1.next_ballot(), 0, 0).await;
         assert_eq!(ResponseType::Ok as i32, r.r#type);
@@ -904,10 +923,13 @@ mod tests {
         let handle2 = peer2.start_rpc_server_task();
 
         let peer0_ballot = peer0.next_ballot();
-        peer0.become_leader(peer0_ballot);
-        peer1.become_leader(peer1.next_ballot());
+        peer0.become_leader(peer0_ballot, peer0.multi_paxos.log.last_index());
+        peer1.become_leader(
+            peer1.next_ballot(),
+            peer1.multi_paxos.log.last_index(),
+        );
         let peer2_ballot = peer2.next_ballot();
-        peer2.become_leader(peer2_ballot);
+        peer2.become_leader(peer2_ballot, peer2.multi_paxos.log.last_index());
 
         let r = send_commit(&mut stub1, peer2_ballot, 0, 0).await;
         assert_eq!(ResponseType::Ok as i32, r.r#type);
@@ -935,10 +957,13 @@ mod tests {
         let handle2 = peer2.start_rpc_server_task();
 
         let peer0_ballot = peer0.next_ballot();
-        peer0.become_leader(peer0_ballot);
-        peer1.become_leader(peer1.next_ballot());
+        peer0.become_leader(peer0_ballot, peer0.multi_paxos.log.last_index());
+        peer1.become_leader(
+            peer1.next_ballot(),
+            peer1.multi_paxos.log.last_index(),
+        );
         let peer2_ballot = peer2.next_ballot();
-        peer2.become_leader(peer2_ballot);
+        peer2.become_leader(peer2_ballot, peer2.multi_paxos.log.last_index());
 
         let r = send_commit(&mut stub1, peer2_ballot, 0, 0).await;
         assert_eq!(ResponseType::Ok as i32, r.r#type);
@@ -969,10 +994,13 @@ mod tests {
         let handle2 = peer2.start_rpc_server_task();
 
         let peer0_ballot = peer0.next_ballot();
-        peer0.become_leader(peer0_ballot);
-        peer1.become_leader(peer1.next_ballot());
+        peer0.become_leader(peer0_ballot, peer0.multi_paxos.log.last_index());
+        peer1.become_leader(
+            peer1.next_ballot(),
+            peer1.multi_paxos.log.last_index(),
+        );
         let peer2_ballot = peer2.next_ballot();
-        peer2.become_leader(peer2_ballot);
+        peer2.become_leader(peer2_ballot, peer2.multi_paxos.log.last_index());
 
         let r = send_commit(&mut stub1, peer2_ballot, 0, 0).await;
         assert_eq!(ResponseType::Ok as i32, r.r#type);
@@ -997,9 +1025,9 @@ mod tests {
         let handle0 = peer0.start_rpc_server_task();
 
         let peer0_ballot = peer0.next_ballot();
-        peer0.become_leader(peer0_ballot);
+        peer0.become_leader(peer0_ballot, peer0.multi_paxos.log.last_index());
         let peer1_ballot = peer1.next_ballot();
-        peer1.become_leader(peer1_ballot);
+        peer1.become_leader(peer1_ballot, peer1.multi_paxos.log.last_index());
 
         let index1 = 1;
         let i1 = Instance::inprogress_put(peer0_ballot, index1);
@@ -1028,9 +1056,9 @@ mod tests {
 
         let index5 = 5;
         let peer0_ballot = peer0.next_ballot();
-        peer0.become_leader(peer0_ballot);
+        peer0.become_leader(peer0_ballot, peer0.multi_paxos.log.last_index());
         let peer1_ballot = peer1.next_ballot();
-        peer1.become_leader(peer1_ballot);
+        peer1.become_leader(peer1_ballot, peer1.multi_paxos.log.last_index());
 
         let peer0_i5 = Instance::inprogress_get(peer0_ballot, index5);
         let peer1_i5 = Instance::inprogress_put(peer1_ballot, index5);
@@ -1048,8 +1076,10 @@ mod tests {
 
         let ballot = peer0.next_ballot();
 
-        let log = peer0.multi_paxos.run_prepare_phase(ballot).await.unwrap();
+        let (last_index, log) =
+            peer0.multi_paxos.run_prepare_phase(ballot).await.unwrap();
 
+        assert_eq!(index5, last_index);
         assert_eq!(&i1, log.get(&index1).unwrap());
         assert_eq!(&i2, log.get(&index2).unwrap());
         assert_eq!(peer0_i3.command, log.get(&index3).unwrap().command);
