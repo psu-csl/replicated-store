@@ -508,12 +508,12 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
     return globalLastExecuted;
   }
   public void replay(long ballot, HashMap<Long, log.Instance> log) {
-    if (log == null) {
-      return;
-    }
+
     for (Map.Entry<Long, log.Instance> entry : log.entrySet()) {
       var res = runAcceptPhase(ballot, entry.getValue().getIndex(), entry.getValue().getCommand(),
               entry.getValue().getClientId());
+      while(res.type == MultiPaxosResultType.kRetry)
+        res = runAcceptPhase(ballot, entry.getValue().getIndex(), entry.getValue().getCommand(),entry.getValue().getClientId());
       if (res.type == MultiPaxosResultType.kSomeoneElseLeader) {
         return;
       }
