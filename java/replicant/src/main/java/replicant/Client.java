@@ -11,6 +11,12 @@ public class Client {
     private final Channel socket;
     private final MultiPaxos multiPaxos;
 
+    public Client(long id, Channel socket, MultiPaxos multiPaxos) {
+        this.id = id;
+        this.socket = socket;
+        this.multiPaxos = multiPaxos;
+    }
+
     public static Command parse(String request) {
 
         if (request == null) {
@@ -37,12 +43,8 @@ public class Client {
         }
         return res;
     }
-    public Client(long id,Channel socket, MultiPaxos multiPaxos) {
-        this.id = id;
-        this.socket = socket;
-        this.multiPaxos = multiPaxos;
-    }
-        public void read(String msg) {
+
+    public void read(String msg) {
         var command = parse(msg);
         var r = multiPaxos.replicate(command, id);
         if (r.type == MultiPaxosResultType.kOk) {
@@ -56,6 +58,6 @@ public class Client {
     }
 
     public void write(String response) {
-        socket.writeAndFlush(response+"\n");
+        socket.writeAndFlush(response + "\n");
     }
 }
