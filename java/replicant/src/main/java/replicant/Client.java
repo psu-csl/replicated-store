@@ -4,7 +4,7 @@ import io.netty.channel.Channel;
 
 public class Client {
 
-    private Channel channel;
+    private final Channel channel;
     public Client(Channel channel) {
         this.channel = channel;
     }
