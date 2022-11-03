@@ -529,10 +529,10 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
         becomeFollower(request.getBallot());
 
         for (var i : log.instances()) {
-          if (i == null) {
-            logger.info("null instance of log");
-            continue;
-          }
+//          if (i == null) {
+//            logger.info("null instance of log");
+//            continue;
+//          }
           responseBuilder.addInstances(makeProtoInstance(i));
         }
         responseBuilder = responseBuilder.setType(multipaxos.ResponseType.OK);
