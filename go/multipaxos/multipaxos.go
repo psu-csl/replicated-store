@@ -125,8 +125,7 @@ func (p *Multipaxos) sleepForRandomInterval() {
 }
 
 func (p *Multipaxos) receivedCommit() bool {
-	var t int32 = 1
-	return atomic.CompareAndSwapInt32(&p.commitReceived, t, 0)
+	return atomic.CompareAndSwapInt32(&p.commitReceived, 1, 0)
 }
 
 func (p *Multipaxos) Start() {
