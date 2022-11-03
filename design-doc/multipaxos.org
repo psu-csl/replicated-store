@@ -33,6 +33,17 @@
       - type_: enum {ok, reject}
       - ballot_: ballot of the peer (valid only if type_ == reject)
 
+    - command protobuf
+      - type_: enum {get, put, del}
+      - key_: string
+      - value_: string
+
+    - instance protobuf
+      - ballot_: ballot of the instance
+      - index_: index of the instance in the log
+      - client_id_: id of the client that issued the command
+      - command_: command protobuf
+
     - result
       - type_: enum {ok, retry, someone_else_leader}
       - leader_: optional int
@@ -479,27 +490,14 @@
        return nullopt
        state.mu_.unlock()
 
-    - run_accept_phase(ballot: int, global_last_executed: int)
+    - run_accept_phase(ballot: int, index: int, cmd: command, client_id: int)
 
-    - commit_handler(request: commit_rpc_request)
-      # description: handler for the commit RPC
-      # preconditions:
-      # postconditions:
+    - run_commit_phase(ballot: int, global_last_executed: int)
 
-      mu_.lock() # unlocks on return
-      if request.ballot_ >= ballot_
-        last_commit_ = time::now()
-        ballot_ = request.ballot_
-        stale_rpc = false
-        log_.commit_until(request_.last_executed_, ballot_)
-        log_.trim_until(request_.global_last_executed)
-      return commit_rpc_response{last_executed_: log_.last_executed()}
+    - replay(ballot: int, log: map{int -> instance})
 
-    - prepare_handler(request: prepare_rpc_request)
-      # description: handler for the prepare RPC
-      # preconditions:
-      # postconditions:
-
+    - prepare(request: prepare_request, response: prepare_response)
+      # prepare RPC handler
       mu_.lock() # unlocks on return
       if request.ballot_ >= ballot_
         ballot_ = request_.ballot_
@@ -509,45 +507,8 @@
       # reject stale RPC requests
       return prepare_rpc_response{type_: reject, ballot_: ballot_, log_: N/A}
 
-
-    - prepare() -> prepare_result_t:
-      num_responses = 0
-      ok_logs = vector<instance_t[]>
-      cv, mu
-      request = prepare_rpc_request{ballot_: next_ballot#()}
-      for each peer p {
-        run closure in a separate thread {
-          response = p.prepareRPC(request)
-          lock(mu)
-          ++num_responses
-          if response.type_ == ok:
-            ok_logs.push(response.log_)
-          else if response.type_ == reject:
-            ballot_ = response.ballot_
-          # else it is a timeout error; we do nothing
-          unlock(mu)
-          cv.notify_one()
-        }
-      }
-      lock(mu)
-      while i_am_leader() &&
-            num_ok_responses <= peers_.size()/2 &&
-            num_responses != peers_.size()
-        cv.wait(mu)
-      # one of the above three conditions is false; handle each, starting with the
-      # most likely one
-      if num_ok_responses > peers_.size()/2: # we have quorum
-        return prepare_result_t{type_: ok, log_: ok_logs}
-      if someone_else_is_leader():
-        return prepare_result_t{type_: reject}
-      # multiple timeout responses
-      return prepare_result_t{type_: timeout}
-
-    - accept_handler(request: accept_rpc_request)
-      # description: handler for the accept RPC
-      # preconditions:
-      # postconditions:
-
+    - accept(request: accept_request, response: accept_response)
+      # accept RPC handler
       if request.ballot_ >= ballot_:
         ballot_ = request.ballot_
         log_.append(request.instance_)
@@ -555,51 +516,17 @@
       # stale message
       return accept_rpc_response{type_: reject, ballot_: ballot_}
 
-    - accept(cmd: command, index: int, client-id: int) -> accept_result_t
-      num_responses = 0
-      num_ok_responses = 0
-      cv, mu
-      request = accept_rpc_request{command_: cmd,
-                                   index_: index,
-                                   ballot_: ballot_,
-                                   client-id_: client-id}
-      for each peer p {
-        run closure in a separate thread {
-          response = p.acceptRPC(request)
-          lock(mu)
-          ++num_responses
-          if response.type_ == ok:
-            ++ok_responses
-          else if response.type_ == reject:
-            ballot_ = response.ballot_
-          # else it is a timeout error; we do nothing
-          unlock(mu)
-          cv.notify_one()
-        }
-      }
-      lock(mu)
-      while i_am_leader() &&
-            num_ok_responses <= peers_.size()/2 &&
-            num_responses != peers_.size():
-        cv.wait(mu)
+    - commit(request: commit_request, response: commit_response)
+      # description: handler for the commit RPC
 
-      if num_ok_responses > peers_.size() / 2
-        log_.commit(index)
-        return accept_result_t{type_: ok, leader_: N/A}
-      if someone_else_is_leader()
-        return accept_result_t{type_: reject, leader_: leader()}
-      # RPCs timed out
-      return accept_result_t{type_: retry, leader_: N/A}
-
-    - replay() -> bool
-      for i in log_.new_instances()
-        accept_result_t r = accept(i.command_, i.index, i.client-id_)
-        if r.type_ == leader
-          return false
-        if r.type_ == retry
-          continue
-      return true
-
+      mu_.lock() # unlocks on return
+      if request.ballot_ >= ballot_
+        last_commit_ = time::now()
+        ballot_ = request.ballot_
+        stale_rpc = false
+        log_.commit_until(request_.last_executed_, ballot_)
+        log_.trim_until(request_.global_last_executed)
+      return commit_rpc_response{last_executed_: log_.last_executed()}
 
 - unit tests
 
