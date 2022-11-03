@@ -65,8 +65,9 @@ public class ClientHandler extends SimpleChannelInboundHandler<String> {
   }
 
   private long nextClientId() {
+    var id = nextClientId;
     nextClientId += numPeers;
-    return nextClientId;
+    return id;
   }
 
   @Override
