@@ -172,17 +172,17 @@ pub fn insert(
 
 struct LogInner {
     running: bool,
-    map: HashMap<i64, Instance>,
+    kv_store: Box<dyn KVStore + Sync + Send>,
+    log: HashMap<i64, Instance>,
     last_index: i64,
     last_executed: i64,
     global_last_executed: i64,
-    kv_store: Box<dyn KVStore + Sync + Send>,
 }
 
 impl LogInner {
     fn new(kv_store: Box<dyn KVStore + Sync + Send>) -> Self {
         LogInner {
-            map: HashMap::new(),
+            log: HashMap::new(),
             running: true,
             last_index: 0,
             last_executed: 0,
@@ -192,11 +192,11 @@ impl LogInner {
     }
 
     fn insert(&mut self, instance: Instance) -> bool {
-        insert(&mut self.map, instance)
+        insert(&mut self.log, instance)
     }
 
     fn is_executable(&self) -> bool {
-        match self.map.get(&(self.last_executed + 1)) {
+        match self.log.get(&(self.last_executed + 1)) {
             Some(instance) => instance.is_committed(),
             None => false,
         }
@@ -204,7 +204,7 @@ impl LogInner {
 
     fn execute(&mut self) -> (i64, Result<String, KVStoreError>) {
         self.last_executed += 1;
-        let it = self.map.get_mut(&self.last_executed);
+        let it = self.log.get_mut(&self.last_executed);
         assert!(it.is_some());
         let instance = it.unwrap();
         (instance.client_id, instance.execute(&mut self.kv_store))
@@ -212,7 +212,7 @@ impl LogInner {
 }
 
 pub struct Log {
-    log: Mutex<LogInner>,
+    inner: Mutex<LogInner>,
     executable: Notify,
     committable: Notify,
 }
@@ -220,46 +220,46 @@ pub struct Log {
 impl Log {
     pub fn new(kv_store: Box<dyn KVStore + Sync + Send>) -> Self {
         Log {
-            log: Mutex::new(LogInner::new(kv_store)),
+            inner: Mutex::new(LogInner::new(kv_store)),
             executable: Notify::new(),
             committable: Notify::new(),
         }
     }
 
     pub fn last_executed(&self) -> i64 {
-        let log = self.log.lock().unwrap();
-        log.last_executed
+        let inner = self.inner.lock().unwrap();
+        inner.last_executed
     }
 
     pub fn global_last_executed(&self) -> i64 {
-        let log = self.log.lock().unwrap();
-        log.global_last_executed
+        let inner = self.inner.lock().unwrap();
+        inner.global_last_executed
     }
 
     pub fn advance_last_index(&self) -> i64 {
-        let mut log = self.log.lock().unwrap();
-        log.last_index += 1;
-        log.last_index
+        let mut inner = self.inner.lock().unwrap();
+        inner.last_index += 1;
+        inner.last_index
     }
 
     pub fn stop(&self) {
-        let mut log = self.log.lock().unwrap();
-        log.running = false;
+        let mut inner = self.inner.lock().unwrap();
+        inner.running = false;
         self.executable.notify_one();
     }
 
     pub fn append(&self, instance: Instance) {
-        let mut log = self.log.lock().unwrap();
+        let mut inner = self.inner.lock().unwrap();
         let i = instance.index;
-        if i <= log.global_last_executed {
+        if i <= inner.global_last_executed {
             return;
         }
         let mut committable = false;
-        if log.insert(instance) {
-            log.last_index = cmp::max(log.last_index, i);
+        if inner.insert(instance) {
+            inner.last_index = cmp::max(inner.last_index, i);
             committable = true;
         }
-        drop(log);
+        drop(inner);
         if committable {
             self.committable.notify_waiters();
         }
@@ -271,14 +271,14 @@ impl Log {
         loop {
             let future = self.committable.notified();
             {
-                let mut log = self.log.lock().unwrap();
-                let instance = log.map.get_mut(&index);
+                let mut inner = self.inner.lock().unwrap();
+                let instance = inner.log.get_mut(&index);
                 if instance.is_some() {
                     let instance = instance.unwrap();
                     if instance.is_inprogress() {
                         instance.commit();
                     }
-                    if log.is_executable() {
+                    if inner.is_executable() {
                         executable = true;
                     }
                     break;
@@ -295,12 +295,12 @@ impl Log {
         loop {
             let future = self.executable.notified();
             {
-                let mut log = self.log.lock().unwrap();
-                if !log.running {
+                let mut inner = self.inner.lock().unwrap();
+                if !inner.running {
                     return None;
                 }
-                if log.is_executable() {
-                    return Some(log.execute());
+                if inner.is_executable() {
+                    return Some(inner.execute());
                 }
             }
             future.await;
@@ -311,9 +311,9 @@ impl Log {
         assert!(leader_last_executed >= 0, "invalid leader_last_executed");
         assert!(ballot >= 0, "invalid ballot");
 
-        let mut log = self.log.lock().unwrap();
-        for i in log.last_executed + 1..=leader_last_executed {
-            let it = log.map.get_mut(&i);
+        let mut inner = self.inner.lock().unwrap();
+        for i in inner.last_executed + 1..=leader_last_executed {
+            let it = inner.log.get_mut(&i);
             if let Some(instance) = it {
                 assert!(ballot >= instance.ballot, "commit_until case 2");
                 if instance.ballot == ballot {
@@ -323,25 +323,25 @@ impl Log {
                 break;
             }
         }
-        if log.is_executable() {
+        if inner.is_executable() {
             self.executable.notify_one();
         }
     }
 
     pub fn trim_until(&self, leader_global_last_executed: i64) {
-        let mut log = &mut *self.log.lock().unwrap();
-        while log.global_last_executed < leader_global_last_executed {
-            log.global_last_executed += 1;
-            let it = log.map.remove(&log.global_last_executed);
+        let mut inner = &mut *self.inner.lock().unwrap();
+        while inner.global_last_executed < leader_global_last_executed {
+            inner.global_last_executed += 1;
+            let it = inner.log.remove(&inner.global_last_executed);
             assert!(it.unwrap().is_executed());
         }
     }
 
     pub fn instances(&self) -> Vec<Instance> {
-        let log = self.log.lock().unwrap();
+        let inner = self.inner.lock().unwrap();
         let mut instances = Vec::new();
-        for i in log.global_last_executed + 1..=log.last_index {
-            if let Some(instance) = log.map.get(&i) {
+        for i in inner.global_last_executed + 1..=inner.last_index {
+            if let Some(instance) = inner.log.get(&i) {
                 instances.push(instance.clone());
             }
         }
@@ -349,13 +349,13 @@ impl Log {
     }
 
     fn is_executable(&self) -> bool {
-        let log = self.log.lock().unwrap();
-        log.is_executable()
+        let inner = self.inner.lock().unwrap();
+        inner.is_executable()
     }
 
     pub fn at(&self, index: i64) -> Option<Instance> {
-        let log = self.log.lock().unwrap();
-        log.map.get(&index).cloned()
+        let inner = self.inner.lock().unwrap();
+        inner.log.get(&index).cloned()
     }
 }
 
@@ -390,7 +390,7 @@ mod tests {
         let instance2 = instance1.clone();
 
         assert!(log.insert(instance1));
-        assert_eq!(put, *log.map[&index].command.as_ref().unwrap());
+        assert_eq!(put, *log.log[&index].command.as_ref().unwrap());
         assert!(!log.insert(instance2));
     }
 
@@ -404,9 +404,9 @@ mod tests {
         let instance2 = Instance::inprogress(ballot + 1, index, &del, 0);
 
         assert!(log.insert(instance1));
-        assert_eq!(put, *log.map[&index].command.as_ref().unwrap());
+        assert_eq!(put, *log.log[&index].command.as_ref().unwrap());
         assert!(!log.insert(instance2));
-        assert_eq!(del, *log.map[&index].command.as_ref().unwrap());
+        assert_eq!(del, *log.log[&index].command.as_ref().unwrap());
     }
 
     #[test]
@@ -432,9 +432,9 @@ mod tests {
         let instance2 = Instance::inprogress(ballot - 1, index, &del, 0);
 
         assert!(log.insert(instance1));
-        assert_eq!(put, *log.map[&index].command.as_ref().unwrap());
+        assert_eq!(put, *log.log[&index].command.as_ref().unwrap());
         assert!(!log.insert(instance2));
-        assert_eq!(put, *log.map[&index].command.as_ref().unwrap());
+        assert_eq!(put, *log.log[&index].command.as_ref().unwrap());
     }
 
     #[test]
