@@ -26,18 +26,17 @@ import multipaxos.MultiPaxos;
 public class Replicant {
 
   private static final Logger logger = (Logger) LoggerFactory.getLogger(Replicant.class);
-  private final ExecutorService executorThread = Executors.newSingleThreadExecutor();
   private final EventLoopGroup bossGroup = new NioEventLoopGroup();
   private final EventLoopGroup workerGroup = new NioEventLoopGroup();
-  private final long id;
   private final long numPeers;
-  private final String ipPort;
 
+  private final long id;
+  private final Log log = new Log(new MemKVStore());
   private final MultiPaxos multiPaxos;
-  private final KVStore kvStore = new MemKVStore();
-  private final Log log = new Log(kvStore);
-
+  private final String ipPort;
   private ClientHandler clientHandler;
+  private final ExecutorService executorThread = Executors.newSingleThreadExecutor();
+
 
   public Replicant(Configuration config) {
     this.id = config.getId();
