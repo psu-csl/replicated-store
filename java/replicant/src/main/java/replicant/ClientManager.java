@@ -1,9 +1,6 @@
 package replicant;
 
 import ch.qos.logback.classic.Logger;
-import command.Command;
-import command.Command.CommandType;
-import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandler.Sharable;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
@@ -13,7 +10,6 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import org.slf4j.LoggerFactory;
 import multipaxos.MultiPaxos;
-import multipaxos.MultiPaxosResultType;
 
 @Sharable
 public class ClientManager extends SimpleChannelInboundHandler<String> {
