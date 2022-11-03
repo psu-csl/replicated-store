@@ -66,7 +66,7 @@ class PrepareState {
   public long numRpcs;
   public long numOks;
   public long leader;
-  public long lastIndex;
+  public long maxLastIndex;
   public HashMap<Long, log.Instance> log;
   public ReentrantLock mu;
   public Condition cv;
@@ -76,7 +76,7 @@ class PrepareState {
     this.numRpcs = 0;
     this.numOks = 0;
     this.leader = leader;
-    this.lastIndex = 0;
+    this.maxLastIndex = 0;
     this.log = new HashMap<>();
     this.mu = new ReentrantLock();
     this.cv = mu.newCondition();
@@ -351,7 +351,7 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
         if (response.getType() == multipaxos.ResponseType.OK) {
           ++state.numOks;
           for (int i = 0; i < response.getInstancesCount(); ++i) {
-            state.lastIndex=max(state.lastIndex,response.getInstances(i).getIndex());
+            state.maxLastIndex =max(state.maxLastIndex,response.getInstances(i).getIndex());
             insert(state.log, makeInstance(response.getInstances(i)));
           }
         } else {
@@ -379,7 +379,7 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
 
     if (state.numOks > rpcPeers.size() / 2) {
       state.mu.unlock();
-      return new HashMap.SimpleEntry<>(state.lastIndex,state.log);
+      return new HashMap.SimpleEntry<>(state.maxLastIndex,state.log);
     }
     state.mu.unlock();
     return null;
