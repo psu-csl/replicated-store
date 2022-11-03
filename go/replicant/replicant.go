@@ -69,17 +69,6 @@ func (r *Replicant) StopServer() {
 	r.clientManager.StopAll()
 }
 
-func (r *Replicant) AcceptClient() {
-	for {
-		conn, err := r.acceptor.Accept()
-		if err != nil {
-			logger.Error(err)
-			break
-		}
-		r.clientManager.Start(conn)
-	}
-}
-
 func (r *Replicant) StartExecutorThread() {
 	logger.Infof("%v starting executor thread\n", r.id)
 	go r.executorThread()
@@ -103,3 +92,13 @@ func (r *Replicant) executorThread() {
 	}
 }
 
+func (r *Replicant) AcceptClient() {
+	for {
+		conn, err := r.acceptor.Accept()
+		if err != nil {
+			logger.Error(err)
+			break
+		}
+		r.clientManager.Start(conn)
+	}
+}
