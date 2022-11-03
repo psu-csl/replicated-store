@@ -529,10 +529,6 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
         becomeFollower(request.getBallot());
 
         for (var i : log.instances()) {
-//          if (i == null) {
-//            logger.info("null instance of log");
-//            continue;
-//          }
           responseBuilder.addInstances(makeProtoInstance(i));
         }
         responseBuilder = responseBuilder.setType(multipaxos.ResponseType.OK);
@@ -540,7 +536,6 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
         responseBuilder = responseBuilder.setBallot(ballot).setType(multipaxos.ResponseType.REJECT);
       }
       var response = responseBuilder.build();
-      logger.info("sending response : " + response);
       responseObserver.onNext(response);
       responseObserver.onCompleted();
 
