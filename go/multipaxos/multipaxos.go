@@ -452,9 +452,8 @@ func (p *Multipaxos) Prepare(ctx context.Context,
 	response := &pb.PrepareResponse{}
 	if request.GetBallot() > p.ballot {
 		p.BecomeFollower(request.GetBallot())
-		logSlice := p.log.Instances()
-		response.Logs = make([]*pb.Instance, 0, len(logSlice))
-		for _, i := range logSlice {
+		response.Logs = make([]*pb.Instance, 0, len(p.log.Instances()))
+		for _, i := range p.log.Instances() {
 			response.Logs = append(response.Logs, i)
 		}
 		response.Type = pb.ResponseType_OK
