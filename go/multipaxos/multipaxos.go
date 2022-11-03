@@ -233,9 +233,9 @@ func (p *Multipaxos) PrepareThread() {
 				continue
 			}
 			nextBallot := p.NextBallot()
-			lastIndex, log := p.RunPreparePhase(nextBallot)
+			maxLastIndex, log := p.RunPreparePhase(nextBallot)
 			if log != nil {
-				p.BecomeLeader(nextBallot, lastIndex)
+				p.BecomeLeader(nextBallot, maxLastIndex)
 				p.Replay(nextBallot, log)
 				break
 			}
@@ -287,8 +287,8 @@ func (p *Multipaxos) RunPreparePhase(ballot int64) (int64,
 					state.NumOks += 1
 					for i := 0; i < len(response.GetLogs()); i++ {
 						instance := response.GetLogs()[i]
-						if instance.Index > state.LastIndex {
-							state.LastIndex = instance.Index
+						if instance.Index > state.MaxLastIndex {
+							state.MaxLastIndex = instance.Index
 						}
 						Log.Insert(state.Log, instance)
 					}
@@ -313,7 +313,7 @@ func (p *Multipaxos) RunPreparePhase(ballot int64) (int64,
 	}
 
 	if state.NumOks > len(p.rpcPeers) / 2 {
-		return state.LastIndex, state.Log
+		return state.MaxLastIndex, state.Log
 	}
 	return -1, nil
 }

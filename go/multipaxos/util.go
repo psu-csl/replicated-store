@@ -50,22 +50,22 @@ func IsSomeoneElseLeader(ballot int64, id int64) bool {
 }
 
 type PrepareState struct {
-	NumRpcs   int
-	NumOks    int
-	Leader    int64
-	LastIndex int64
-	Log       map[int64]*pb.Instance
-	Mu        sync.Mutex
-	Cv        *sync.Cond
+	NumRpcs      int
+	NumOks       int
+	Leader       int64
+	MaxLastIndex int64
+	Log          map[int64]*pb.Instance
+	Mu           sync.Mutex
+	Cv           *sync.Cond
 }
 
 func NewPrepareState(leader int64) *PrepareState {
 	prepareState := &PrepareState{
-		NumRpcs:   0,
-		NumOks:    0,
-		Leader:    leader,
-		LastIndex: 0,
-		Log:       make(map[int64]*pb.Instance),
+		NumRpcs:      0,
+		NumOks:       0,
+		Leader:       leader,
+		MaxLastIndex: 0,
+		Log:          make(map[int64]*pb.Instance),
 	}
 	prepareState.Cv = sync.NewCond(&prepareState.Mu)
 	return prepareState
