@@ -7,9 +7,9 @@ import multipaxos.MultiPaxosResultType;
 
 public class Client {
 
-    private long id;
+    private final long id;
     private final Channel socket;
-    private MultiPaxos multiPaxos;
+    private final MultiPaxos multiPaxos;
 
     public static Command parse(String request) {
 
@@ -21,23 +21,19 @@ public class Client {
         String key = tokens[1];
         Command res = new Command();
         res.setKey(key);
-        switch (command) {
-            case "get":
-                res.setCommandType(Command.CommandType.Get);
-                break;
-            case "del":
-                res.setCommandType(Command.CommandType.Del);
-                break;
-            case "put":
-                res.setCommandType(Command.CommandType.Put);
-                String value = tokens[2];
-                if (value == null) {
-                    return null;
-                }
-                res.setValue(value);
-                break;
-            default:
+        if ("get".equals(command)) {
+            res.setCommandType(Command.CommandType.Get);
+        } else if ("del".equals(command)) {
+            res.setCommandType(Command.CommandType.Del);
+        } else if ("put".equals(command)) {
+            res.setCommandType(Command.CommandType.Put);
+            String value = tokens[2];
+            if (value == null) {
                 return null;
+            }
+            res.setValue(value);
+        } else {
+            return null;
         }
         return res;
     }
