@@ -109,7 +109,8 @@ public class Replicant {
       var id = r.getKey();
       var result = r.getValue();
       var client = clientManager.get(id);
-      client.write(result.getValue()+"\n");
+      if(client != null)
+        client.write(result.getValue());
     }
   }
 

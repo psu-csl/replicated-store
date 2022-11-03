@@ -19,7 +19,7 @@ import multipaxos.MultiPaxosResultType;
 public class ClientManager extends SimpleChannelInboundHandler<String> {
 
   private static final Logger logger = (Logger) LoggerFactory.getLogger(ClientManager.class);
-  private final ConcurrentHashMap<Long, Channel> clients = new ConcurrentHashMap<>();
+  private final ConcurrentHashMap<Long, Client> clients = new ConcurrentHashMap<>();
   private final long numPeers;
   private final MultiPaxos multiPaxos;
   private long nextClientId;
@@ -73,7 +73,7 @@ public class ClientManager extends SimpleChannelInboundHandler<String> {
     var id = nextClientId();
     logger.info("client joined " + ctx);
     ctx.channel().attr(clientIdAttrKey).set(id);
-    clients.put(id, ctx.channel());
+    clients.put(id, new Client(ctx.channel()));
   }
 
   @Override
@@ -99,7 +99,8 @@ public class ClientManager extends SimpleChannelInboundHandler<String> {
     }
   }
 
-  public Channel get(Long clientId){
+
+  public Client get(Long clientId){
     return clients.get(clientId);
   }
 }
