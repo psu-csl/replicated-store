@@ -481,7 +481,7 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
             }
           } else {
             mu.lock();
-            if (response.getBallot() >= this.ballot) {
+            if (response.getBallot() > this.ballot) {
               becomeFollower(response.getBallot());
               state.leader = extractLeaderId(this.ballot);
             }
