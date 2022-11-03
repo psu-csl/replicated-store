@@ -16,19 +16,17 @@ import multipaxos.MultiPaxos;
 import multipaxos.MultiPaxosResultType;
 
 @Sharable
-public class ClientHandler extends SimpleChannelInboundHandler<String> {
+public class ClientManager extends SimpleChannelInboundHandler<String> {
 
   private static final Logger logger = (Logger) LoggerFactory.getLogger(ClientHandler.class);
   private final Map<Long, Channel> channels = new HashMap<>();
   private final long numPeers;
-  private final ObjectMapper objectMapper = new ObjectMapper();
-  private final long id;
   private final MultiPaxos multiPaxos;
   private long nextClientId;
   private AttributeKey<Long> clientIdAttrKey = AttributeKey.valueOf("ClientID");
 
-  public ClientHandler(long id, long numPeers, MultiPaxos multiPaxos) {
-    this.nextClientId = this.id = id;
+  public ClientManager(long id, long numPeers, MultiPaxos multiPaxos) {
+    this.nextClientId = id;
     this.numPeers = numPeers;
     this.multiPaxos = multiPaxos;
   }
@@ -77,7 +75,6 @@ public class ClientHandler extends SimpleChannelInboundHandler<String> {
     ctx.channel().attr(clientIdAttrKey).set(id);
     channels.put(id, ctx.channel());
   }
-
 
   @Override
   public void channelRead0(ChannelHandlerContext ctx, String msg) {

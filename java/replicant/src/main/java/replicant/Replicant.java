@@ -34,15 +34,15 @@ public class Replicant {
   private final Log log = new Log(new MemKVStore());
   private final MultiPaxos multiPaxos;
   private final String ipPort;
-  private ClientHandler clientHandler;
+  private ClientManager clientManager;
   private final ExecutorService executorThread = Executors.newSingleThreadExecutor();
 
 
   public Replicant(Configuration config) {
     this.id = config.getId();
     this.ipPort = config.getPeers().get((int) id);
-    this.multiPaxos = new MultiPaxos(log, config);
-    this.numPeers = config.getPeers().size();
+    clientManager = new ClientManager(id, config.getPeers().size(), multiPaxos);
+
   }
 
   public void start() {
@@ -53,13 +53,11 @@ public class Replicant {
 
   public void stop() {
     stopExecutorThread();
-    stopServer();
     multiPaxos.stop();
   }
 
   private void startServer() {
 
-    clientHandler = new ClientHandler(id, numPeers, multiPaxos);
 
     try {
       ServerBootstrap b = new ServerBootstrap();
@@ -71,7 +69,7 @@ public class Replicant {
                   new DelimiterBasedFrameDecoder(2048, Delimiters.lineDelimiter()));
               ch.pipeline().addLast("decoder", new StringDecoder());
               ch.pipeline().addLast("encoder", new StringEncoder());
-              ch.pipeline().addLast(clientHandler);
+              ch.pipeline().addLast(clientManager);
             }
           }).option(ChannelOption.SO_BACKLOG, 5).childOption(ChannelOption.SO_KEEPALIVE, true);
 
@@ -110,9 +108,11 @@ public class Replicant {
       if (r == null) {
         break;
       }
-      var clientId = r.getKey();
+      var id = r.getKey();
       var result = r.getValue();
-      clientHandler.respond(clientId, result.getValue());
+      var client = clientManager.get(id);
+      client.write(result.getValue()+"\n");
+      //clientHandler.respond(clientId, result.getValue());
     }
   }
 
