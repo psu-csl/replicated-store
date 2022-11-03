@@ -32,16 +32,16 @@ const ID_BITS: i64 = 0xff;
 const ROUND_INCREMENT: i64 = ID_BITS + 1;
 const MAX_NUM_PEERS: i64 = 0xf;
 
-fn leader(ballot: i64) -> i64 {
+fn extract_leader(ballot: i64) -> i64 {
     ballot & ID_BITS
 }
 
 fn is_leader(ballot: i64, id: i64) -> bool {
-    leader(ballot) == id
+    extract_leader(ballot) == id
 }
 
 fn is_someone_else_leader(ballot: i64, id: i64) -> bool {
-    !is_leader(ballot, id) && leader(ballot) < MAX_NUM_PEERS
+    !is_leader(ballot, id) && extract_leader(ballot) < MAX_NUM_PEERS
 }
 
 #[derive(PartialEq, Eq, Debug)]
@@ -128,19 +128,19 @@ impl MultiPaxosInner {
         self.became_leader.notify_one();
     }
 
-    fn become_follower(&self, ballot: &mut i64, next_ballot: i64) {
-        let prev_leader = leader(*ballot);
-        let next_leader = leader(next_ballot);
-        if next_leader != self.id
-            && (prev_leader == self.id || prev_leader == MAX_NUM_PEERS)
+    fn become_follower(&self, ballot: &mut i64, new_ballot: i64) {
+        let old_leader_id = extract_leader(*ballot);
+        let new_leader_id = extract_leader(new_ballot);
+        if new_leader_id != self.id
+            && (old_leader_id == self.id || old_leader_id == MAX_NUM_PEERS)
         {
             info!(
                 "{} became a follower: ballot: {} -> {}",
-                self.id, *ballot, next_ballot
+                self.id, *ballot, new_ballot
             );
             self.became_follower.notify_one();
         }
-        *ballot = next_ballot;
+        *ballot = new_ballot;
     }
 
     fn ballot(&self) -> i64 {
@@ -280,7 +280,7 @@ impl MultiPaxosInner {
                             &mut *ballot,
                             accept_response.ballot,
                         );
-                        current_leader = leader(*ballot);
+                        current_leader = extract_leader(*ballot);
                         break;
                     }
                 }
@@ -573,7 +573,7 @@ impl MultiPaxos {
                 .await;
         }
         if is_someone_else_leader(ballot, self.multi_paxos.id) {
-            return ResultType::SomeoneElseLeader(leader(ballot));
+            return ResultType::SomeoneElseLeader(extract_leader(ballot));
         }
         ResultType::Retry
     }
@@ -614,7 +614,7 @@ mod tests {
 
     fn leader(peer: &MultiPaxos) -> i64 {
         let ballot = peer.multi_paxos.ballot();
-        super::leader(ballot)
+        super::extract_leader(ballot)
     }
 
     async fn send_prepare(
