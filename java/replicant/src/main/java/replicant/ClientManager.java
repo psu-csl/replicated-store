@@ -99,6 +99,10 @@ public class ClientManager extends SimpleChannelInboundHandler<String> {
     }
   }
 
+  public Channel get(Long clientId){
+    return channels.get(clientId);
+  }
+
   public void respond(Long clientId, String value) {
     var client = channels.get(clientId);
     if (client == null) {
