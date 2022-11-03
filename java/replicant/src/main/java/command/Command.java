@@ -57,7 +57,7 @@ public class Command {
   }
 
   public enum CommandType {
-    Get, Put, Del;
+    Get, Put, Del
 
   }
 

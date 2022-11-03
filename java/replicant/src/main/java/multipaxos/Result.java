@@ -2,8 +2,8 @@ package multipaxos;
 
 public class Result {
 
-  public MultiPaxosResultType type;
-  public Long leader;
+  public final MultiPaxosResultType type;
+  public final Long leader;
 
   public Result(MultiPaxosResultType type, Long leader) {
     this.type = type;

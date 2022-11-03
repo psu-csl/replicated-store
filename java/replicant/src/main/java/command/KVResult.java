@@ -2,8 +2,8 @@ package command;
 
 public class KVResult {
 
-  private boolean ok;
-  private String value;
+  private final boolean ok;
+  private final String value;
 
   public KVResult(boolean ok, String value) {
     this.ok = ok;
@@ -14,15 +14,8 @@ public class KVResult {
     return value;
   }
 
-  public void setValue(String value) {
-    this.value = value;
-  }
-
   public boolean isOk() {
     return ok;
   }
 
-  public void setOk(boolean ok) {
-    this.ok = ok;
-  }
 }

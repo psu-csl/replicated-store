@@ -32,24 +32,13 @@ import log.Log;
 import org.slf4j.LoggerFactory;
 import log.Instance;
 
-class BallotResult {
-
-  public boolean isReady;
-  public long ballot;
-
-  public BallotResult(long ballot, boolean isReady) {
-    this.isReady = isReady;
-    this.ballot = ballot;
-  }
-}
-
 class AcceptState {
 
   public long numRpcs;
   public long numOks;
   public long leader;
-  public ReentrantLock mu;
-  public Condition cv;
+  public final ReentrantLock mu;
+  public final Condition cv;
 
   public AcceptState(long leader) {
     this.numRpcs = 0;
@@ -67,9 +56,9 @@ class PrepareState {
   public long numOks;
   public long leader;
   public long maxLastIndex;
-  public HashMap<Long, log.Instance> log;
-  public ReentrantLock mu;
-  public Condition cv;
+  public final HashMap<Long, log.Instance> log;
+  public final ReentrantLock mu;
+  public final Condition cv;
 
 
   public PrepareState(long leader) {
@@ -89,8 +78,8 @@ class CommitState {
   public long numOks;
   public long minLastExecuted;
   public long leader;
-  public ReentrantLock mu;
-  public Condition cv;
+  public final ReentrantLock mu;
+  public final Condition cv;
 
   public CommitState(long leader, long minLastExecuted) {
     this.numRpcs = 0;
@@ -104,8 +93,8 @@ class CommitState {
 
 class RpcPeer {
 
-  public long id;
-  public ManagedChannel stub;
+  public final long id;
+  public final ManagedChannel stub;
 
   public RpcPeer(long id, ManagedChannel stub) {
     this.id = id;
