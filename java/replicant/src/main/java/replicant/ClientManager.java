@@ -23,7 +23,7 @@ public class ClientManager extends SimpleChannelInboundHandler<String> {
   private final long numPeers;
   private final MultiPaxos multiPaxos;
   private long nextClientId;
-  private AttributeKey<Long> clientIdAttrKey = AttributeKey.valueOf("ClientID");
+  private final AttributeKey<Long> clientIdAttrKey = AttributeKey.valueOf("ClientID");
 
   public ClientManager(long id, long numPeers, MultiPaxos multiPaxos) {
     this.nextClientId = id;
@@ -77,7 +77,7 @@ public class ClientManager extends SimpleChannelInboundHandler<String> {
   }
 
   @Override
-  public void channelUnregistered(ChannelHandlerContext ctx) throws Exception {
+  public void channelUnregistered(ChannelHandlerContext ctx) {
     var id = ctx.channel().attr(clientIdAttrKey).get();
     var it = clients.get(id);
     assert it!=null;
@@ -101,13 +101,5 @@ public class ClientManager extends SimpleChannelInboundHandler<String> {
 
   public Channel get(Long clientId){
     return clients.get(clientId);
-  }
-
-  public void respond(Long clientId, String value) {
-    var client = clients.get(clientId);
-    if (client == null) {
-      return;
-    }
-    client.writeAndFlush(value + "\n");
   }
 }
