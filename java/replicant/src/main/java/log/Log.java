@@ -18,7 +18,7 @@ public class Log {
     private final KVStore kvStore;
     private final ReentrantLock mu;
     private final Condition cvExecutable;
-    private final Condition cvCommittable;
+    private final HashMap<Long, Condition> cvCommittableMap;
     private final HashMap<Long, Instance> log;
     private long globalLastExecuted = 0;
     private long lastIndex = 0;
@@ -31,14 +31,21 @@ public class Log {
         log = new HashMap<>();
         mu = new ReentrantLock();
         cvExecutable = mu.newCondition();
-        cvCommittable = mu.newCondition();
+        cvCommittableMap = new HashMap<>();
     }
 
-    public static boolean insert(HashMap<Long, Instance> log, Instance instance) {
+    public static boolean insert(HashMap<Long, Instance> log, Instance instance, Object... b) {
+        HashMap<Long, Condition> cvCommittableMap = null;
+        Condition cv = null;
+        if (b.length > 0) {
+            cvCommittableMap = (HashMap<Long, Condition>) b[0];
+            cv = (Condition) b[1];
+        }
         var i = instance.getIndex();
         var it = log.get(i);
         if (it == null) {
             log.put(i, instance);
+            if (cvCommittableMap != null) cvCommittableMap.put(i, cv);
             return true;
         }
         if (it.isCommitted() || it.isExecuted()) {
@@ -47,6 +54,8 @@ public class Log {
         }
         if (instance.getBallot() > it.getBallot()) {
             log.put(i, instance);
+            if(cvCommittableMap != null)
+                cvCommittableMap.put(i, cv);
             return false;
         }
         if (instance.getBallot() == it.getBallot())
@@ -97,9 +106,9 @@ public class Log {
             if (i <= globalLastExecuted) {
                 return;
             }
-            if (insert(log, instance)) {
+            if (insert(log, instance, cvCommittableMap, mu.newCondition())) {
                 lastIndex = max(lastIndex, i);
-                cvCommittable.signalAll();
+                cvCommittableMap.get(instance.getIndex()).signal();
             }
         } finally {
             mu.unlock();
@@ -112,8 +121,10 @@ public class Log {
         mu.lock();
         try {
             var it = log.get(index);
+            if (it == null) cvCommittableMap.put(index, mu.newCondition());
             while (it == null) {
-                cvCommittable.await();
+                //cvCommittable.await();
+                cvCommittableMap.get(index).await();
                 it = log.get(index);
             }
             if (it.isInProgress()) {
@@ -239,5 +250,9 @@ public class Log {
             str.append(v.toString());
         }
         return str.toString();
+    }
+
+    public HashMap<Long, Condition> getCvCommittableMap() {
+        return this.cvCommittableMap;
     }
 }

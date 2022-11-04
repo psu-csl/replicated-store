@@ -341,7 +341,7 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
           ++state.numOks;
           for (int i = 0; i < response.getInstancesCount(); ++i) {
             state.maxLastIndex =max(state.maxLastIndex,response.getInstances(i).getIndex());
-            insert(state.log, makeInstance(response.getInstances(i)));
+            insert(state.log, makeInstance(response.getInstances(i)),log.getCvCommittableMap(),mu.newCondition());
           }
         } else {
           assert (response.getType() == multipaxos.ResponseType.REJECT);
