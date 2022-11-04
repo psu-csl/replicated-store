@@ -46,25 +46,25 @@ class LogTest {
 
   @Test
   void insert() {
-    HashMap<Long, Instance> log = new HashMap<>();
+    HashMap<Long, InstanceWithCv> log = new HashMap<>();
     long index = 1, ballot = 1;
     assertTrue(Log.insert(log, makeInstance(ballot, index, CommandType.Put)));
-    assertEquals(CommandType.Put, log.get(index).getCommand().getCommandType());
+    assertEquals(CommandType.Put, log.get(index).getInstance().getCommand().getCommandType());
     assertFalse(Log.insert(log, makeInstance(ballot, index, CommandType.Put)));
   }
 
   @Test
   void insertUpdateInProgress() {
-    HashMap<Long, Instance> log = new HashMap<>();
+    HashMap<Long, InstanceWithCv> log = new HashMap<>();
     long index = 1, ballot = 1;
     assertTrue(Log.insert(log, makeInstance(ballot, index, CommandType.Put)));
-    assertEquals(CommandType.Put, log.get(index).getCommand().getCommandType());
+    assertEquals(CommandType.Put, log.get(index).getInstance().getCommand().getCommandType());
     assertFalse(Log.insert(log, makeInstance(ballot, index, CommandType.Put)));
   }
 
   @Test
   void insertUpdateCommitted() {
-    HashMap<Long, Instance> log = new HashMap<>();
+    HashMap<Long, InstanceWithCv> log = new HashMap<>();
     long index = 1, ballot = 1;
     assertTrue(
         Log.insert(log, makeInstance(ballot, index, InstanceState.kCommitted, CommandType.Put)));
@@ -75,17 +75,17 @@ class LogTest {
 
   @Test
   void insertStale() {
-    HashMap<Long, Instance> log = new HashMap<>();
+    HashMap<Long, InstanceWithCv> log = new HashMap<>();
     long index = 1, ballot = 1;
     assertTrue(Log.insert(log, makeInstance(ballot, index, CommandType.Put)));
-    assertEquals(CommandType.Put, log.get(index).getCommand().getCommandType());
+    assertEquals(CommandType.Put, log.get(index).getInstance().getCommand().getCommandType());
     assertFalse(Log.insert(log, makeInstance(0, index, CommandType.Del)));
-    assertEquals(CommandType.Put, log.get(index).getCommand().getCommandType());
+    assertEquals(CommandType.Put, log.get(index).getInstance().getCommand().getCommandType());
   }
 
   @Test
   void insertCase2Committed() {
-    HashMap<Long, Instance> log = new HashMap<>();
+    HashMap<Long, InstanceWithCv> log = new HashMap<>();
     long index = 1;
     var inst1 = makeInstance(0, index, InstanceState.kCommitted, CommandType.Put);
     var inst2 = makeInstance(0, index, InstanceState.kInProgress, CommandType.Del);
@@ -96,7 +96,7 @@ class LogTest {
 
   @Test
   void insertCase2Executed() {
-    HashMap<Long, Instance> log = new HashMap<>();
+    HashMap<Long, InstanceWithCv> log = new HashMap<>();
     long index = 1;
     var inst1 = makeInstance(0, index, InstanceState.kExecuted, CommandType.Put);
     var inst2 = makeInstance(0, index, InstanceState.kInProgress, CommandType.Del);
@@ -107,7 +107,7 @@ class LogTest {
 
   @Test
   void insertCase3() {
-    HashMap<Long, Instance> log = new HashMap<>();
+    HashMap<Long, InstanceWithCv> log = new HashMap<>();
     long index = 1;
     var inst1 = makeInstance(0, index, InstanceState.kInProgress, CommandType.Put);
     var inst2 = makeInstance(0, index, InstanceState.kInProgress, CommandType.Del);

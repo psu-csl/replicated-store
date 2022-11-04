@@ -18,8 +18,7 @@ public class Log {
     private final KVStore kvStore;
     private final ReentrantLock mu;
     private final Condition cvExecutable;
-    private final Condition cvCommittable;
-    private final HashMap<Long, Instance> log;
+    private final HashMap<Long, InstanceWithCv> log;
     private long globalLastExecuted = 0;
     private long lastIndex = 0;
     private long lastExecuted = 0;
@@ -31,14 +30,19 @@ public class Log {
         log = new HashMap<>();
         mu = new ReentrantLock();
         cvExecutable = mu.newCondition();
-        cvCommittable = mu.newCondition();
     }
 
-    public static boolean insert(HashMap<Long, Instance> log, Instance instance) {
+    public static boolean insert(HashMap<Long, InstanceWithCv> log, Instance instance) {
         var i = instance.getIndex();
-        var it = log.get(i);
+        var itWithCv = log.get(i);
+        if(itWithCv == null) {
+            itWithCv = new InstanceWithCv();
+            log.put(i, itWithCv);
+        }
+        var it = itWithCv.getInstance();
         if (it == null) {
-            log.put(i, instance);
+            itWithCv.setInstance(instance);
+            log.put(i,itWithCv);
             return true;
         }
         if (it.isCommitted() || it.isExecuted()) {
@@ -46,7 +50,8 @@ public class Log {
             return false;
         }
         if (instance.getBallot() > it.getBallot()) {
-            log.put(i, instance);
+            itWithCv.setInstance(instance);
+            log.put(i, itWithCv);
             return false;
         }
         if (instance.getBallot() == it.getBallot())
@@ -82,12 +87,14 @@ public class Log {
     }
 
     public boolean isExecutable() {
-        Instance found = log.get(lastExecuted + 1);
-        return found != null && found.getState() == InstanceState.kCommitted;
+        var found = log.get(lastExecuted + 1);
+        return found != null && found.getInstance().getState() == InstanceState.kCommitted;
     }
 
     public Instance at(Long index) {
-        return log.get(index);
+        if(log.get(index) == null)
+            return null;
+        return log.get(index).getInstance();
     }
 
     public void append(Instance instance) {
@@ -99,7 +106,7 @@ public class Log {
             }
             if (insert(log, instance)) {
                 lastIndex = max(lastIndex, i);
-                cvCommittable.signalAll();
+                log.get(instance.getIndex()).signal();
             }
         } finally {
             mu.unlock();
@@ -111,10 +118,15 @@ public class Log {
 
         mu.lock();
         try {
-            var it = log.get(index);
+            var itWithCv = log.get(index);
+            if(itWithCv == null){
+                itWithCv = new InstanceWithCv();
+                log.put(index, itWithCv);
+            }
+            var it = itWithCv.getInstance();
             while (it == null) {
-                cvCommittable.await();
-                it = log.get(index);
+                itWithCv.await();
+                it = log.get(index).getInstance();
             }
             if (it.isInProgress()) {
                 it.setCommitted();
@@ -138,7 +150,7 @@ public class Log {
             if (!running) {
                 return null;
             }
-            var it = log.get(lastExecuted + 1);
+            var it = log.get(lastExecuted + 1).getInstance();
             assert it != null;
 
             KVResult result = kvStore.execute(it.getCommand());
@@ -163,9 +175,9 @@ public class Log {
                 if (inst == null) {
                     break;
                 }
-                assert (ballot >= inst.getBallot()) : "CommitUntil case 2";
-                if (inst.getBallot() == ballot) {
-                    inst.setCommitted();
+                assert (ballot >= inst.getInstance().getBallot()) : "CommitUntil case 2";
+                if (inst.getInstance().getBallot() == ballot) {
+                    inst.getInstance().setCommitted();
                 }
             }
             if (isExecutable()) {
@@ -181,9 +193,9 @@ public class Log {
         try {
             while (globalLastExecuted < leaderGlobalLastExecuted) {
                 ++globalLastExecuted;
-                var inst = log.get(globalLastExecuted);
+                var inst = log.get(globalLastExecuted).getInstance();
                 assert (inst != null && inst.isExecuted()) : "TrimUntil case 1";
-                log.remove(globalLastExecuted, inst);
+                log.remove(globalLastExecuted);
             }
         } finally {
             mu.unlock();
@@ -197,7 +209,7 @@ public class Log {
             for (long i = globalLastExecuted + 1; i <= lastIndex; i++) {
                 var inst = log.get(i);
                 if (inst != null) {
-                    instances.add(inst);
+                    instances.add(inst.getInstance());
                 }
             }
             return instances;

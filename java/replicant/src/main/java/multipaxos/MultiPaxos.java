@@ -56,7 +56,7 @@ class PrepareState {
   public long numOks;
   public long leader;
   public long maxLastIndex;
-  public final HashMap<Long, log.Instance> log;
+  public final HashMap<Long, log.InstanceWithCv> log;
   public final ReentrantLock mu;
   public final Condition cv;
 
@@ -316,7 +316,7 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
       }
     }
   }
-  public Map.Entry<Long,HashMap<Long, log.Instance>> runPreparePhase(long ballot) {
+  public Map.Entry<Long,HashMap<Long, log.InstanceWithCv>> runPreparePhase(long ballot) {
     var state = new PrepareState(this.id);
     multipaxos.PrepareRequest.Builder request = multipaxos.PrepareRequest.newBuilder();
     request.setSender(this.id);
@@ -496,13 +496,14 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
     state.mu.unlock();
     return globalLastExecuted;
   }
-  public void replay(long ballot, HashMap<Long, log.Instance> log) {
+  public void replay(long ballot, HashMap<Long, log.InstanceWithCv> log) {
 
-    for (Map.Entry<Long, log.Instance> entry : log.entrySet()) {
-      var r = runAcceptPhase(ballot, entry.getValue().getIndex(), entry.getValue().getCommand(),
-              entry.getValue().getClientId());
+    for (Map.Entry<Long, log.InstanceWithCv> entry : log.entrySet()) {
+        var it = entry.getValue().getInstance();
+      var r = runAcceptPhase(ballot, it.getIndex(), it.getCommand(),
+              it.getClientId());
       while(r.type == MultiPaxosResultType.kRetry)
-        r = runAcceptPhase(ballot, entry.getValue().getIndex(), entry.getValue().getCommand(),entry.getValue().getClientId());
+        r = runAcceptPhase(ballot, it.getIndex(), it.getCommand(),it.getClientId());
       if (r.type == MultiPaxosResultType.kSomeoneElseLeader) {
         return;
       }

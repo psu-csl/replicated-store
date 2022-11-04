@@ -8,6 +8,7 @@ import io.grpc.ManagedChannelBuilder;
 import kvstore.MemKVStore;
 import log.Instance;
 import log.Instance.InstanceState;
+import log.InstanceWithCv;
 import log.Log;
 import multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCBlockingStub;
 import org.junit.jupiter.api.BeforeEach;
@@ -443,11 +444,11 @@ class MultiPaxosTest {
         var log = res.getValue();
         var lastIndex = res.getKey();
         assertEquals(index5, lastIndex);
-        assertEquals(i1, log.get(index1));
-        assertEquals(i2, log.get(index2));
-        assertEquals(peer0i3.getCommand(), log.get(index3).getCommand());
-        assertEquals(peer0i4.getCommand(), log.get(index4).getCommand());
-        assertEquals(peer1i5, log.get(index5));
+        assertEquals(i1, log.get(index1).getInstance());
+        assertEquals(i2, log.get(index2).getInstance());
+        assertEquals(peer0i3.getCommand(), log.get(index3).getInstance().getCommand());
+        assertEquals(peer0i4.getCommand(), log.get(index4).getInstance().getCommand());
+        assertEquals(peer1i5, log.get(index5).getInstance());
 
         peers.get(0).stopRPCServer();
         peers.get(1).stopRPCServer();
@@ -539,10 +540,10 @@ class MultiPaxosTest {
         long index3 = 3;
         var i3 = makeInstance(ballot, index3, InstanceState.kInProgress, CommandType.Del);
 
-        HashMap<Long, log.Instance> log = new HashMap<>();
-        log.put(index1, i1);
-        log.put(index2, i2);
-        log.put(index3, i3);
+        HashMap<Long, log.InstanceWithCv> log = new HashMap<>();
+        log.put(index1, new InstanceWithCv(i1));
+        log.put(index2, new InstanceWithCv(i2));
+        log.put(index3, new InstanceWithCv(i3));
 
         assertNull(logs.get(0).at(index1));
         assertNull(logs.get(0).at(index2));
