@@ -106,9 +106,10 @@ public class Log {
             if (i <= globalLastExecuted) {
                 return;
             }
-            if (insert(log, instance, cvCommittableMap, mu.newCondition())) {
+            var cv = cvCommittableMap.get(i) == null ? mu.newCondition():cvCommittableMap.get(i);
+            if (insert(log, instance, cvCommittableMap, cv)) {
                 lastIndex = max(lastIndex, i);
-                cvCommittableMap.get(instance.getIndex()).signal();
+                cv.signal();
             }
         } finally {
             mu.unlock();
