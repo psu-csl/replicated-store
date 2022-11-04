@@ -1,122 +1,47 @@
 #+title: TODO
 
 * TODO
-** All
+** Rust
+*** ensure stack variables are not used across await calls
+     see https://tokio.rs/tokio/tutorial/io about how this hurts
+*** switch to using parking_lot::mutex
+*** standardize error handling -- currently errors are ignored in most places
+*** redesign so that executor only writes to a socket and client only reads from it
+     so that we could get rid of tokio mutex in client_manager; currently,
+     client may write to socket as well in the error case, e.g., if the message
+     cannot be parsed.
+
+** C++
+*** try other sanitizers (msan, asan) as well
+*** handle errors in asio calls
+*** audit all the uses of std::atomic
+    - make sure the race conditions due to not using lock do not happen
+*** explore the overhead of locking ballot_; replace NextBallot with CAS loop,
+    - remove the lock, and change ballot to atomic and measure the overhead.
+*** consider replacing ballot with atomic and using the CAS loop
+    - and make sure to insert PAUSEs below, per recommendation of Thiago on C++
+      slack: https://herbsutter.com/2012/08/31/reader-qa-how-to-write-a-cas-loop-using-stdatomics/
+
+
+* TODO-after-paper-submission
 *** in replay() function, if there is a gap send out a no-op command
      it is possible that at the end of prepare phase, the new leader ends up
      with a log that contains a gap; in this case the new leader should issue a
      no-op command for the gap so that the instances could be executed on the
      state machine.
 *** add unit test for log::set_index
-*** get rid of ready state and start serving clients immediately
-     currently, if a new leader is elected, we do not start serving clients
-     until we have replayed all the instances that we found out during phase 1.
-     in theory, we can start serving clients immediately if we figure out the
-     highest index number from the merged log and set the leader's last_index to
-     that.
-*** design a better committable notification system
-    - currently, since appending an entry to the log happens in the accept
-      handler (i.e. rpc thread), and committing an entry in the log happens in
-      the main thread; hence, a commit method of log may get called before the
-      entry is appended at the same index; therefore, we the commit method of
-      the log object waits until it is notified once the entry is appended.
-      However, currently, when an entry eventually gets appended, we notify all
-      the threads that are waiting to commit an entry. this probably results in
-      a lot of unnecessary context switches. Ideally, we want to wake up only
-      the right thread. It would be interesting to measure the overhead of this
-      (perhaps by instrumenting and seeing how many times a thread that sleeps
-      on a commit gets woken up mistakenly) and compare it with sticking a
-      condition variable per instance in the log, in which case, every append
-      command would wake up only the right command.
-
-*** reorder the code in tests/doc/code to match the protocol
-    - currently things are mixed up with commit stuff followed by prepare and
-      then accept, mainly due to our rename of heartbeat to commit; fix the
-      order in all files
-*** remove sender_id field from protobuf requests
 *** avoid sleeps in tests due to TCP connection re-establishment
-
 *** handle gaps due to temporary disconnect
     - Currently, if a peer temporarily disconnects and then reconnects, then it
       will have a gap in its log. it will not be able to execute entries past
       the gap, it will not be able to prune its log, which will prevent everyone
       else from pruning their logs. when we have a gap like this, we should
-      either (1) force a new leader election to recover the lost entries, or (2)
-      ask other peers and fill our log, or (3) resort to using log pruning that
-      persists the state machine to disk and prunes the log without hearing from
-      the peers. we do not implement this at the moment: if a peer temporarily
-      disconnects and accrues a gap, then log pruning will be stuck on all
-      processes.
-
-*** handle timeouts in RPCs
-    - with the most recent design (heap-allocated refcounted state), this should
-      just work, but we need to actually try and see if it works.
-
-*** rethink class interface and hide methods that don't need to be public
-
-
-*** explore the cost of sending RPCs to self
-
+      either (1) let the leader regularly run phase 1 (leader election) to have
+      the peers that have fallen back to recover the lost entries, or (2) let
+      the peer that has fallen behind to ask other peers and fill its log, or
+      (3) resort to using log pruning that persists the state machine to disk
+      and prunes the log without hearing from the peers. we do not implement
+      this at the moment: if a peer temporarily disconnects and accrues a gap,
+      then log pruning will be stuck on all processes.
 *** evaluate the choice of a resizable circular buffer for log
     - see how boost implements it
-
-*** async version
-
-** Rust
-*** ensure stack variables are not used across await calls
-     see https://tokio.rs/tokio/tutorial/io about how this hurts
-*** examine all tokio::sync::Mutex use cases and see if they can be avoided
-*** one of them definitely can be: the use in client-manager
-*** switch to using parking_lot::mutex
-*** standardize error handling -- currently errors are ignored in most places
-*** given that most of the stuff will run on a single thread, measure CPU
-     utilization and spawn tasks for each replicate call if necessary
-*** currently we're using tokio mutexes when doing rpc calls, which are slower
-     than standard mutexes; perhaps we should restructure so that each task
-     has its own endpoints, so that we don't need to acquire mutexes
-** Java
-*** avoid class duplication
-    - currently we have both proto generated and custom implementations for
-      Instance and Command; We transform from custom implementation to proto
-      generated one. Refactor such that we have only proto generated classes.
-
-*** audit all the uses of std::atomic
-    - make sure the race conditions due to not using lock do not happen
-*** avoid holding the lock for a long time in rpc handlers
-
-*** explore the overhead of locking ballot_; replace NextBallot with CAS loop,
-    - remove the lock, and change ballot to atomic and measure the overhead.
-
-*** consider replacing ballot with atomic and using the CAS loop
-    - and make sure to insert PAUSEs below, per recommendation of Thiago on C++
-      slack: https://herbsutter.com/2012/08/31/reader-qa-how-to-write-a-cas-loop-using-stdatomics/
-
-
-*** consider merging xxx_state_t variables into one
-    - using std::variant and using the same function for quorum detection in the
-      while loop at the end of SendXXX functions.
-
-*** currently, replicant hangs on accept() and we stop the program using C-c.
-    - this has further implications because, e.g., a standalone heartbeat thread
-      will not be able to know when to stop; this is not a problem because the
-      OS will clean up if we C-c and exit the main thread, but a cleaner
-      solution is  desirable.
-
-*** reimplement concurrency stuff using C++20 features.
-
-*** handle errors in asio calls
-
-** C++
-*** try other sanitizers (msan, asan) as well
-* DONE
-
-*** DONE avoid tsan warnings due to stale threads
-    - The current design may push stale prepare responses to prepare_ok_reponses
-      and increase the prepare_num_responses. Then the prepare_thread proceed to
-      replay as it reaches prepare_num_responses, though the instances for
-      replay are not from majority peers. (heartbeat_thread and accept might
-      have similar issues, though it seems that they won't fail the correctness
-      so far)
-    - we fixed it by storing the common state among threads in a heap-allocated
-      and reference counted struct that is shared among threads; the last thread
-      that exits frees the state
