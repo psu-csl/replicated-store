@@ -115,6 +115,8 @@
 
     - port_: string; the port where the RPC server is listening
 
+    - num_peers_: number of peers; initialized from the configuration file.
+
     - rpc_peers_: an array of RPC endpoints to peers, including to self.
       initialized from the configuration file.
 

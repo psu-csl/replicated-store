@@ -39,6 +39,7 @@ MultiPaxos::MultiPaxos(Log* log, json const& config)
       commit_interval_(config["commit_interval"]),
       engine_(id_),
       port_(config["peers"][id_]),
+      num_peers_(config["peers"].size()),
       thread_pool_(config["threadpool_size"]),
       rpc_server_running_(false),
       prepare_thread_running_(false),
@@ -215,10 +216,10 @@ MultiPaxos::RunPreparePhase(int64_t ballot) {
   }
   {
     std::unique_lock lock(state->mu_);
-    while (state->leader_ == id_ && state->num_oks_ <= rpc_peers_.size() / 2 &&
-           state->num_rpcs_ != rpc_peers_.size())
+    while (state->leader_ == id_ && state->num_oks_ <= num_peers_ / 2 &&
+           state->num_rpcs_ != num_peers_)
       state->cv_.wait(lock);
-    if (state->num_oks_ > rpc_peers_.size() / 2)
+    if (state->num_oks_ > num_peers_ / 2)
       return std::make_pair(state->max_last_index_, std::move(state->log_));
   }
   return std::nullopt;
@@ -267,10 +268,10 @@ Result MultiPaxos::RunAcceptPhase(int64_t ballot,
   }
   {
     std::unique_lock lock(state->mu_);
-    while (state->leader_ == id_ && state->num_oks_ <= rpc_peers_.size() / 2 &&
-           state->num_rpcs_ != rpc_peers_.size())
+    while (state->leader_ == id_ && state->num_oks_ <= num_peers_ / 2 &&
+           state->num_rpcs_ != num_peers_)
       state->cv_.wait(lock);
-    if (state->num_oks_ > rpc_peers_.size() / 2) {
+    if (state->num_oks_ > num_peers_ / 2) {
       log_->Commit(index);
       return Result{ResultType::kOk, std::nullopt};
     }
@@ -318,9 +319,9 @@ int64_t MultiPaxos::RunCommitPhase(int64_t ballot,
   }
   {
     std::unique_lock lock(state->mu_);
-    while (state->leader_ == id_ && state->num_rpcs_ != rpc_peers_.size())
+    while (state->leader_ == id_ && state->num_rpcs_ != num_peers_)
       state->cv_.wait(lock);
-    if (state->num_oks_ == rpc_peers_.size())
+    if (state->num_oks_ == num_peers_)
       return state->min_last_executed_;
   }
   return global_last_executed;
