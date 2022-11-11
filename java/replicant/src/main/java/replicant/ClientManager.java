@@ -5,7 +5,7 @@ import io.netty.channel.ChannelHandler.Sharable;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.util.AttributeKey;
-import java.util.HashMap;
+import java.util.concurrent.ConcurrentHashMap;
 import multipaxos.MultiPaxos;
 import org.slf4j.LoggerFactory;
 
@@ -16,7 +16,7 @@ public class ClientManager extends SimpleChannelInboundHandler<String> {
   private final long numPeers;
   private final MultiPaxos multiPaxos;
   private final AttributeKey<Long> clientIdAttrKey = AttributeKey.valueOf("ClientID");
-  private final HashMap<Long, Client> clients = new HashMap<>();
+  private final ConcurrentHashMap<Long, Client> clients = new ConcurrentHashMap<>();
   private long nextClientId;
 
   public ClientManager(long id, long numPeers, MultiPaxos multiPaxos) {
