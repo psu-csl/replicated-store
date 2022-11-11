@@ -163,7 +163,7 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
   long commit_interval_;
   std::mt19937 engine_;
   std::string port_;
-  int64_t num_peers_;
+  size_t num_peers_;
   std::vector<rpc_peer_t> rpc_peers_;
   mutable std::mutex mu_;
   asio::thread_pool thread_pool_;
