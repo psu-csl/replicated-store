@@ -8,7 +8,9 @@ using namespace std::chrono;
 
 using nlohmann::json;
 
+using grpc::ClientAsyncResponseReader;
 using grpc::ClientContext;
+using grpc::CompletionQueue;
 using grpc::ServerBuilder;
 using grpc::ServerContext;
 using grpc::Status;
@@ -185,42 +187,48 @@ MultiPaxos::RunPreparePhase(int64_t ballot) {
   request.set_sender(id_);
   request.set_ballot(ballot);
 
-  for (auto& peer : rpc_peers_) {
-    asio::post(thread_pool_, [this, state, &peer, request] {
-      ClientContext context;
-      PrepareResponse response;
-      Status s = peer.stub_->Prepare(&context, std::move(request), &response);
-      DLOG(INFO) << id_ << " sent prepare request to " << peer.id_;
-      {
-        std::scoped_lock lock(state->mu_);
-        ++state->num_rpcs_;
-        if (s.ok()) {
-          if (response.type() == OK) {
-            ++state->num_oks_;
-            for (int i = 0; i < response.instances_size(); ++i) {
-              state->max_last_index_ = std::max(state->max_last_index_,
-                                                response.instances(i).index());
-              Insert(&state->log_, std::move(response.instances(i)));
-            }
-          } else {
-            std::scoped_lock lock(mu_);
-            if (response.ballot() > ballot_) {
-              BecomeFollower(response.ballot());
-              state->leader_ = ExtractLeaderId(ballot_);
-            }
-          }
+  std::vector<std::unique_ptr<ClientAsyncResponseReader<PrepareResponse>>> rpcs;
+  std::vector<PrepareResponse> responses(num_peers_);
+  std::vector<Status> statuses(num_peers_);
+  std::vector<ClientContext> contexts(num_peers_);
+
+  CompletionQueue cq;
+
+  for (size_t i = 0; i < num_peers_; ++i) {
+    rpcs.emplace_back(
+        rpc_peers_[i].stub_->AsyncPrepare(&contexts[i], request, &cq));
+    rpcs.back()->Finish(&responses[i], &statuses[i], (void*)i);
+  }
+
+  size_t num_rpcs = 0;
+  size_t num_oks = 0;
+  int64_t max_last_index = 0;
+  std::unordered_map<int64_t, multipaxos::Instance> log;
+
+  void* tag;
+  bool ok = false;
+
+  while (cq.Next(&tag, &ok)) {
+    ++num_rpcs;
+    if (ok) {
+      auto response = &responses[reinterpret_cast<size_t>(tag)];
+      if (response->type() == OK) {
+        ++num_oks;
+        for (int i = 0; i < response->instances_size(); ++i) {
+          max_last_index =
+              std::max(max_last_index, response->instances(i).index());
+          Insert(&log, std::move(response->instances(i)));
+        }
+      } else {
+        std::scoped_lock lock(mu_);
+        if (response->ballot() > ballot_) {
+          BecomeFollower(response->ballot());
+          break;
         }
       }
-      state->cv_.notify_one();
-    });
-  }
-  {
-    std::unique_lock lock(state->mu_);
-    while (state->leader_ == id_ && state->num_oks_ <= num_peers_ / 2 &&
-           state->num_rpcs_ != num_peers_)
-      state->cv_.wait(lock);
-    if (state->num_oks_ > num_peers_ / 2)
-      return std::make_pair(state->max_last_index_, std::move(state->log_));
+    }
+    if (num_oks > num_peers_ / 2)
+      return std::make_pair(max_last_index, std::move(log));
   }
   return std::nullopt;
 }
@@ -242,41 +250,43 @@ Result MultiPaxos::RunAcceptPhase(int64_t ballot,
   request.set_sender(id_);
   *request.mutable_instance() = std::move(instance);
 
-  for (auto& peer : rpc_peers_) {
-    asio::post(thread_pool_, [this, state, &peer, request] {
-      ClientContext context;
-      AcceptResponse response;
-      Status s = peer.stub_->Accept(&context, std::move(request), &response);
-      DLOG(INFO) << id_ << " sent accept request to " << peer.id_;
-      {
-        std::scoped_lock lock(state->mu_);
-        ++state->num_rpcs_;
-        if (s.ok()) {
-          if (response.type() == OK) {
-            ++state->num_oks_;
-          } else {
-            std::scoped_lock lock(mu_);
-            if (response.ballot() > ballot_) {
-              BecomeFollower(response.ballot());
-              state->leader_ = ExtractLeaderId(ballot_);
-            }
-          }
+  std::vector<std::unique_ptr<ClientAsyncResponseReader<AcceptResponse>>> rpcs;
+  std::vector<AcceptResponse> responses(num_peers_);
+  std::vector<Status> statuses(num_peers_);
+  std::vector<ClientContext> contexts(num_peers_);
+
+  CompletionQueue cq;
+
+  for (size_t i = 0; i < num_peers_; ++i) {
+    rpcs.emplace_back(
+        rpc_peers_[i].stub_->AsyncAccept(&contexts[i], request, &cq));
+    rpcs.back()->Finish(&responses[i], &statuses[i], (void*)i);
+  }
+
+  size_t num_rpcs = 0;
+  size_t num_oks = 0;
+
+  void* tag;
+  bool ok = false;
+
+  while (cq.Next(&tag, &ok)) {
+    ++num_rpcs;
+    if (ok) {
+      auto response = &responses[reinterpret_cast<size_t>(tag)];
+      if (response->type() == OK) {
+        ++num_oks;
+      } else {
+        std::scoped_lock lock(mu_);
+        if (response->ballot() > ballot_) {
+          BecomeFollower(response->ballot());
+          return Result{ResultType::kSomeoneElseLeader, state->leader_};
         }
       }
-      state->cv_.notify_one();
-    });
-  }
-  {
-    std::unique_lock lock(state->mu_);
-    while (state->leader_ == id_ && state->num_oks_ <= num_peers_ / 2 &&
-           state->num_rpcs_ != num_peers_)
-      state->cv_.wait(lock);
-    if (state->num_oks_ > num_peers_ / 2) {
+    }
+    if (num_oks > num_peers_ / 2) {
       log_->Commit(index);
       return Result{ResultType::kOk, std::nullopt};
     }
-    if (state->leader_ != id_)
-      return Result{ResultType::kSomeoneElseLeader, state->leader_};
   }
   return Result{ResultType::kRetry, std::nullopt};
 }
@@ -291,38 +301,44 @@ int64_t MultiPaxos::RunCommitPhase(int64_t ballot,
   request.set_last_executed(state->min_last_executed_);
   request.set_global_last_executed(global_last_executed);
 
-  for (auto& peer : rpc_peers_) {
-    asio::post(thread_pool_, [this, state, &peer, request] {
-      ClientContext context;
-      CommitResponse response;
-      Status s = peer.stub_->Commit(&context, std::move(request), &response);
-      DLOG(INFO) << id_ << " sent commit to " << peer.id_;
-      {
-        std::scoped_lock lock(state->mu_);
-        ++state->num_rpcs_;
-        if (s.ok()) {
-          if (response.type() == OK) {
-            ++state->num_oks_;
-            if (response.last_executed() < state->min_last_executed_)
-              state->min_last_executed_ = response.last_executed();
-          } else {
-            std::scoped_lock lock(mu_);
-            if (response.ballot() > ballot_) {
-              BecomeFollower(response.ballot());
-              state->leader_ = ExtractLeaderId(ballot_);
-            }
-          }
+  std::vector<std::unique_ptr<ClientAsyncResponseReader<CommitResponse>>> rpcs;
+  std::vector<CommitResponse> responses(num_peers_);
+  std::vector<Status> statuses(num_peers_);
+  std::vector<ClientContext> contexts(num_peers_);
+
+  CompletionQueue cq;
+
+  for (size_t i = 0; i < num_peers_; ++i) {
+    rpcs.emplace_back(
+        rpc_peers_[i].stub_->AsyncCommit(&contexts[i], request, &cq));
+    rpcs.back()->Finish(&responses[i], &statuses[i], (void*)i);
+  }
+
+  size_t num_rpcs = 0;
+  size_t num_oks = 0;
+  int64_t min_last_executed = log_->LastExecuted();
+
+  void* tag;
+  bool ok = false;
+
+  while (cq.Next(&tag, &ok)) {
+    ++num_rpcs;
+    if (ok) {
+      auto response = &responses[reinterpret_cast<size_t>(tag)];
+      if (response->type() == OK) {
+        ++num_oks;
+        min_last_executed =
+            std::min(min_last_executed, response->last_executed());
+      } else {
+        std::scoped_lock lock(mu_);
+        if (response->ballot() > ballot_) {
+          BecomeFollower(response->ballot());
+          break;
         }
       }
-      state->cv_.notify_one();
-    });
-  }
-  {
-    std::unique_lock lock(state->mu_);
-    while (state->leader_ == id_ && state->num_rpcs_ != num_peers_)
-      state->cv_.wait(lock);
-    if (state->num_oks_ == num_peers_)
-      return state->min_last_executed_;
+    }
+    if (num_oks == num_peers_)
+      return min_last_executed;
   }
   return global_last_executed;
 }
