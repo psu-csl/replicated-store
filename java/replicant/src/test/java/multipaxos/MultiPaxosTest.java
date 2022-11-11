@@ -9,13 +9,13 @@ import kvstore.MemKVStore;
 import log.Instance;
 import log.Instance.InstanceState;
 import log.Log;
-import multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCBlockingStub;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
 
 import static multipaxos.MultiPaxos.*;
 import static multipaxos.MultiPaxosResultType.*;
@@ -36,23 +36,23 @@ class MultiPaxosTest {
 
     public static Stub makeStub(String target) {
         ManagedChannel channel = ManagedChannelBuilder.forTarget(target).usePlaintext().build();
-        return new Stub(channel, multipaxos.MultiPaxosRPCGrpc.newBlockingStub(channel));
+        return new Stub(channel, multipaxos.MultiPaxosRPCGrpc.newFutureStub(channel));
     }
 
-    public static multipaxos.CommitResponse sendCommit(MultiPaxosRPCBlockingStub stub, long ballot, long lastExecuted, long globalLastExecuted) {
+    public static multipaxos.CommitResponse sendCommit(MultiPaxosRPCGrpc.MultiPaxosRPCFutureStub stub, long ballot, long lastExecuted, long globalLastExecuted) throws ExecutionException, InterruptedException {
 
         multipaxos.CommitRequest request = multipaxos.CommitRequest.newBuilder().setBallot(ballot).setLastExecuted(lastExecuted).setGlobalLastExecuted(globalLastExecuted).build();
-        return stub.commit(request);
+        return stub.commit(request).get();
     }
 
-    public static multipaxos.PrepareResponse sendPrepare(MultiPaxosRPCBlockingStub stub, long ballot) {
+    public static multipaxos.PrepareResponse sendPrepare(MultiPaxosRPCGrpc.MultiPaxosRPCFutureStub stub, long ballot) throws ExecutionException, InterruptedException {
         multipaxos.PrepareRequest request = multipaxos.PrepareRequest.newBuilder().setBallot(ballot).build();
-        return stub.prepare(request);
+        return stub.prepare(request).get();
     }
 
-    public static multipaxos.AcceptResponse sendAccept(MultiPaxosRPCBlockingStub stub, Instance inst) {
+    public static multipaxos.AcceptResponse sendAccept(MultiPaxosRPCGrpc.MultiPaxosRPCFutureStub stub, Instance inst) throws ExecutionException, InterruptedException {
         multipaxos.AcceptRequest request = multipaxos.AcceptRequest.newBuilder().setInstance(makeProtoInstance(inst)).build();
-        return stub.accept(request);
+        return stub.accept(request).get();
     }
 
     public static long leader(MultiPaxos peer) {
@@ -120,7 +120,7 @@ class MultiPaxosTest {
     }
 
     @Test
-    void requestsWithLowerBallotIgnored() {
+    void requestsWithLowerBallotIgnored() throws ExecutionException, InterruptedException {
         peers.get(0).startRPCServer();
         var stub = makeStub(configs.get(0).getPeers().get(0));
 
@@ -149,7 +149,7 @@ class MultiPaxosTest {
     }
 
     @Test
-    void requestsWithHigherBallotChangeLeaderToFollower() {
+    void requestsWithHigherBallotChangeLeaderToFollower() throws ExecutionException, InterruptedException {
         peers.get(0).startRPCServer();
         var stub = makeStub(configs.get(0).getPeers().get(0));
 
@@ -183,7 +183,7 @@ class MultiPaxosTest {
     }
 
     @Test
-    void commitCommitsAndTrims() {
+    void commitCommitsAndTrims() throws ExecutionException, InterruptedException {
         peers.get(0).startRPCServer();
         var stub = makeStub(configs.get(0).getPeers().get(0));
 
@@ -217,7 +217,7 @@ class MultiPaxosTest {
     }
 
     @Test
-    void prepareRespondsWithCorrectInstances() {
+    void prepareRespondsWithCorrectInstances() throws ExecutionException, InterruptedException {
         peers.get(0).startRPCServer();
         var stub = makeStub(configs.get(0).getPeers().get(0));
 
@@ -271,7 +271,7 @@ class MultiPaxosTest {
     }
 
     @Test
-    void acceptAppendsToLog() {
+    void acceptAppendsToLog() throws ExecutionException, InterruptedException {
         peers.get(0).startRPCServer();
         var stub = makeStub(configs.get(0).getPeers().get(0));
 
@@ -295,7 +295,7 @@ class MultiPaxosTest {
     }
 
     @Test
-    void prepareResponseWithHigherBallotChangesLeaderToFollower() {
+    void prepareResponseWithHigherBallotChangesLeaderToFollower() throws ExecutionException, InterruptedException {
         peers.get(0).startRPCServer();
         peers.get(1).startRPCServer();
         peers.get(2).startRPCServer();
@@ -324,7 +324,7 @@ class MultiPaxosTest {
     }
 
     @Test
-    public void acceptResponseWithHighBallotChangesLeaderToFollower() {
+    public void acceptResponseWithHighBallotChangesLeaderToFollower() throws ExecutionException, InterruptedException {
         peers.get(0).startRPCServer();
         peers.get(1).startRPCServer();
         peers.get(2).startRPCServer();
@@ -355,7 +355,7 @@ class MultiPaxosTest {
     }
 
     @Test
-    public void commitResponseWithHigherBallotChangesLeaderToFollower() {
+    public void commitResponseWithHigherBallotChangesLeaderToFollower() throws ExecutionException, InterruptedException {
         peers.get(0).startRPCServer();
         peers.get(1).startRPCServer();
         peers.get(2).startRPCServer();
@@ -616,14 +616,14 @@ class MultiPaxosTest {
     static class Stub {
 
         private final ManagedChannel channel;
-        private final MultiPaxosRPCBlockingStub stub;
+        private final MultiPaxosRPCGrpc.MultiPaxosRPCFutureStub stub;
 
-        public Stub(ManagedChannel channel, MultiPaxosRPCBlockingStub stub) {
+        public Stub(ManagedChannel channel, MultiPaxosRPCGrpc.MultiPaxosRPCFutureStub stub) {
             this.channel = channel;
             this.stub = stub;
         }
 
-        public MultiPaxosRPCBlockingStub get() {
+        public MultiPaxosRPCGrpc.MultiPaxosRPCFutureStub get() {
             return stub;
         }
 
