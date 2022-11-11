@@ -34,65 +34,6 @@ import log.Instance;
 import log.Log;
 import org.slf4j.LoggerFactory;
 
-class AcceptState {
-
-  public long numRpcs;
-  public long numOks;
-  public long leader;
-  public final ReentrantLock mu;
-  public final Condition cv;
-
-  public AcceptState(long leader) {
-    this.numRpcs = 0;
-    this.numOks = 0;
-    this.leader = leader;
-    this.mu = new ReentrantLock();
-    this.cv = mu.newCondition();
-  }
-
-}
-
-class PrepareState {
-
-  public long numRpcs;
-  public long numOks;
-  public long leader;
-  public long maxLastIndex;
-  public final HashMap<Long, log.Instance> log;
-  public final ReentrantLock mu;
-  public final Condition cv;
-
-
-  public PrepareState(long leader) {
-    this.numRpcs = 0;
-    this.numOks = 0;
-    this.leader = leader;
-    this.maxLastIndex = 0;
-    this.log = new HashMap<>();
-    this.mu = new ReentrantLock();
-    this.cv = mu.newCondition();
-  }
-}
-
-class CommitState {
-
-  public long numRpcs;
-  public long numOks;
-  public long minLastExecuted;
-  public long leader;
-  public final ReentrantLock mu;
-  public final Condition cv;
-
-  public CommitState(long leader, long minLastExecuted) {
-    this.numRpcs = 0;
-    this.leader = leader;
-    this.numOks = 0;
-    this.minLastExecuted = minLastExecuted;
-    this.mu = new ReentrantLock();
-    this.cv = mu.newCondition();
-  }
-}
-
 class RpcPeer {
 
   public final long id;
@@ -331,7 +272,6 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
 
   public Map.Entry<Long, HashMap<Long, log.Instance>> runPreparePhase(long ballot) {
     var prepareFutures = new ArrayList<ListenableFuture<PrepareResponse>>();
-    long numRpcs = 0;
     long numOks = 0;
     long maxLastIndex = 0;
     HashMap<Long, log.Instance> log = new HashMap<>();
@@ -350,13 +290,11 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
       } catch (ExecutionException | StatusRuntimeException e) {
         logger.info(id + " RPC connection failed");
         e.printStackTrace();
-        ++numRpcs;
         continue;
       } catch (InterruptedException e) {
         logger.error(e.getMessage());
         e.printStackTrace();
       }
-      ++numRpcs;
       if (response.getType() == multipaxos.ResponseType.OK) {
         ++numOks;
         for (int i = 0; i < response.getInstancesCount(); ++i) {
@@ -382,7 +320,6 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
 
   public Result runAcceptPhase(long ballot, long index, command.Command command, long clientId) {
     var acceptFutures = new ArrayList<ListenableFuture<AcceptResponse>>();
-    var state = new AcceptState(this.id);
     log.Instance instance = new log.Instance();
 
     instance.setBallot(ballot);
@@ -401,7 +338,6 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
       logger.info(id + " sent accept request to " + peer.id);
     }
 
-    long numRpcs = 0;
     long numOks = 0;
 
     for (var f : acceptFutures) {
@@ -411,13 +347,11 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
       } catch (ExecutionException | StatusRuntimeException e) {
         logger.info(id + " RPC connection failed");
         e.printStackTrace();
-        ++numRpcs;
         continue;
       } catch (InterruptedException e) {
         logger.error(e.getMessage());
         e.printStackTrace();
       }
-      ++numRpcs;
       if (response.getType() == multipaxos.ResponseType.OK) {
         ++numOks;
       } else {
