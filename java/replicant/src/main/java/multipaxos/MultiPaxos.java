@@ -347,10 +347,9 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
           }
           mu.unlock();
        }
-    }
-
-    if (state.numOks > numPeers / 2) {
-      return new HashMap.SimpleEntry<>(state.maxLastIndex, state.log);
+      if (state.numOks > numPeers / 2) {
+        return new HashMap.SimpleEntry<>(state.maxLastIndex, state.log);
+      }
     }
     return null;
   }
@@ -399,10 +398,10 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
           }
           mu.unlock();
         }
-    }
-    if (state.numOks > numPeers / 2) {
-      log.commit(index);
-      return new Result(MultiPaxosResultType.kOk, null);
+        if (state.numOks > numPeers / 2) {
+          log.commit(index);
+          return new Result(MultiPaxosResultType.kOk, null);
+        }
     }
     if (state.leader != this.id) {
       return new Result(MultiPaxosResultType.kSomeoneElseLeader, state.leader);
@@ -410,8 +409,8 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
     return new Result(MultiPaxosResultType.kRetry, null);
   }
   public Long runCommitPhase(long ballot, long globalLastExecuted) {
-   var commitFutures = new ArrayList<ListenableFuture<CommitResponse>>();
-   var state = new CommitState(this.id, log.getLastExecuted());
+    var commitFutures = new ArrayList<ListenableFuture<CommitResponse>>();
+    var state = new CommitState(this.id, log.getLastExecuted());
     multipaxos.CommitRequest.Builder request = multipaxos.CommitRequest.newBuilder();
 
     request.setBallot(ballot);
@@ -453,9 +452,9 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
         }
     }
     if (state.numOks == numPeers) {
-        return state.minLastExecuted;
+      return state.minLastExecuted;
     }
-        return globalLastExecuted;
+    return globalLastExecuted;
   }
   public void replay(long ballot, HashMap<Long, log.Instance> log) {
 
