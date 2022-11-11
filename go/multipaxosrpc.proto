@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-option go_package = "github.com/psu-csl/replicated-store/go/consensus/multipaxos/comm";
+option go_package = "github.com/psu-csl/replicated-store/go/multipaxos/comm";
 
 package multipaxosrpc;
 
