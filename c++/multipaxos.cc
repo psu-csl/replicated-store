@@ -181,8 +181,6 @@ void MultiPaxos::CommitThread() {
 std::optional<
     std::pair<int64_t, std::unordered_map<int64_t, multipaxos::Instance>>>
 MultiPaxos::RunPreparePhase(int64_t ballot) {
-  auto state = std::make_shared<prepare_state_t>(id_);
-
   PrepareRequest request;
   request.set_sender(id_);
   request.set_ballot(ballot);
@@ -200,7 +198,6 @@ MultiPaxos::RunPreparePhase(int64_t ballot) {
     rpcs.back()->Finish(&responses[i], &statuses[i], (void*)i);
   }
 
-  size_t num_rpcs = 0;
   size_t num_oks = 0;
   int64_t max_last_index = 0;
   std::unordered_map<int64_t, multipaxos::Instance> log;
@@ -209,7 +206,6 @@ MultiPaxos::RunPreparePhase(int64_t ballot) {
   bool ok = false;
 
   while (cq.Next(&tag, &ok)) {
-    ++num_rpcs;
     if (ok) {
       auto response = &responses[reinterpret_cast<size_t>(tag)];
       if (response->type() == OK) {
@@ -237,8 +233,6 @@ Result MultiPaxos::RunAcceptPhase(int64_t ballot,
                                   int64_t index,
                                   Command command,
                                   int64_t client_id) {
-  auto state = std::make_shared<accept_state_t>(id_);
-
   Instance instance;
   instance.set_ballot(ballot);
   instance.set_index(index);
@@ -263,14 +257,12 @@ Result MultiPaxos::RunAcceptPhase(int64_t ballot,
     rpcs.back()->Finish(&responses[i], &statuses[i], (void*)i);
   }
 
-  size_t num_rpcs = 0;
   size_t num_oks = 0;
 
   void* tag;
   bool ok = false;
 
   while (cq.Next(&tag, &ok)) {
-    ++num_rpcs;
     if (ok) {
       auto response = &responses[reinterpret_cast<size_t>(tag)];
       if (response->type() == OK) {
@@ -279,7 +271,8 @@ Result MultiPaxos::RunAcceptPhase(int64_t ballot,
         std::scoped_lock lock(mu_);
         if (response->ballot() > ballot_) {
           BecomeFollower(response->ballot());
-          return Result{ResultType::kSomeoneElseLeader, state->leader_};
+          return Result{ResultType::kSomeoneElseLeader,
+                        ExtractLeaderId(ballot_)};
         }
       }
     }
@@ -293,12 +286,10 @@ Result MultiPaxos::RunAcceptPhase(int64_t ballot,
 
 int64_t MultiPaxos::RunCommitPhase(int64_t ballot,
                                    int64_t global_last_executed) {
-  auto state = std::make_shared<commit_state_t>(id_, log_->LastExecuted());
-
   CommitRequest request;
   request.set_ballot(ballot);
   request.set_sender(id_);
-  request.set_last_executed(state->min_last_executed_);
+  request.set_last_executed(log_->LastExecuted());
   request.set_global_last_executed(global_last_executed);
 
   std::vector<std::unique_ptr<ClientAsyncResponseReader<CommitResponse>>> rpcs;
@@ -314,7 +305,6 @@ int64_t MultiPaxos::RunCommitPhase(int64_t ballot,
     rpcs.back()->Finish(&responses[i], &statuses[i], (void*)i);
   }
 
-  size_t num_rpcs = 0;
   size_t num_oks = 0;
   int64_t min_last_executed = log_->LastExecuted();
 
@@ -322,7 +312,6 @@ int64_t MultiPaxos::RunCommitPhase(int64_t ballot,
   bool ok = false;
 
   while (cq.Next(&tag, &ok)) {
-    ++num_rpcs;
     if (ok) {
       auto response = &responses[reinterpret_cast<size_t>(tag)];
       if (response->type() == OK) {
