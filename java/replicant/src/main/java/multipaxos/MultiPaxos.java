@@ -114,6 +114,7 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
   private final AtomicBoolean commitReceived;
   private final long commitInterval;
   private final int port;
+  private final int numPeers;
   private final List<RpcPeer> rpcPeers;
   private final ReentrantLock mu;
   private final ExecutorService threadPool;
@@ -141,6 +142,7 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
 
     String target = config.getPeers().get((int) this.id);
     this.port =  Integer.parseInt(target.substring(target.indexOf(":") + 1));
+    this.numPeers = config.getPeers().size();
 
     threadPool = Executors.newFixedThreadPool(config.getThreadPoolSize());
     rpcServerRunning = false;
@@ -357,8 +359,8 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
       });
     }
     state.mu.lock();
-    while (state.leader == this.id && state.numOks <= rpcPeers.size() / 2
-            && state.numRpcs != rpcPeers.size()) {
+    while (state.leader == this.id && state.numOks <= numPeers / 2
+            && state.numRpcs != numPeers) {
       try {
         state.cv.await();
       } catch (InterruptedException e) {
@@ -366,7 +368,7 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
       }
     }
 
-    if (state.numOks > rpcPeers.size() / 2) {
+    if (state.numOks > numPeers / 2) {
       state.mu.unlock();
       return new HashMap.SimpleEntry<>(state.maxLastIndex,state.log);
     }
@@ -418,15 +420,15 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
       });
     }
     state.mu.lock();
-    while (state.leader == this.id && state.numOks <= rpcPeers.size() / 2
-            && state.numRpcs != rpcPeers.size()) {
+    while (state.leader == this.id && state.numOks <= numPeers / 2
+            && state.numRpcs != numPeers) {
       try {
         state.cv.await();
       } catch (InterruptedException e) {
         e.printStackTrace();
       }
     }
-    if (state.numOks > rpcPeers.size() / 2) {
+    if (state.numOks > numPeers / 2) {
       log.commit(index);
       state.mu.unlock();
       return new Result(MultiPaxosResultType.kOk, null);
@@ -482,14 +484,14 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
       });
     }
     state.mu.lock();
-    while (state.leader == this.id && state.numRpcs != rpcPeers.size()) {
+    while (state.leader == this.id && state.numRpcs != numPeers) {
       try {
         state.cv.await();
       } catch (InterruptedException e) {
         e.printStackTrace();
       }
     }
-    if (state.numOks == rpcPeers.size()) {
+    if (state.numOks == numPeers) {
       state.mu.unlock();
       return state.minLastExecuted;
     }
