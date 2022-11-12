@@ -63,8 +63,9 @@ public class Client {
     }
 
     public void start(){
-        t = new Thread(this::read);
-        t.start();
+        t = Thread.startVirtualThread(this::read);
+//        t = new Thread(this::read);
+//        t.start();
     }
 
     public void  stop(){
