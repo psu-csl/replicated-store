@@ -1,23 +1,19 @@
 package replicant;
 
 import ch.qos.logback.classic.Logger;
-import io.netty.channel.ChannelHandler.Sharable;
-import io.netty.channel.ChannelHandlerContext;
-import io.netty.channel.SimpleChannelInboundHandler;
-import io.netty.util.AttributeKey;
+import java.io.IOException;
+import java.net.Socket;
 import java.util.concurrent.ConcurrentHashMap;
 import multipaxos.MultiPaxos;
 import org.slf4j.LoggerFactory;
 
-@Sharable
-public class ClientManager extends SimpleChannelInboundHandler<String> {
+public class ClientManager{
 
   private static final Logger logger = (Logger) LoggerFactory.getLogger(ClientManager.class);
+  private long nextClientId;
   private final long numPeers;
   private final MultiPaxos multiPaxos;
-  private final AttributeKey<Long> clientIdAttrKey = AttributeKey.valueOf("ClientID");
   private final ConcurrentHashMap<Long, Client> clients = new ConcurrentHashMap<>();
-  private long nextClientId;
 
   public ClientManager(long id, long numPeers, MultiPaxos multiPaxos) {
     this.nextClientId = id;
@@ -31,32 +27,37 @@ public class ClientManager extends SimpleChannelInboundHandler<String> {
     return id;
   }
 
-  @Override
-  public void channelActive(final ChannelHandlerContext ctx) {
+  public void start(Socket socket){
     var id = nextClientId();
-    logger.info("client joined " + ctx);
-    ctx.channel().attr(clientIdAttrKey).set(id);
-    clients.put(id, new Client(id, ctx.channel(), multiPaxos));
+    try {
+      var client = new Client(id, socket, multiPaxos, this);
+      clients.put(id,client);
+      logger.info("client_manager started client "+id);
+      client.start();
+    } catch (IOException e) {
+      logger.warn(e.getMessage());
+//      e.printStackTrace();
+    }
   }
-
-  @Override
-  public void channelUnregistered(ChannelHandlerContext ctx) {
-    var id = ctx.channel().attr(clientIdAttrKey).get();
-    var it = clients.get(id);
-    assert it != null;
+  public Client get(Long clientId) {
+    return clients.get(clientId);
+  }
+  public void stop(Long id){
+    logger.info("client_manager stopped client " + id);
+    var client = clients.get(id);
+    if(client == null){
+      logger.warn("no client to stop " + id);
+      return;
+    }
+    client.stop();
     clients.remove(id);
   }
 
-  @Override
-  public void channelRead0(ChannelHandlerContext ctx, String msg) {
-    var clientId = ctx.channel().attr(clientIdAttrKey).get();
-    var client = clients.get(clientId);
-    if (client != null) {
-      client.read(msg);
-    }
-  }
-
-  public Client get(Long clientId) {
-    return clients.get(clientId);
+  public void stopAll(){
+    clients.forEach((id,client)->{
+      logger.info("client_manager stopping all clients " + id);
+      client.stop();
+      clients.remove(id);
+    });
   }
 }

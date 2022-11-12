@@ -1,20 +1,37 @@
 package replicant;
 
+import ch.qos.logback.classic.Logger;
 import command.Command;
-import io.netty.channel.Channel;
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
+import java.net.Socket;
 import multipaxos.MultiPaxos;
 import multipaxos.MultiPaxosResultType;
+import org.slf4j.LoggerFactory;
 
 public class Client {
 
-    private final long id;
-    private final Channel socket;
-    private final MultiPaxos multiPaxos;
+    private static final Logger logger = (Logger) LoggerFactory.getLogger(Client.class);
 
-    public Client(long id, Channel socket, MultiPaxos multiPaxos) {
+    private final long id;
+
+    private final BufferedReader reader;
+    private final BufferedWriter writer;
+    private final Socket socket;
+    private final MultiPaxos multiPaxos;
+    private final ClientManager manager;
+
+    public Client(long id, Socket socket, MultiPaxos multiPaxos, ClientManager manager)
+        throws IOException {
         this.id = id;
+        this.reader = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+        this.writer = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream()));
         this.socket = socket;
         this.multiPaxos = multiPaxos;
+        this.manager = manager;
     }
 
     public static Command parse(String request) {
@@ -23,41 +40,75 @@ public class Client {
             return null;
         }
         String[] tokens = request.split(" ");//"\\s+");
-        String command = tokens[0];
+        String commandType = tokens[0];
         String key = tokens[1];
-        Command res = new Command();
-        res.setKey(key);
-        if ("get".equals(command)) {
-            res.setCommandType(Command.CommandType.Get);
-        } else if ("del".equals(command)) {
-            res.setCommandType(Command.CommandType.Del);
-        } else if ("put".equals(command)) {
-            res.setCommandType(Command.CommandType.Put);
+        Command command = new Command();
+        command.setKey(key);
+        if ("get".equals(commandType)) {
+            command.setCommandType(Command.CommandType.Get);
+        } else if ("del".equals(commandType)) {
+            command.setCommandType(Command.CommandType.Del);
+        } else if ("put".equals(commandType)) {
+            command.setCommandType(Command.CommandType.Put);
             String value = tokens[2];
             if (value == null) {
                 return null;
             }
-            res.setValue(value);
+            command.setValue(value);
         } else {
             return null;
         }
-        return res;
+        return command;
     }
 
-    public void read(String msg) {
-        var command = parse(msg);
-        var r = multiPaxos.replicate(command, id);
-        if (r.type == MultiPaxosResultType.kOk) {
-            socket.flush();
-        } else if (r.type == MultiPaxosResultType.kRetry) {
-            socket.writeAndFlush("retry\n");
-        } else {
-            assert r.type == MultiPaxosResultType.kSomeoneElseLeader;
-            socket.writeAndFlush("leader is ...\n");
+    public void start(){
+        var t = new Thread(this::read);
+        t.start();
+    }
+
+    public void  stop(){
+        try {
+            socket.close();
+        } catch (IOException e) {
+            logger.warn(e.getMessage());
+//            e.printStackTrace();
+        }
+    }
+    public void read() {
+        while(!socket.isClosed() && socket.isConnected()) {
+            String msg = null;
+            try {
+                msg = reader.readLine();
+            } catch (IOException e) {
+                logger.error(e.getMessage());
+                e.printStackTrace();
+                manager.stop(this.id);
+            }
+            var command = parse(msg);
+            if(command != null) {
+                var r = multiPaxos.replicate(command, id);
+                if (r.type == MultiPaxosResultType.kOk) {
+                    continue;
+                }
+                if (r.type == MultiPaxosResultType.kRetry) {
+                    write("retry");
+                } else {
+                    assert r.type == MultiPaxosResultType.kSomeoneElseLeader;
+                    write("leader is ...");
+                }
+            }else{
+                write("bad command");
+            }
         }
     }
 
     public void write(String response) {
-        socket.writeAndFlush(response + "\n");
+        try {
+            writer.write(response + "\n");
+            writer.flush();
+        } catch (IOException e) {
+            logger.warn(e.getMessage());
+//            e.printStackTrace();
+        }
     }
 }
