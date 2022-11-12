@@ -35,8 +35,7 @@ public class ClientManager{
       logger.info("client_manager started client "+id);
       client.start();
     } catch (IOException e) {
-      logger.warn(e.getMessage());
-//      e.printStackTrace();
+      logger.warn(e.getMessage(),e);
     }
   }
   public Client get(Long clientId) {

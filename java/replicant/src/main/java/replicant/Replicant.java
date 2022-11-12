@@ -52,8 +52,7 @@ public class Replicant {
             logger.info(id + " starting server at port " + port);
             acceptClient();
         } catch (IOException e) {
-            logger.error(e.getMessage());
-            e.printStackTrace();
+            logger.error(e.getMessage(),e);
         }
     }
 
@@ -61,8 +60,7 @@ public class Replicant {
         try {
             server.close();
         } catch (IOException e) {
-            logger.error(e.getMessage());
-            e.printStackTrace();
+            logger.error(e.getMessage(),e);
         }
     }
 
@@ -96,7 +94,7 @@ public class Replicant {
                 var conn = server.accept();
                 clientManager.start(conn);
             } catch (IOException e) {
-                logger.warn(e.getMessage());
+                logger.warn(e.getMessage(),e);
                 break;
             }
         }
