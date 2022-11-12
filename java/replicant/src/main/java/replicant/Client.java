@@ -23,6 +23,7 @@ public class Client {
     private final Socket socket;
     private final MultiPaxos multiPaxos;
     private final ClientManager manager;
+    private Thread t;
 
     public Client(long id, Socket socket, MultiPaxos multiPaxos, ClientManager manager)
         throws IOException {
@@ -62,16 +63,20 @@ public class Client {
     }
 
     public void start(){
-        var t = new Thread(this::read);
+        t = new Thread(this::read);
         t.start();
     }
 
     public void  stop(){
         try {
             socket.close();
+            t.join();
         } catch (IOException e) {
             logger.warn(e.getMessage());
 //            e.printStackTrace();
+        } catch (InterruptedException e) {
+            logger.error(e.getMessage());
+            e.printStackTrace();
         }
     }
     public void read() {
