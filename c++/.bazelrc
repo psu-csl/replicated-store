@@ -9,6 +9,7 @@ build:dbg --copt=-fsanitize=thread
 build:dbg --linkopt=-fsanitize=thread
 
 build:rel --cxxopt=-std=c++17
+build:rel -c opt
 build:rel --copt=-Wall
 build:rel --copt=-Wextra
 build:rel --copt=-pedantic
