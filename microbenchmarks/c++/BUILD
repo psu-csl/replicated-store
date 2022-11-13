@@ -19,7 +19,7 @@ cc_binary(
     srcs = ["greeter_client.cc"],
     defines = ["BAZEL_BUILD"],
     deps = [
-        "//:grpc++",
+        "@com_github_grpc_grpc//://:grpc++",
         "//examples/protos:helloworld_cc_grpc",
     ],
 )
@@ -71,8 +71,8 @@ cc_binary(
     srcs = ["greeter_server.cc"],
     defines = ["BAZEL_BUILD"],
     deps = [
-        "//:grpc++",
-        "//:grpc++_reflection",
+        "@com_github_grpc_grpc//://:grpc++",
+        "@com_github_grpc_grpc//://:grpc++_reflection",
         "//examples/protos:helloworld_cc_grpc",
     ],
 )
