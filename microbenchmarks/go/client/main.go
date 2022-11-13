@@ -61,7 +61,6 @@ func main() {
 			currentNumResponse := numResponse
 			log.Printf("throughput %v op/s\n", currentNumResponse-prevNumResponse)
 			prevNumResponse = currentNumResponse
-			log.Printf("sum: %v\n", sum)
 		}
 	}()
 
@@ -76,4 +75,5 @@ func main() {
 		atomic.AddInt64(&numResponse, 1)
 		sum += len(reply.String())
 	}
+	log.Printf("sum: %v\n", sum)
 }

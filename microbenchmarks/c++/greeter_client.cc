@@ -77,8 +77,9 @@ void output(int *num_response, bool *done) {
     int prev_num_response = 0;
     while(!done) {
         std::this_thread::sleep_for(std::chrono::seconds(1));
-        std::cout << "throgughput: " << *num_response - prev_num_response << "\n";
-        prev_num_response = *num_response;
+        auto current_num_response = *num_response;
+        std::cout << "throgughput: " << current_num_response - prev_num_response << "\n";
+        prev_num_response = current_num_response;
     }
 }
 
@@ -122,14 +123,17 @@ int main(int argc, char** argv) {
   std::atomic<int> num_response;
   num_response = 0;
   std::atomic<bool> done;
+  int sum = 0;
   auto t1 = std::thread(output, &num_response, &done);
   
   done = false;
   for (int i = 0; i < num_reuqests; i++) {
       std::string reply = greeter.SayHello(user);
       num_response++;
+      sum += reply.size();
 //      std::cout << "Greeter received: " << reply << std::endl;
   }
+  std::cout << "sum: " << sum << "\n";
   done = true;
   t1.join();
   return 0;
