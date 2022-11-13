@@ -3,3 +3,7 @@ bazel-*
 
 Cargo.lock
 target
+
+*stats*
+bin
+*.sh
