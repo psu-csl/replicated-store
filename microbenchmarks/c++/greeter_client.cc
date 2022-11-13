@@ -73,11 +73,11 @@ class GreeterClient {
   std::unique_ptr<Greeter::Stub> stub_;
 };
 
-void output(int *num_response, bool *done) {
+void output(std::atomic<int> *num_response, std::atomic<bool> *done) {
     int prev_num_response = 0;
-    while(!done) {
+    while(!*done) {
         std::this_thread::sleep_for(std::chrono::seconds(1));
-        auto current_num_response = *num_response;
+        auto current_num_response = (*num_response).load(std::memory_order_relaxed);
         std::cout << "throgughput: " << current_num_response - prev_num_response << "\n";
         prev_num_response = current_num_response;
     }
@@ -120,13 +120,11 @@ int main(int argc, char** argv) {
       grpc::CreateChannel(target_str, grpc::InsecureChannelCredentials()));
   std::string user("world");
   
-  std::atomic<int> num_response;
-  num_response = 0;
-  std::atomic<bool> done;
+  std::atomic<int> num_response (0);
+  std::atomic<bool> done (false);
   int sum = 0;
   auto t1 = std::thread(output, &num_response, &done);
   
-  done = false;
   for (int i = 0; i < num_reuqests; i++) {
       std::string reply = greeter.SayHello(user);
       num_response++;

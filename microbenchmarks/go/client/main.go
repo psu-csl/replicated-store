@@ -65,8 +65,8 @@ func main() {
 	}()
 
 	// Contact the server and print out its response.
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
+	ctx := context.Background()
+	//defer cancel()
 	for i := 0; i < *numRequests; i++ {
 		reply, err := c.SayHello(ctx, &pb.HelloRequest{Name: *name})
 		if err != nil {
