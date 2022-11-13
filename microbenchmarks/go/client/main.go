@@ -23,6 +23,7 @@ import (
 	"context"
 	"flag"
 	"log"
+	"sync/atomic"
 	"time"
 
 	"google.golang.org/grpc"
@@ -50,30 +51,29 @@ func main() {
 	defer conn.Close()
 	c := pb.NewGreeterClient(conn)
 
-	responseChan := make(chan int64, 1000000)
+	var numResponse int64 = 0
+	sum := 0
 
-	go output(responseChan)
+	go func() {
+		var prevNumResponse int64 = 0
+		for {
+			time.Sleep(1 * time.Second)
+			currentNumResponse := numResponse
+			log.Printf("throughput %v op/s\n", currentNumResponse-prevNumResponse)
+			prevNumResponse = currentNumResponse
+			log.Printf("sum: %v\n", sum)
+		}
+	}()
 
 	// Contact the server and print out its response.
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
 	for i := 0; i < *numRequests; i++ {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-		defer cancel()
-		_, err := c.SayHello(ctx, &pb.HelloRequest{Name: *name})
+		reply, err := c.SayHello(ctx, &pb.HelloRequest{Name: *name})
 		if err != nil {
 			log.Fatalf("could not greet: %v", err)
 		}
-		responseChan <- 1
-	}
-}
-
-func output(responseChan chan int64) {
-	beginTime := time.Now()
-	for {
-		time.Sleep(1 * time.Second)
-
-		numResponse := len(responseChan)
-		endTime := time.Now()
-		throughput := float64(numResponse) / endTime.Sub(beginTime).Seconds()
-		log.Printf("throughput %v op/s\n", throughput)
+		atomic.AddInt64(&numResponse, 1)
+		sum += len(reply.String())
 	}
 }
