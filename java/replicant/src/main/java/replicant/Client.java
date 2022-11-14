@@ -50,10 +50,10 @@ public class Client {
         if (r.type == MultiPaxosResultType.kOk) {
             socket.flush();
         } else if (r.type == MultiPaxosResultType.kRetry) {
-            socket.writeAndFlush("retry\n");
+            write("retry\n");
         } else {
             assert r.type == MultiPaxosResultType.kSomeoneElseLeader;
-            socket.writeAndFlush("leader is ...\n");
+            write("leader is ...");
         }
     }
 
