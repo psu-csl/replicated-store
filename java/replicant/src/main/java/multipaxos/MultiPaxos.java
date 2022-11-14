@@ -186,7 +186,7 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
     rpcServer = ServerBuilder.forPort(port).addService(this).build();
     try {
       rpcServer.start();
-      logger.info(id + " starting rpc server at " + rpcServer.getPort());
+      logger.debug(id + " starting rpc server at " + rpcServer.getPort());
       mu.lock();
       rpcServerRunning = true;
       rpcServerRunningCv.signal();
@@ -204,7 +204,7 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
         rpcServerRunningCv.await();
       }
       mu.unlock();
-      logger.info(id + " stopping rpc at " + rpcServer.getPort());
+      logger.debug(id + " stopping rpc at " + rpcServer.getPort());
       rpcServer.shutdown().awaitTermination(30, TimeUnit.SECONDS);
       for (var peer : rpcPeers) {
         peer.stub.shutdown();
@@ -215,13 +215,13 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
     rpcServerThread.shutdown();
   }
   public void startPrepareThread() {
-    logger.info(id + " starting prepare thread");
+    logger.debug(id + " starting prepare thread");
     assert (!prepareThreadRunning.get());
     prepareThreadRunning.set(true);
     prepareThread.submit(this::prepareThread);
   }
   public void stopPrepareThread() {
-    logger.info(id + " stopping prepare thread");
+    logger.debug(id + " stopping prepare thread");
     assert (prepareThreadRunning.get());
     mu.lock();
     prepareThreadRunning.set(false);
@@ -235,14 +235,14 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
     }
   }
   public void startCommitThread() {
-    logger.info(id + " starting commit thread");
+    logger.debug(id + " starting commit thread");
     assert (!commitThreadRunning.get());
     commitThreadRunning.set(true);
     commitThread.submit(this::commitThread);
   }
 
   public void stopCommitThread() {
-    logger.info(id + " stopping commit thread");
+    logger.debug(id + " stopping commit thread");
     assert (commitThreadRunning.get());
     mu.lock();
     commitThreadRunning.set(false);
@@ -328,9 +328,9 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
         multipaxos.PrepareResponse response;
         try {
           response = multipaxos.MultiPaxosRPCGrpc.newBlockingStub(peer.stub).prepare(request.build());
-          logger.info(id + " sent prepare request to " + peer.id);
+          logger.debug(id + " sent prepare request to " + peer.id);
         } catch (StatusRuntimeException e) {
-          logger.info(id + " RPC connection failed to " + peer.id);
+          logger.debug(id + " RPC connection failed to " + peer.id);
           state.mu.lock();
           state.numRpcs++;
           state.cv.signal();
@@ -395,14 +395,14 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
         try {
           response = multipaxos.MultiPaxosRPCGrpc.newBlockingStub(peer.stub).accept(request.build());
         } catch (StatusRuntimeException e) {
-          logger.info(id + " RPC connection failed to " + peer.id);
+          logger.debug(id + " RPC connection failed to " + peer.id);
           state.mu.lock();
           ++state.numRpcs;
           state.cv.signal();
           state.mu.unlock();
           return;
         }
-        logger.info(id + " sent accept request to " + peer.id);
+        logger.debug(id + " sent accept request to " + peer.id);
         state.mu.lock();
         ++state.numRpcs;
         if (response.getType() == multipaxos.ResponseType.OK) {
@@ -452,9 +452,9 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
         multipaxos.CommitResponse response;
         try {
           response = multipaxos.MultiPaxosRPCGrpc.newBlockingStub(peer.stub).commit(request.build());
-          logger.info(id + " sent commit to " + peer.id);
+          logger.debug(id + " sent commit to " + peer.id);
         } catch (StatusRuntimeException e) {
-          logger.info(id + " RPC connection failed to " + peer.id);
+          logger.debug(id + " RPC connection failed to " + peer.id);
           state.mu.lock();
           state.numRpcs++;
           state.cv.signal();
@@ -513,7 +513,7 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
   @Override
   public void prepare(multipaxos.PrepareRequest request, StreamObserver<multipaxos.PrepareResponse> responseObserver) {
     mu.lock();
-    logger.info(id + " <-- prepare-- " + request.getSender());
+    logger.debug(id + " <-- prepare-- " + request.getSender());
     multipaxos.PrepareResponse.Builder responseBuilder = multipaxos.PrepareResponse.newBuilder();
     try {
       if (request.getBallot() > ballot) {
@@ -537,7 +537,7 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
   @Override
   public void accept(multipaxos.AcceptRequest request, StreamObserver<multipaxos.AcceptResponse> responseObserver) {
     mu.lock();
-    logger.info(this.id + " <--accept---  " + request.getSender());
+    logger.debug(this.id + " <--accept---  " + request.getSender());
     multipaxos.AcceptResponse.Builder responseBuilder = multipaxos.AcceptResponse.newBuilder();
     try {
       if (request.getInstance().getBallot() >= this.ballot) {
@@ -558,7 +558,7 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
   public void commit(multipaxos.CommitRequest commitRequest,
                      StreamObserver<multipaxos.CommitResponse> responseObserver) {
     mu.lock();
-    logger.info(id + " <--commit--- " + commitRequest.getSender());
+    logger.debug(id + " <--commit--- " + commitRequest.getSender());
     try {
       var response = multipaxos.CommitResponse.newBuilder();
       if (commitRequest.getBallot() >= ballot) {
@@ -614,7 +614,7 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
   public void becomeLeader(long newBallot, long newLastIndex) {
     mu.lock();
     try {
-      logger.info(id + " became a leader: ballot: " + ballot + " -> " + newBallot);
+      logger.debug(id + " became a leader: ballot: " + ballot + " -> " + newBallot);
       ballot = newBallot;
       log.setLastIndex(newLastIndex);
       cvLeader.signal();
@@ -626,7 +626,7 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
     var oldLeaderId = extractLeaderId(ballot);
     var newLeaderId = extractLeaderId(newBallot);
     if (newLeaderId != id && (oldLeaderId == id || oldLeaderId == kMaxNumPeers)) {
-      logger.info(id + " became a follower: ballot: " + ballot + " -> " + newBallot);
+      logger.debug(id + " became a follower: ballot: " + ballot + " -> " + newBallot);
       mu.lock();
       cvFollower.signal();
       mu.unlock();

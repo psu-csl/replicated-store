@@ -72,7 +72,7 @@ public class Replicant {
             }).option(ChannelOption.SO_BACKLOG, 5).childOption(ChannelOption.SO_KEEPALIVE, true);
 
             int port = Integer.parseInt(ipPort.substring(ipPort.indexOf(":") + 1)) + 1;
-            logger.info(id + " starting server at port " + port);
+            logger.debug(id + " starting server at port " + port);
             ChannelFuture f = b.bind(port).sync();
             f.channel().closeFuture().sync();
         } catch (InterruptedException e) {
@@ -89,12 +89,12 @@ public class Replicant {
     }
 
     private void startExecutorThread() {
-        logger.info(id + " starting executor thread");
+        logger.debug(id + " starting executor thread");
         executorThread.submit(this::executorThread);
     }
 
     private void stopExecutorThread() {
-        logger.info(id + " stopping executor thread");
+        logger.debug(id + " stopping executor thread");
         log.stop();
         executorThread.shutdown();
     }
