@@ -49,7 +49,7 @@ public class Replicant {
         try {
             int port = Integer.parseInt(ipPort.substring(ipPort.indexOf(":") + 1)) + 1;
             this.server = new ServerSocket(port);
-            logger.info(id + " starting server at port " + port);
+            logger.debug(id + " starting server at port " + port);
             acceptClient();
         } catch (IOException e) {
             logger.error(e.getMessage(),e);
@@ -65,12 +65,12 @@ public class Replicant {
     }
 
     private void startExecutorThread() {
-        logger.info(id + " starting executor thread");
+        logger.debug(id + " starting executor thread");
         executorThread.submit(this::executorThread);
     }
 
     private void stopExecutorThread() {
-        logger.info(id + " stopping executor thread");
+        logger.debug(id + " stopping executor thread");
         log.stop();
         executorThread.shutdown();
     }

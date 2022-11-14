@@ -32,7 +32,7 @@ public class ClientManager{
     try {
       var client = new Client(id, socket, multiPaxos, this);
       clients.put(id,client);
-      logger.info("client_manager started client "+id);
+      logger.debug("client_manager started client "+id);
       client.start();
     } catch (IOException e) {
       logger.warn(e.getMessage(),e);
@@ -42,7 +42,7 @@ public class ClientManager{
     return clients.get(clientId);
   }
   public void stop(Long id){
-    logger.info("client_manager stopped client " + id);
+    logger.debug("client_manager stopped client " + id);
     var client = clients.get(id);
     if(client == null){
       logger.warn("no client to stop " + id);
@@ -54,7 +54,7 @@ public class ClientManager{
 
   public void stopAll(){
     clients.forEach((id,client)->{
-      logger.info("client_manager stopping all clients " + id);
+      logger.debug("client_manager stopping all clients " + id);
       client.stop();
       clients.remove(id);
     });
