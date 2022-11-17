@@ -4,7 +4,6 @@
 ** Rust
 *** ensure stack variables are not used across await calls
      see https://tokio.rs/tokio/tutorial/io about how this hurts
-*** switch to using parking_lot::mutex
 *** standardize error handling -- currently errors are ignored in most places
 *** redesign so that executor only writes to a socket and client only reads from it
      so that we could get rid of tokio mutex in client_manager; currently,
