@@ -1,9 +1,10 @@
 use super::kvstore::memkvstore::MemKVStore;
 use super::kvstore::{KVStore, KVStoreError};
 use futures::future::join_all;
+use parking_lot::Mutex;
 use std::cmp;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tokio::sync::Notify;
 
 use super::multipaxos::rpc::Command;
@@ -224,39 +225,39 @@ impl Log {
     }
 
     pub fn last_executed(&self) -> i64 {
-        let inner = self.inner.lock().unwrap();
+        let inner = self.inner.lock();
         inner.last_executed
     }
 
     pub fn global_last_executed(&self) -> i64 {
-        let inner = self.inner.lock().unwrap();
+        let inner = self.inner.lock();
         inner.global_last_executed
     }
 
     pub fn advance_last_index(&self) -> i64 {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock();
         inner.last_index += 1;
         inner.last_index
     }
 
     pub fn set_last_index(&self, last_index: i64) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock();
         inner.last_index = last_index;
     }
 
     pub fn last_index(&self) -> i64 {
-        let inner = self.inner.lock().unwrap();
+        let inner = self.inner.lock();
         inner.last_index
     }
 
     pub fn stop(&self) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock();
         inner.running = false;
         self.executable.notify_one();
     }
 
     pub fn append(&self, instance: Instance) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock();
         let i = instance.index;
         if i <= inner.global_last_executed {
             return;
@@ -278,7 +279,7 @@ impl Log {
         loop {
             let future = self.committable.notified();
             {
-                let mut inner = self.inner.lock().unwrap();
+                let mut inner = self.inner.lock();
                 let instance = inner.log.get_mut(&index);
                 if instance.is_some() {
                     let instance = instance.unwrap();
@@ -302,7 +303,7 @@ impl Log {
         loop {
             let future = self.executable.notified();
             {
-                let mut inner = self.inner.lock().unwrap();
+                let mut inner = self.inner.lock();
                 if !inner.running {
                     return None;
                 }
@@ -318,7 +319,7 @@ impl Log {
         assert!(leader_last_executed >= 0, "invalid leader_last_executed");
         assert!(ballot >= 0, "invalid ballot");
 
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock();
         for i in inner.last_executed + 1..=leader_last_executed {
             let it = inner.log.get_mut(&i);
             if let Some(instance) = it {
@@ -336,7 +337,7 @@ impl Log {
     }
 
     pub fn trim_until(&self, leader_global_last_executed: i64) {
-        let mut inner = &mut *self.inner.lock().unwrap();
+        let mut inner = &mut *self.inner.lock();
         while inner.global_last_executed < leader_global_last_executed {
             inner.global_last_executed += 1;
             let it = inner.log.remove(&inner.global_last_executed);
@@ -345,7 +346,7 @@ impl Log {
     }
 
     pub fn instances(&self) -> Vec<Instance> {
-        let inner = self.inner.lock().unwrap();
+        let inner = self.inner.lock();
         let mut instances = Vec::new();
         for i in inner.global_last_executed + 1..=inner.last_index {
             if let Some(instance) = inner.log.get(&i) {
@@ -356,12 +357,12 @@ impl Log {
     }
 
     fn is_executable(&self) -> bool {
-        let inner = self.inner.lock().unwrap();
+        let inner = self.inner.lock();
         inner.is_executable()
     }
 
     pub fn at(&self, index: i64) -> Option<Instance> {
-        let inner = self.inner.lock().unwrap();
+        let inner = self.inner.lock();
         inner.log.get(&index).cloned()
     }
 }

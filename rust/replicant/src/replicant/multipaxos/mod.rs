@@ -3,6 +3,7 @@ use crate::replicant::log::{insert, Log};
 use futures_util::FutureExt;
 use futures_util::StreamExt;
 use log::info;
+use parking_lot::Mutex;
 use rand::distributions::{Distribution, Uniform};
 use rpc::multi_paxos_rpc_client::MultiPaxosRpcClient;
 use rpc::multi_paxos_rpc_server::{MultiPaxosRpc, MultiPaxosRpcServer};
@@ -16,7 +17,7 @@ use std::cmp;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tokio::sync::oneshot::{self, Sender};
 use tokio::sync::Notify;
 use tokio::task::{JoinHandle, JoinSet};
@@ -110,7 +111,7 @@ impl MultiPaxosInner {
     }
 
     fn next_ballot(&self) -> i64 {
-        let ballot = self.ballot.lock().unwrap();
+        let ballot = self.ballot.lock();
         let mut next_ballot = *ballot;
         next_ballot += ROUND_INCREMENT;
         next_ballot = (next_ballot & !ID_BITS) | self.id;
@@ -118,7 +119,7 @@ impl MultiPaxosInner {
     }
 
     fn become_leader(&self, new_ballot: i64, new_last_index: i64) {
-        let mut ballot = self.ballot.lock().unwrap();
+        let mut ballot = self.ballot.lock();
         info!(
             "{} became a leader: ballot: {} -> {}",
             self.id, *ballot, new_ballot
@@ -144,7 +145,7 @@ impl MultiPaxosInner {
     }
 
     fn ballot(&self) -> i64 {
-        let ballot = self.ballot.lock().unwrap();
+        let ballot = self.ballot.lock();
         *ballot
     }
 
@@ -229,7 +230,7 @@ impl MultiPaxosInner {
                         insert(&mut log, instance);
                     }
                 } else {
-                    let mut ballot = self.ballot.lock().unwrap();
+                    let mut ballot = self.ballot.lock();
                     if response.ballot > *ballot {
                         self.become_follower(&mut *ballot, response.ballot);
                         break;
@@ -274,7 +275,7 @@ impl MultiPaxosInner {
                 if accept_response.r#type == ResponseType::Ok as i32 {
                     num_oks += 1;
                 } else {
-                    let mut ballot = self.ballot.lock().unwrap();
+                    let mut ballot = self.ballot.lock();
                     if accept_response.ballot > *ballot {
                         self.become_follower(
                             &mut *ballot,
@@ -328,7 +329,7 @@ impl MultiPaxosInner {
                         min_last_executed = commit_response.last_executed;
                     }
                 } else {
-                    let mut ballot = self.ballot.lock().unwrap();
+                    let mut ballot = self.ballot.lock();
                     if commit_response.ballot > *ballot {
                         self.become_follower(
                             &mut *ballot,
@@ -380,7 +381,7 @@ impl MultiPaxosRpc for RpcWrapper {
         let request = request.into_inner();
         info!("{} <--prepare-- {}", self.0.id, request.sender);
 
-        let mut ballot = self.0.ballot.lock().unwrap();
+        let mut ballot = self.0.ballot.lock();
         if request.ballot > *ballot {
             self.0.become_follower(&mut *ballot, request.ballot);
             return Ok(Response::new(PrepareResponse {
@@ -404,7 +405,7 @@ impl MultiPaxosRpc for RpcWrapper {
         info!("{} <--accept--- {}", self.0.id, request.sender);
 
         let instance = request.instance.unwrap();
-        let mut ballot = self.0.ballot.lock().unwrap();
+        let mut ballot = self.0.ballot.lock();
         if instance.ballot >= *ballot {
             self.0.become_follower(&mut *ballot, instance.ballot);
             self.0.log.append(instance);
@@ -426,7 +427,7 @@ impl MultiPaxosRpc for RpcWrapper {
         let request = request.into_inner();
         info!("{} <--commit--- {}", self.0.id, request.sender);
 
-        let mut ballot = self.0.ballot.lock().unwrap();
+        let mut ballot = self.0.ballot.lock();
         if request.ballot >= *ballot {
             self.0.commit_received.store(true, Ordering::Relaxed);
             self.0.become_follower(&mut *ballot, request.ballot);

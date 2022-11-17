@@ -1,13 +1,13 @@
 use crate::replicant::multipaxos::rpc::Command;
 use crate::replicant::multipaxos::MultiPaxos;
 use crate::replicant::multipaxos::ResultType;
+use parking_lot::Mutex;
 use std::collections::HashMap;
-use std::net::SocketAddr;
 use std::str;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::TcpStream;
 
 fn parse(line: &str) -> Option<Command> {
     let tokens: Vec<&str> = line.trim().split(' ').collect();
@@ -115,7 +115,7 @@ impl ClientManagerInner {
     }
 
     fn next_client_id(&self) -> i64 {
-        let mut next_id = self.next_id.lock().unwrap();
+        let mut next_id = self.next_id.lock();
         let id = *next_id;
         *next_id += self.num_peers;
         id
@@ -124,9 +124,7 @@ impl ClientManagerInner {
     async fn write(&self, client_id: i64, mut buf: String) {
         let client;
         {
-            client = if let Some(client) =
-                self.clients.lock().unwrap().get(&client_id)
-            {
+            client = if let Some(client) = self.clients.lock().get(&client_id) {
                 Some(client.clone())
             } else {
                 None
@@ -144,7 +142,7 @@ impl ClientManagerInner {
     }
 
     fn stop(&self, id: i64) {
-        let mut clients = self.clients.lock().unwrap();
+        let mut clients = self.clients.lock();
         let client = clients.remove(&id);
         drop(clients);
         assert!(client.is_some());
@@ -152,7 +150,7 @@ impl ClientManagerInner {
     }
 
     fn stop_all(&self) {
-        let mut clients = self.clients.lock().unwrap();
+        let mut clients = self.clients.lock();
         clients.clear();
     }
 }
@@ -183,7 +181,7 @@ impl ClientManager {
 
         let write_half = Arc::new(tokio::sync::Mutex::new(write_half));
 
-        let mut clients = self.client_manager.clients.lock().unwrap();
+        let mut clients = self.client_manager.clients.lock();
         let prev = clients.insert(id, write_half);
         drop(clients);
         assert!(prev.is_none());
