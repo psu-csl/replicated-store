@@ -45,21 +45,15 @@ impl Client {
     }
 
     async fn start(&mut self) {
-        loop {
-            let mut line = String::new();
-            if let Ok(n) = self.read_half.read_line(&mut line).await {
-                if n == 0 {
-                    break;
-                }
-                let client = self.client.clone();
-                tokio::spawn(async move {
-                    if let Some(response) = client.handle_request(line).await {
-                        client.manager.write(client.id, response).await;
-                    }
-                });
-            } else {
+        let mut line = String::new();
+        while let Ok(n) = self.read_half.read_line(&mut line).await {
+            if n == 0 {
                 break;
             }
+            if let Some(response) = self.client.handle_request(&line).await {
+                self.client.manager.write(self.client.id, response).await;
+            }
+            line.clear();
         }
         self.client.manager.stop(self.client.id);
     }
@@ -84,7 +78,7 @@ impl ClientInner {
         }
     }
 
-    async fn handle_request(&self, line: String) -> Option<String> {
+    async fn handle_request(&self, line: &str) -> Option<String> {
         if let Some(command) = parse(&line) {
             match self.multi_paxos.replicate(&command, self.id).await {
                 ResultType::Ok => None,
