@@ -5,7 +5,7 @@ use parking_lot::Mutex;
 use std::cmp;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::Notify;
+use tokio::sync::{oneshot, Notify};
 
 use super::multipaxos::rpc::Command;
 use super::multipaxos::rpc::{Instance, InstanceState};
@@ -597,14 +597,19 @@ mod tests {
         let index = log.advance_last_index();
         let instance = Instance::inprogress(ballot, index, &get, 0);
 
+        let (tx, rx) = oneshot::channel();
+
         let commit_task = {
             let log = Arc::clone(&log);
             tokio::spawn(async move {
+                tx.send(()).unwrap();
                 log.commit(index).await;
             })
         };
+
+        rx.await.unwrap();
         log.append(instance);
-        commit_task.await;
+        commit_task.await.unwrap();
         assert!(log.at(index).unwrap().is_committed());
     }
 
@@ -625,7 +630,7 @@ mod tests {
 
         log.append(instance);
         log.commit(index).await;
-        execute_task.await;
+        execute_task.await.unwrap();
 
         assert!(log.at(index).unwrap().is_executed());
         assert_eq!(index, log.last_executed());
@@ -663,7 +668,7 @@ mod tests {
         ])
         .await;
 
-        execute_task.await;
+        execute_task.await.unwrap();
 
         assert!(log.at(index1).unwrap().is_executed());
         assert!(log.at(index2).unwrap().is_executed());
@@ -785,7 +790,7 @@ mod tests {
 
         log.commit_until(index3, ballot);
 
-        execute_task.await;
+        execute_task.await.unwrap();
 
         assert!(log.at(index1).unwrap().is_executed());
         assert!(log.at(index2).unwrap().is_executed());
@@ -819,7 +824,7 @@ mod tests {
         log.append(instance3);
 
         log.commit_until(index3, ballot);
-        execute_task.await;
+        execute_task.await.unwrap();
 
         log.trim_until(index3);
 
@@ -853,7 +858,7 @@ mod tests {
         log.append(instance2.clone());
 
         log.commit_until(index2, ballot);
-        execute_task.await;
+        execute_task.await.unwrap();
 
         log.trim_until(index2);
 
@@ -901,7 +906,7 @@ mod tests {
 
         log.commit_until(index2, ballot);
 
-        execute_task.await;
+        execute_task.await.unwrap();
 
         log.trim_until(index2);
 
@@ -920,6 +925,6 @@ mod tests {
             })
         };
         log.stop();
-        execute_task.await;
+        execute_task.await.unwrap();
     }
 }

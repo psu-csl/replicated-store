@@ -1,7 +1,6 @@
 use crate::replicant::kvstore::memkvstore::MemKVStore;
 use crate::replicant::log::{insert, Log};
 use futures_util::FutureExt;
-use futures_util::StreamExt;
 use log::info;
 use parking_lot::Mutex;
 use rand::distributions::{Distribution, Uniform};
