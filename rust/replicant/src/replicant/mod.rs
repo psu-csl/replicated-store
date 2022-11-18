@@ -50,10 +50,13 @@ impl ReplicantInner {
                 break;
             }
             let (id, value) = r.unwrap();
-            match value {
-                Ok(value) => self.client_manager.write(id, value).await,
-                Err(e) => self.client_manager.write(id, e.to_string()).await,
-            };
+            let client_manager = self.client_manager.client_manager.clone();
+            tokio::spawn(async move {
+                match value {
+                    Ok(value) => client_manager.write(id, value).await,
+                    Err(e) => client_manager.write(id, e.to_string()).await,
+                }
+            });
         }
     }
 

@@ -93,7 +93,7 @@ impl ClientInner {
     }
 }
 
-struct ClientManagerInner {
+pub struct ClientManagerInner {
     next_id: Mutex<i64>,
     num_peers: i64,
     clients: Mutex<HashMap<i64, Arc<tokio::sync::Mutex<OwnedWriteHalf>>>>,
@@ -115,7 +115,7 @@ impl ClientManagerInner {
         id
     }
 
-    async fn write(&self, client_id: i64, mut buf: String) {
+    pub async fn write(&self, client_id: i64, mut buf: String) {
         let client;
         {
             client = if let Some(client) = self.clients.lock().get(&client_id) {
@@ -150,7 +150,7 @@ impl ClientManagerInner {
 }
 
 pub struct ClientManager {
-    client_manager: Arc<ClientManagerInner>,
+    pub client_manager: Arc<ClientManagerInner>,
     multi_paxos: Arc<MultiPaxos>,
 }
 
