@@ -12,6 +12,7 @@ public class ReplicantMain {
       System.err.println("Correct usage: [id] [path to config.json]");
       System.exit(1);
     }
+    System.out.println("# of avail processors: "+Runtime.getRuntime().availableProcessors());
     int id = Integer.parseInt(args[0]);
     String path = args[1];
 
