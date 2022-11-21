@@ -9,8 +9,6 @@ import multipaxos.Configuration;
 import multipaxos.MultiPaxos;
 import org.slf4j.LoggerFactory;
 
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 public class Replicant {
 
@@ -20,7 +18,7 @@ public class Replicant {
     private final Log log;
     private final MultiPaxos multiPaxos;
     private final String ipPort;
-    private final ExecutorService executorThread = Executors.newSingleThreadExecutor();
+    private Thread executorThread;
     private final ClientManager clientManager;
 
 
@@ -66,13 +64,18 @@ public class Replicant {
 
     private void startExecutorThread() {
         logger.debug(id + " starting executor thread");
-        executorThread.submit(this::executorThread);
+        executorThread = Thread.startVirtualThread(this::executorThread);
+//        executorThread.submit(this::executorThread);
     }
 
     private void stopExecutorThread() {
         logger.debug(id + " stopping executor thread");
         log.stop();
-        executorThread.shutdown();
+        try {
+            executorThread.join();
+        } catch (InterruptedException e) {
+            logger.error(e.getMessage(),e);
+        }
     }
 
     private void executorThread() {

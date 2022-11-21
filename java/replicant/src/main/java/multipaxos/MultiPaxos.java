@@ -22,8 +22,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.Condition;
@@ -117,21 +115,19 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
   private final int numPeers;
   private final List<RpcPeer> rpcPeers;
   private final ReentrantLock mu;
-  private final ExecutorService threadPool;
-
   private final Condition cvLeader;
   private final Condition cvFollower;
 
   private Server rpcServer;
   private boolean rpcServerRunning;
   private final Condition rpcServerRunningCv;
-  private final ExecutorService rpcServerThread;
+  private Thread rpcServerThread;
 
   private final AtomicBoolean prepareThreadRunning;
-  private final ExecutorService prepareThread;
+  private Thread prepareThread;
 
   private final AtomicBoolean commitThreadRunning;
-  private final ExecutorService commitThread;
+  private Thread commitThread;
 
   public MultiPaxos(Log log, Configuration config) {
     this.ballot = kMaxNumPeers;
@@ -144,7 +140,6 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
     this.port =  Integer.parseInt(target.substring(target.indexOf(":") + 1));
     this.numPeers = config.getPeers().size();
 
-    threadPool = Executors.newFixedThreadPool(config.getThreadPoolSize());
     rpcServerRunning = false;
     prepareThreadRunning = new AtomicBoolean(false);
     commitThreadRunning = new AtomicBoolean(false);
@@ -152,9 +147,6 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
     mu = new ReentrantLock();
     cvLeader = mu.newCondition();
     cvFollower = mu.newCondition();
-    prepareThread = Executors.newSingleThreadExecutor();
-    commitThread = Executors.newSingleThreadExecutor();
-    rpcServerThread = Executors.newSingleThreadExecutor();
     rpcServerRunningCv = mu.newCondition();
 
     rpcPeers = new ArrayList<>();
@@ -173,13 +165,6 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
     stopRPCServer();
     stopPrepareThread();
     stopCommitThread();
-
-    threadPool.shutdown();
-    try {
-      threadPool.awaitTermination(1000, TimeUnit.MILLISECONDS);
-    } catch (InterruptedException e) {
-      e.printStackTrace();
-    }
   }
 
   public void startRPCServer() {
@@ -195,7 +180,7 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
     } finally {
       mu.unlock();
     }
-    rpcServerThread.submit(this::blockUntilShutDown);
+    rpcServerThread = Thread.startVirtualThread(this::blockUntilShutDown);
   }
   public void stopRPCServer() {
     try {
@@ -209,16 +194,17 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
       for (var peer : rpcPeers) {
         peer.stub.shutdown();
       }
+      rpcServerThread.join();
     } catch (InterruptedException e) {
-      e.printStackTrace();
+      logger.error(e.getMessage(),e);
     }
-    rpcServerThread.shutdown();
+
   }
   public void startPrepareThread() {
     logger.debug(id + " starting prepare thread");
     assert (!prepareThreadRunning.get());
     prepareThreadRunning.set(true);
-    prepareThread.submit(this::prepareThread);
+    prepareThread = Thread.startVirtualThread(this::prepareThread);
   }
   public void stopPrepareThread() {
     logger.debug(id + " stopping prepare thread");
@@ -227,18 +213,17 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
     prepareThreadRunning.set(false);
     cvFollower.signal();
     mu.unlock();
-    prepareThread.shutdown();
     try {
-      prepareThread.awaitTermination(1000, TimeUnit.MILLISECONDS);
+      prepareThread.join();
     } catch (InterruptedException e) {
-      e.printStackTrace();
+      logger.error(e.getMessage(),e);
     }
   }
   public void startCommitThread() {
     logger.debug(id + " starting commit thread");
     assert (!commitThreadRunning.get());
     commitThreadRunning.set(true);
-    commitThread.submit(this::commitThread);
+    commitThread = Thread.startVirtualThread(this::commitThread);
   }
 
   public void stopCommitThread() {
@@ -248,11 +233,10 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
     commitThreadRunning.set(false);
     cvLeader.signal();
     mu.unlock();
-    commitThread.shutdown();
     try {
-      commitThread.awaitTermination(1000, TimeUnit.MILLISECONDS);
+      commitThread.join();
     } catch (InterruptedException e) {
-      e.printStackTrace();
+      logger.error(e.getMessage(),e);
     }
   }
   public Result replicate(command.Command command, long clientId) {
@@ -324,7 +308,7 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
     request.setSender(this.id);
     request.setBallot(ballot);
     for (var peer : rpcPeers) {
-      threadPool.submit(() -> {
+      Thread.startVirtualThread(() -> {
         multipaxos.PrepareResponse response;
         try {
           response = multipaxos.MultiPaxosRPCGrpc.newBlockingStub(peer.stub).prepare(request.build());
@@ -390,7 +374,7 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
     request.setInstance(makeProtoInstance(instance));
 
     for (var peer : rpcPeers) {
-      threadPool.submit(() -> {
+      Thread.startVirtualThread(() -> {
         multipaxos.AcceptResponse response;
         try {
           response = multipaxos.MultiPaxosRPCGrpc.newBlockingStub(peer.stub).accept(request.build());
@@ -448,7 +432,7 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
     request.setLastExecuted(state.minLastExecuted);
     request.setGlobalLastExecuted(globalLastExecuted);
     for (var peer : rpcPeers) {
-      threadPool.submit(() -> {
+      Thread.startVirtualThread(() -> {
         multipaxos.CommitResponse response;
         try {
           response = multipaxos.MultiPaxosRPCGrpc.newBlockingStub(peer.stub).commit(request.build());
