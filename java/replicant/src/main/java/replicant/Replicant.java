@@ -1,37 +1,24 @@
 package replicant;
 
 import ch.qos.logback.classic.Logger;
-import io.netty.bootstrap.ServerBootstrap;
-import io.netty.channel.ChannelFuture;
-import io.netty.channel.ChannelInitializer;
-import io.netty.channel.ChannelOption;
-import io.netty.channel.EventLoopGroup;
-import io.netty.channel.nio.NioEventLoopGroup;
-import io.netty.channel.socket.SocketChannel;
-import io.netty.channel.socket.nio.NioServerSocketChannel;
-import io.netty.handler.codec.DelimiterBasedFrameDecoder;
-import io.netty.handler.codec.Delimiters;
-import io.netty.handler.codec.string.StringDecoder;
-import io.netty.handler.codec.string.StringEncoder;
+import java.io.IOException;
+import java.net.ServerSocket;
 import kvstore.MemKVStore;
 import log.Log;
 import multipaxos.Configuration;
 import multipaxos.MultiPaxos;
 import org.slf4j.LoggerFactory;
 
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 public class Replicant {
 
     private static final Logger logger = (Logger) LoggerFactory.getLogger(Replicant.class);
-    private final EventLoopGroup bossGroup = new NioEventLoopGroup();
-    private final EventLoopGroup workerGroup = new NioEventLoopGroup();
+    private ServerSocket server;
     private final long id;
     private final Log log;
     private final MultiPaxos multiPaxos;
     private final String ipPort;
-    private final ExecutorService executorThread = Executors.newSingleThreadExecutor();
+    private Thread executorThread;
     private final ClientManager clientManager;
 
 
@@ -58,45 +45,37 @@ public class Replicant {
 
     private void startServer() {
         try {
-            ServerBootstrap b = new ServerBootstrap();
-            b.group(bossGroup, workerGroup).channel(NioServerSocketChannel.class).childHandler(
-                    new ChannelInitializer<SocketChannel>() {
-                @Override
-                public void initChannel(SocketChannel ch) {
-                    ch.pipeline().addLast("framer", new DelimiterBasedFrameDecoder(2048,
-                            Delimiters.lineDelimiter()));
-                    ch.pipeline().addLast("decoder", new StringDecoder());
-                    ch.pipeline().addLast("encoder", new StringEncoder());
-                    ch.pipeline().addLast(clientManager);
-                }
-            }).option(ChannelOption.SO_BACKLOG, 5).childOption(ChannelOption.SO_KEEPALIVE, true);
-
             int port = Integer.parseInt(ipPort.substring(ipPort.indexOf(":") + 1)) + 1;
-            logger.info(id + " starting server at port " + port);
-            ChannelFuture f = b.bind(port).sync();
-            f.channel().closeFuture().sync();
-        } catch (InterruptedException e) {
-            logger.error(e.getMessage());
-        } finally {
-            workerGroup.shutdownGracefully();
-            bossGroup.shutdownGracefully();
+            this.server = new ServerSocket(port);
+            logger.debug(id + " starting server at port " + port);
+            acceptClient();
+        } catch (IOException e) {
+            logger.error(e.getMessage(),e);
         }
     }
 
     private void stopServer() {
-        workerGroup.shutdownGracefully();
-        bossGroup.shutdownGracefully();
+        try {
+            server.close();
+        } catch (IOException e) {
+            logger.error(e.getMessage(),e);
+        }
     }
 
     private void startExecutorThread() {
-        logger.info(id + " starting executor thread");
-        executorThread.submit(this::executorThread);
+        logger.debug(id + " starting executor thread");
+        executorThread = Thread.startVirtualThread(this::executorThread);
+//        executorThread.submit(this::executorThread);
     }
 
     private void stopExecutorThread() {
-        logger.info(id + " stopping executor thread");
+        logger.debug(id + " stopping executor thread");
         log.stop();
-        executorThread.shutdown();
+        try {
+            executorThread.join();
+        } catch (InterruptedException e) {
+            logger.error(e.getMessage(),e);
+        }
     }
 
     private void executorThread() {
@@ -109,6 +88,18 @@ public class Replicant {
             var result = r.getValue();
             var client = clientManager.get(id);
             if (client != null) client.write(result.getValue());
+        }
+    }
+
+    private void acceptClient(){
+        while(true){
+            try {
+                var conn = server.accept();
+                clientManager.start(conn);
+            } catch (IOException e) {
+                logger.warn(e.getMessage(),e);
+                break;
+            }
         }
     }
 

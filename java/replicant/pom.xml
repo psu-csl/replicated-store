@@ -48,10 +48,19 @@
       <plugin>
         <artifactId>maven-compiler-plugin</artifactId>
         <configuration>
-          <source>17</source>
-          <target>17</target>
+          <source>19</source>
+          <target>19</target>
+          <compilerArgs>--enable-preview</compilerArgs>
         </configuration>
         <groupId>org.apache.maven.plugins</groupId>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.0.0-M3</version>
+        <configuration>
+          <argLine>--enable-preview</argLine>
+        </configuration>
       </plugin>
     </plugins>
   </build>
@@ -122,8 +131,8 @@
   <modelVersion>4.0.0</modelVersion>
   <properties>
     <exec.mainClass>ReplicantMain</exec.mainClass>
-    <maven.compiler.source>1.17</maven.compiler.source>
-    <maven.compiler.target>1.17</maven.compiler.target>
+    <maven.compiler.source>1.19</maven.compiler.source>
+    <maven.compiler.target>1.19</maven.compiler.target>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
   </properties>

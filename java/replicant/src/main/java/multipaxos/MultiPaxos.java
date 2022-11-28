@@ -10,7 +10,6 @@ import static multipaxos.CommandType.GET;
 import static multipaxos.CommandType.PUT;
 
 import ch.qos.logback.classic.Logger;
-import com.google.common.util.concurrent.ListenableFuture;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 import io.grpc.Server;
@@ -23,16 +22,72 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
-import log.Instance;
 import log.Log;
 import org.slf4j.LoggerFactory;
+import log.Instance;
+
+class AcceptState {
+
+  public long numRpcs;
+  public long numOks;
+  public long leader;
+  public final ReentrantLock mu;
+  public final Condition cv;
+
+  public AcceptState(long leader) {
+    this.numRpcs = 0;
+    this.numOks = 0;
+    this.leader = leader;
+    this.mu = new ReentrantLock();
+    this.cv = mu.newCondition();
+  }
+
+}
+
+class PrepareState {
+
+  public long numRpcs;
+  public long numOks;
+  public long leader;
+  public long maxLastIndex;
+  public final HashMap<Long, log.Instance> log;
+  public final ReentrantLock mu;
+  public final Condition cv;
+
+
+  public PrepareState(long leader) {
+    this.numRpcs = 0;
+    this.numOks = 0;
+    this.leader = leader;
+    this.maxLastIndex = 0;
+    this.log = new HashMap<>();
+    this.mu = new ReentrantLock();
+    this.cv = mu.newCondition();
+  }
+}
+
+class CommitState {
+
+  public long numRpcs;
+  public long numOks;
+  public long minLastExecuted;
+  public long leader;
+  public final ReentrantLock mu;
+  public final Condition cv;
+
+  public CommitState(long leader, long minLastExecuted) {
+    this.numRpcs = 0;
+    this.leader = leader;
+    this.numOks = 0;
+    this.minLastExecuted = minLastExecuted;
+    this.mu = new ReentrantLock();
+    this.cv = mu.newCondition();
+  }
+}
 
 class RpcPeer {
 
@@ -60,21 +115,19 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
   private final int numPeers;
   private final List<RpcPeer> rpcPeers;
   private final ReentrantLock mu;
-  private final ExecutorService threadPool;
-
   private final Condition cvLeader;
   private final Condition cvFollower;
 
   private Server rpcServer;
   private boolean rpcServerRunning;
   private final Condition rpcServerRunningCv;
-  private final ExecutorService rpcServerThread;
+  private Thread rpcServerThread;
 
   private final AtomicBoolean prepareThreadRunning;
-  private final ExecutorService prepareThread;
+  private Thread prepareThread;
 
   private final AtomicBoolean commitThreadRunning;
-  private final ExecutorService commitThread;
+  private Thread commitThread;
 
   public MultiPaxos(Log log, Configuration config) {
     this.ballot = kMaxNumPeers;
@@ -84,10 +137,9 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
     this.commitInterval = config.getCommitInterval();
 
     String target = config.getPeers().get((int) this.id);
-    this.port = Integer.parseInt(target.substring(target.indexOf(":") + 1));
+    this.port =  Integer.parseInt(target.substring(target.indexOf(":") + 1));
     this.numPeers = config.getPeers().size();
 
-    threadPool = Executors.newFixedThreadPool(config.getThreadPoolSize());
     rpcServerRunning = false;
     prepareThreadRunning = new AtomicBoolean(false);
     commitThreadRunning = new AtomicBoolean(false);
@@ -95,9 +147,6 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
     mu = new ReentrantLock();
     cvLeader = mu.newCondition();
     cvFollower = mu.newCondition();
-    prepareThread = Executors.newSingleThreadExecutor();
-    commitThread = Executors.newSingleThreadExecutor();
-    rpcServerThread = Executors.newSingleThreadExecutor();
     rpcServerRunningCv = mu.newCondition();
 
     rpcPeers = new ArrayList<>();
@@ -107,31 +156,22 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
       rpcPeers.add(new RpcPeer(rpcId++, channel));
     }
   }
-
   public void start() {
     startPrepareThread();
     startCommitThread();
     startRPCServer();
   }
-
   public void stop() {
     stopRPCServer();
     stopPrepareThread();
     stopCommitThread();
-
-    threadPool.shutdown();
-    try {
-      threadPool.awaitTermination(1000, TimeUnit.MILLISECONDS);
-    } catch (InterruptedException e) {
-      e.printStackTrace();
-    }
   }
 
   public void startRPCServer() {
     rpcServer = ServerBuilder.forPort(port).addService(this).build();
     try {
       rpcServer.start();
-      logger.info(id + " starting rpc server at " + rpcServer.getPort());
+      logger.debug(id + " starting rpc server at " + rpcServer.getPort());
       mu.lock();
       rpcServerRunning = true;
       rpcServerRunningCv.signal();
@@ -140,9 +180,8 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
     } finally {
       mu.unlock();
     }
-    rpcServerThread.submit(this::blockUntilShutDown);
+    rpcServerThread = Thread.startVirtualThread(this::blockUntilShutDown);
   }
-
   public void stopRPCServer() {
     try {
       mu.lock();
@@ -150,72 +189,67 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
         rpcServerRunningCv.await();
       }
       mu.unlock();
-      logger.info(id + " stopping rpc at " + rpcServer.getPort());
+      logger.debug(id + " stopping rpc at " + rpcServer.getPort());
       rpcServer.shutdown().awaitTermination(30, TimeUnit.SECONDS);
       for (var peer : rpcPeers) {
         peer.stub.shutdown();
       }
+      rpcServerThread.join();
     } catch (InterruptedException e) {
-      e.printStackTrace();
+      logger.error(e.getMessage(),e);
     }
-    rpcServerThread.shutdown();
-  }
 
+  }
   public void startPrepareThread() {
-    logger.info(id + " starting prepare thread");
+    logger.debug(id + " starting prepare thread");
     assert (!prepareThreadRunning.get());
     prepareThreadRunning.set(true);
-    prepareThread.submit(this::prepareThread);
+    prepareThread = Thread.startVirtualThread(this::prepareThread);
   }
-
   public void stopPrepareThread() {
-    logger.info(id + " stopping prepare thread");
+    logger.debug(id + " stopping prepare thread");
     assert (prepareThreadRunning.get());
     mu.lock();
     prepareThreadRunning.set(false);
     cvFollower.signal();
     mu.unlock();
-    prepareThread.shutdown();
     try {
-      prepareThread.awaitTermination(1000, TimeUnit.MILLISECONDS);
+      prepareThread.join();
     } catch (InterruptedException e) {
-      e.printStackTrace();
+      logger.error(e.getMessage(),e);
     }
   }
-
   public void startCommitThread() {
-    logger.info(id + " starting commit thread");
+    logger.debug(id + " starting commit thread");
     assert (!commitThreadRunning.get());
     commitThreadRunning.set(true);
-    commitThread.submit(this::commitThread);
+    commitThread = Thread.startVirtualThread(this::commitThread);
   }
 
   public void stopCommitThread() {
-    logger.info(id + " stopping commit thread");
+    logger.debug(id + " stopping commit thread");
     assert (commitThreadRunning.get());
     mu.lock();
     commitThreadRunning.set(false);
     cvLeader.signal();
     mu.unlock();
-    commitThread.shutdown();
     try {
-      commitThread.awaitTermination(1000, TimeUnit.MILLISECONDS);
+      commitThread.join();
     } catch (InterruptedException e) {
-      e.printStackTrace();
+      logger.error(e.getMessage(),e);
     }
   }
-
   public Result replicate(command.Command command, long clientId) {
     var ballot = ballot();
     if (isLeader(ballot, this.id)) {
       return runAcceptPhase(ballot, log.advanceLastIndex(), command, clientId);
+
     }
     if (isSomeoneElseLeader(ballot, this.id)) {
       return new Result(MultiPaxosResultType.kSomeoneElseLeader, extractLeaderId(ballot));
     }
     return new Result(MultiPaxosResultType.kRetry, null);
   }
-
   void prepareThread() {
     while (prepareThreadRunning.get()) {
       mu.lock();
@@ -238,14 +272,13 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
         if (r != null) {
           var maxLastIndex = r.getKey();
           var log = r.getValue();
-          becomeLeader(nextBallot, maxLastIndex);
+          becomeLeader(nextBallot,maxLastIndex);
           replay(nextBallot, log);
           break;
         }
       }
     }
   }
-
   public void commitThread() {
     while (commitThreadRunning.get()) {
       mu.lock();
@@ -269,57 +302,65 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
       }
     }
   }
-
-  public Map.Entry<Long, HashMap<Long, log.Instance>> runPreparePhase(long ballot) {
-    var prepareFutures = new ArrayList<ListenableFuture<PrepareResponse>>();
-    long numOks = 0;
-    long maxLastIndex = 0;
-    HashMap<Long, log.Instance> log = new HashMap<>();
+  public Map.Entry<Long,HashMap<Long, log.Instance>> runPreparePhase(long ballot) {
+    var state = new PrepareState(this.id);
     multipaxos.PrepareRequest.Builder request = multipaxos.PrepareRequest.newBuilder();
     request.setSender(this.id);
     request.setBallot(ballot);
     for (var peer : rpcPeers) {
-      prepareFutures.add(
-          multipaxos.MultiPaxosRPCGrpc.newFutureStub(peer.stub).prepare(request.build()));
-      logger.info(id + " sent prepare request to " + peer.id);
-    }
-    for (var f : prepareFutures) {
-      PrepareResponse response = null;
-      try {
-        response = f.get();
-      } catch (ExecutionException | StatusRuntimeException e) {
-        logger.info(id + " RPC connection failed");
-        e.printStackTrace();
-        continue;
-      } catch (InterruptedException e) {
-        logger.error(e.getMessage());
-        e.printStackTrace();
-      }
-      if (response.getType() == multipaxos.ResponseType.OK) {
-        ++numOks;
-        for (int i = 0; i < response.getInstancesCount(); ++i) {
-          maxLastIndex = max(maxLastIndex, response.getInstances(i).getIndex());
-          insert(log, makeInstance(response.getInstances(i)));
+      Thread.startVirtualThread(() -> {
+        multipaxos.PrepareResponse response;
+        try {
+          response = multipaxos.MultiPaxosRPCGrpc.newBlockingStub(peer.stub).prepare(request.build());
+          logger.debug(id + " sent prepare request to " + peer.id);
+        } catch (StatusRuntimeException e) {
+          logger.debug(id + " RPC connection failed to " + peer.id);
+          state.mu.lock();
+          state.numRpcs++;
+          state.cv.signal();
+          state.mu.unlock();
+          return;
         }
-      } else {
-        assert (response.getType() == multipaxos.ResponseType.REJECT);
-        mu.lock();
-        if (response.getBallot() > ballot) {
-          becomeFollower(response.getBallot());
+        state.mu.lock();
+        ++state.numRpcs;
+        if (response.getType() == multipaxos.ResponseType.OK) {
+          ++state.numOks;
+          for (int i = 0; i < response.getInstancesCount(); ++i) {
+            state.maxLastIndex =max(state.maxLastIndex,response.getInstances(i).getIndex());
+            insert(state.log, makeInstance(response.getInstances(i)));
+          }
+        } else {
+          assert (response.getType() == multipaxos.ResponseType.REJECT);
+          mu.lock();
+          if (response.getBallot() > ballot) {
+            becomeFollower(response.getBallot());
+            state.leader = extractLeaderId(this.ballot);
+          }
           mu.unlock();
-          break;
         }
-        mu.unlock();
-      }
-      if (numOks > numPeers / 2) {
-        return new HashMap.SimpleEntry<>(maxLastIndex, log);
+        state.cv.signal();
+        state.mu.unlock();
+      });
+    }
+    state.mu.lock();
+    while (state.leader == this.id && state.numOks <= numPeers / 2
+        && state.numRpcs != numPeers) {
+      try {
+        state.cv.await();
+      } catch (InterruptedException e) {
+        e.printStackTrace();
       }
     }
+
+    if (state.numOks > numPeers / 2) {
+      state.mu.unlock();
+      return new HashMap.SimpleEntry<>(state.maxLastIndex,state.log);
+    }
+    state.mu.unlock();
     return null;
   }
-
   public Result runAcceptPhase(long ballot, long index, command.Command command, long clientId) {
-    var acceptFutures = new ArrayList<ListenableFuture<AcceptResponse>>();
+    var state = new AcceptState(this.id);
     log.Instance instance = new log.Instance();
 
     instance.setBallot(ballot);
@@ -333,119 +374,130 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
     request.setInstance(makeProtoInstance(instance));
 
     for (var peer : rpcPeers) {
-      acceptFutures.add(
-          multipaxos.MultiPaxosRPCGrpc.newFutureStub(peer.stub).accept(request.build()));
-      logger.info(id + " sent accept request to " + peer.id);
-    }
-
-    long numOks = 0;
-
-    for (var f : acceptFutures) {
-      AcceptResponse response = null;
-      try {
-        response = f.get();
-      } catch (ExecutionException | StatusRuntimeException e) {
-        logger.info(id + " RPC connection failed");
-        e.printStackTrace();
-        continue;
-      } catch (InterruptedException e) {
-        logger.error(e.getMessage());
-        e.printStackTrace();
-      }
-      if (response.getType() == multipaxos.ResponseType.OK) {
-        ++numOks;
-      } else {
-        mu.lock();
+      Thread.startVirtualThread(() -> {
+        multipaxos.AcceptResponse response;
         try {
-          if (response.getBallot() > this.ballot) {
-            becomeFollower(response.getBallot());
-            return new Result(MultiPaxosResultType.kSomeoneElseLeader,
-                extractLeaderId(this.ballot));
-          }
-        } finally {
-          mu.unlock();
+          response = multipaxos.MultiPaxosRPCGrpc.newBlockingStub(peer.stub).accept(request.build());
+        } catch (StatusRuntimeException e) {
+          logger.debug(id + " RPC connection failed to " + peer.id);
+          state.mu.lock();
+          ++state.numRpcs;
+          state.cv.signal();
+          state.mu.unlock();
+          return;
         }
-      }
-      if (numOks > numPeers / 2) {
-        log.commit(index);
-        return new Result(MultiPaxosResultType.kOk, null);
-      }
-    }
-    return new Result(MultiPaxosResultType.kRetry, null);
-  }
-
-  public Long runCommitPhase(long ballot, long globalLastExecuted) {
-    var commitFutures = new ArrayList<ListenableFuture<CommitResponse>>();
-    multipaxos.CommitRequest.Builder request = multipaxos.CommitRequest.newBuilder();
-
-    request.setBallot(ballot);
-    request.setSender(this.id);
-    request.setLastExecuted(log.getLastExecuted());
-    request.setGlobalLastExecuted(globalLastExecuted);
-    for (var peer : rpcPeers) {
-      commitFutures.add(
-          multipaxos.MultiPaxosRPCGrpc.newFutureStub(peer.stub).commit(request.build()));
-      logger.info(id + " sent commit to " + peer.id);
-    }
-
-    long numOks = 0;
-    long minLastExecuted = log.getLastExecuted();
-
-    for (var f : commitFutures) {
-      CommitResponse response = null;
-      try {
-        response = f.get();
-      } catch (ExecutionException | StatusRuntimeException e) {
-        logger.info(id + " RPC connection failed");
-        e.printStackTrace();
-        continue;
-      } catch (InterruptedException e) {
-        logger.error(e.getMessage());
-        e.printStackTrace();
-      }
-      if (response.isInitialized()) {
+        logger.debug(id + " sent accept request to " + peer.id);
+        state.mu.lock();
+        ++state.numRpcs;
         if (response.getType() == multipaxos.ResponseType.OK) {
-          ++numOks;
-          if (response.getLastExecuted() < minLastExecuted) {
-            minLastExecuted = response.getLastExecuted();
-          }
+          ++state.numOks;
         } else {
           mu.lock();
           if (response.getBallot() > this.ballot) {
             becomeFollower(response.getBallot());
-            mu.unlock();
-            break;
+            state.leader = extractLeaderId(this.ballot);
           }
           mu.unlock();
         }
+        state.cv.signal();
+        state.mu.unlock();
+      });
+    }
+    state.mu.lock();
+    while (state.leader == this.id && state.numOks <= numPeers / 2
+        && state.numRpcs != numPeers) {
+      try {
+        state.cv.await();
+      } catch (InterruptedException e) {
+        e.printStackTrace();
       }
     }
-    if (numOks == numPeers) {
-      return minLastExecuted;
+    if (state.numOks > numPeers / 2) {
+      log.commit(index);
+      state.mu.unlock();
+      return new Result(MultiPaxosResultType.kOk, null);
     }
+    state.mu.unlock();
+    if (state.leader != this.id) {
+      return new Result(MultiPaxosResultType.kSomeoneElseLeader, state.leader);
+    }
+    return new Result(MultiPaxosResultType.kRetry, null);
+  }
+  public Long runCommitPhase(long ballot, long globalLastExecuted) {
+    var state = new CommitState(this.id, log.getLastExecuted());
+    multipaxos.CommitRequest.Builder request = multipaxos.CommitRequest.newBuilder();
+
+    request.setBallot(ballot);
+    request.setSender(this.id);
+    request.setLastExecuted(state.minLastExecuted);
+    request.setGlobalLastExecuted(globalLastExecuted);
+    for (var peer : rpcPeers) {
+      Thread.startVirtualThread(() -> {
+        multipaxos.CommitResponse response;
+        try {
+          response = multipaxos.MultiPaxosRPCGrpc.newBlockingStub(peer.stub).commit(request.build());
+          logger.debug(id + " sent commit to " + peer.id);
+        } catch (StatusRuntimeException e) {
+          logger.debug(id + " RPC connection failed to " + peer.id);
+          state.mu.lock();
+          state.numRpcs++;
+          state.cv.signal();
+          state.mu.unlock();
+          return;
+        }
+        state.mu.lock();
+        ++state.numRpcs;
+        if (response.isInitialized()) {
+          if (response.getType() == multipaxos.ResponseType.OK) {
+            ++state.numOks;
+
+            if (response.getLastExecuted() < state.minLastExecuted) {
+              state.minLastExecuted = response.getLastExecuted();
+            }
+          } else {
+            mu.lock();
+            if (response.getBallot() > this.ballot) {
+              becomeFollower(response.getBallot());
+              state.leader = extractLeaderId(this.ballot);
+            }
+            mu.unlock();
+          }
+        }
+        state.cv.signal();
+        state.mu.unlock();
+      });
+    }
+    state.mu.lock();
+    while (state.leader == this.id && state.numRpcs != numPeers) {
+      try {
+        state.cv.await();
+      } catch (InterruptedException e) {
+        e.printStackTrace();
+      }
+    }
+    if (state.numOks == numPeers) {
+      state.mu.unlock();
+      return state.minLastExecuted;
+    }
+    state.mu.unlock();
     return globalLastExecuted;
   }
-
   public void replay(long ballot, HashMap<Long, log.Instance> log) {
 
     for (Map.Entry<Long, log.Instance> entry : log.entrySet()) {
       var r = runAcceptPhase(ballot, entry.getValue().getIndex(), entry.getValue().getCommand(),
           entry.getValue().getClientId());
-      while (r.type == MultiPaxosResultType.kRetry) {
-        r = runAcceptPhase(ballot, entry.getValue().getIndex(), entry.getValue().getCommand(),
-            entry.getValue().getClientId());
-      }
+      while(r.type == MultiPaxosResultType.kRetry)
+        r = runAcceptPhase(ballot, entry.getValue().getIndex(), entry.getValue().getCommand(),entry.getValue().getClientId());
       if (r.type == MultiPaxosResultType.kSomeoneElseLeader) {
         return;
       }
     }
   }
-
   @Override
-  public void prepare(multipaxos.PrepareRequest request,
-      StreamObserver<multipaxos.PrepareResponse> responseObserver) {
+  public void prepare(multipaxos.PrepareRequest request, StreamObserver<multipaxos.PrepareResponse> responseObserver) {
     mu.lock();
-    logger.info(id + " <-- prepare-- " + request.getSender());
+    logger.debug(id + " <-- prepare-- " + request.getSender());
     multipaxos.PrepareResponse.Builder responseBuilder = multipaxos.PrepareResponse.newBuilder();
     try {
       if (request.getBallot() > ballot) {
@@ -466,12 +518,10 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
       mu.unlock();
     }
   }
-
   @Override
-  public void accept(multipaxos.AcceptRequest request,
-      StreamObserver<multipaxos.AcceptResponse> responseObserver) {
+  public void accept(multipaxos.AcceptRequest request, StreamObserver<multipaxos.AcceptResponse> responseObserver) {
     mu.lock();
-    logger.info(this.id + " <--accept---  " + request.getSender());
+    logger.debug(this.id + " <--accept---  " + request.getSender());
     multipaxos.AcceptResponse.Builder responseBuilder = multipaxos.AcceptResponse.newBuilder();
     try {
       if (request.getInstance().getBallot() >= this.ballot) {
@@ -492,7 +542,7 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
   public void commit(multipaxos.CommitRequest commitRequest,
       StreamObserver<multipaxos.CommitResponse> responseObserver) {
     mu.lock();
-    logger.info(id + " <--commit--- " + commitRequest.getSender());
+    logger.debug(id + " <--commit--- " + commitRequest.getSender());
     try {
       var response = multipaxos.CommitResponse.newBuilder();
       if (commitRequest.getBallot() >= ballot) {
@@ -516,12 +566,9 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
   public static long extractLeaderId(long ballot) {
     return ballot & kIdBits;
   }
-
   public static boolean isLeader(long ballot, long id) {
     return extractLeaderId(ballot) == id;
-  }
-
-  public static boolean isSomeoneElseLeader(long ballot, long id) {
+  }public static boolean isSomeoneElseLeader(long ballot, long id) {
     return !isLeader(ballot, id) && extractLeaderId(ballot) < kMaxNumPeers;
   }
 
@@ -537,7 +584,6 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
       mu.unlock();
     }
   }
-
   public long nextBallot() {
     mu.lock();
     try {
@@ -549,11 +595,10 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
       mu.unlock();
     }
   }
-
   public void becomeLeader(long newBallot, long newLastIndex) {
     mu.lock();
     try {
-      logger.info(id + " became a leader: ballot: " + ballot + " -> " + newBallot);
+      logger.debug(id + " became a leader: ballot: " + ballot + " -> " + newBallot);
       ballot = newBallot;
       log.setLastIndex(newLastIndex);
       cvLeader.signal();
@@ -561,19 +606,17 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
       mu.unlock();
     }
   }
-
   public void becomeFollower(long newBallot) {
     var oldLeaderId = extractLeaderId(ballot);
     var newLeaderId = extractLeaderId(newBallot);
     if (newLeaderId != id && (oldLeaderId == id || oldLeaderId == kMaxNumPeers)) {
-      logger.info(id + " became a follower: ballot: " + ballot + " -> " + newBallot);
+      logger.debug(id + " became a follower: ballot: " + ballot + " -> " + newBallot);
       mu.lock();
       cvFollower.signal();
       mu.unlock();
     }
     ballot = newBallot;
   }
-
   public void sleepForCommitInterval() {
     try {
       Thread.sleep(commitInterval);
@@ -581,17 +624,15 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
       e.printStackTrace();
     }
   }
-
   public void sleepForRandomInterval() {
     Random random = new Random();
-    var sleepTime = random.nextInt(0, (int) commitInterval / 2);
+    var sleepTime = random.nextInt(0, (int) commitInterval/2);
     try {
       Thread.sleep(commitInterval + commitInterval / 2 + sleepTime);
     } catch (InterruptedException e) {
       e.printStackTrace();
     }
   }
-
   public boolean receivedCommit() {
     return commitReceived.compareAndExchange(true, false);
   }
@@ -656,4 +697,3 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
   }
 
 }
-
