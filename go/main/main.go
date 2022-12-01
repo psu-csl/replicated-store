@@ -11,7 +11,6 @@ import (
 )
 
 func main() {
-	const numPeers = 3
 	id := flag.Int64("id", 0, "peer id")
 	debug := flag.Bool("d", false, "enable debug logging")
 	configPath := flag.String("c", "config/config.json", "config path")
@@ -33,7 +32,7 @@ func main() {
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
-		<- signalChan
+		<-signalChan
 		replicant.Stop()
 	}()
 	replicant.Start()
