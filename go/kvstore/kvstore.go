@@ -1,6 +1,9 @@
 package kvstore
 
-import pb "github.com/psu-csl/replicated-store/go/multipaxos/comm"
+import (
+	"github.com/psu-csl/replicated-store/go/config"
+	pb "github.com/psu-csl/replicated-store/go/multipaxos/comm"
+)
 
 const (
 	NotFound string = "key not found"
@@ -16,6 +19,15 @@ type KVStore interface {
 	Get(key string) *string
 	Put(key string, value string) bool
 	Del(key string) bool
+}
+
+func CreateStore(config config.Config) KVStore {
+	switch config.Store {
+	case "rocksdb":
+		return NewRocksDBKVStore(config.DbPath)
+	default:
+		return NewMemKVStore()
+	}
 }
 
 func Execute(cmd *pb.Command, store KVStore) KVResult {
