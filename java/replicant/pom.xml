@@ -116,6 +116,11 @@
       <groupId>ch.qos.logback</groupId>
       <version>1.2.11</version>
     </dependency>
+    <dependency>
+      <groupId>org.rocksdb</groupId>
+      <artifactId>rocksdbjni</artifactId>
+      <version>7.6.0</version>
+    </dependency>
   </dependencies>
   <groupId>psu.csl</groupId>
 

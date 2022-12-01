@@ -1,5 +1,6 @@
 package replicant;
 
+import kvstore.MemKVStore;
 import multipaxos.Configuration;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;

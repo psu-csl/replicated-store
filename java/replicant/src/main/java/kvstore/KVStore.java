@@ -2,8 +2,17 @@ package kvstore;
 
 import command.Command;
 import command.KVResult;
+import multipaxos.Configuration;
 
 public interface KVStore {
+
+  static KVStore createStore(Configuration config) {
+    if (config.isStore()) {
+      return new RocksDBStore(config.getRocksDBPath());
+    } else {
+      return new MemKVStore();
+    }
+  }
 
   String get(String key);
 

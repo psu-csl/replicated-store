@@ -13,7 +13,7 @@ import io.netty.handler.codec.DelimiterBasedFrameDecoder;
 import io.netty.handler.codec.Delimiters;
 import io.netty.handler.codec.string.StringDecoder;
 import io.netty.handler.codec.string.StringEncoder;
-import kvstore.MemKVStore;
+import kvstore.KVStore;
 import log.Log;
 import multipaxos.Configuration;
 import multipaxos.MultiPaxos;
@@ -37,7 +37,7 @@ public class Replicant {
 
     public Replicant(Configuration config) {
         this.id = config.getId();
-        this.log = new Log(new MemKVStore());
+        this.log = new Log(KVStore.createStore(config));
         this.multiPaxos = new MultiPaxos(log, config);
         this.ipPort = config.getPeers().get((int) id);
         clientManager = new ClientManager(id, config.getPeers().size(), multiPaxos);
