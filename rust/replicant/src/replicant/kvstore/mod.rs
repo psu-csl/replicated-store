@@ -1,8 +1,13 @@
-pub mod memkvstore;
-
+use serde_json::Value as json;
 use thiserror::Error;
 
+use crate::replicant::kvstore::memkvstore::MemKVStore;
+use crate::replicant::kvstore::rocksdbstore::RocksDBKVStore;
+
 use super::multipaxos::rpc::{Command, CommandType};
+
+pub mod memkvstore;
+pub mod rocksdbstore;
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum KVStoreError {
@@ -16,6 +21,14 @@ pub trait KVStore {
     fn get(&self, key: &str) -> Option<String>;
     fn put(&mut self, key: &str, value: &str) -> bool;
     fn del(&mut self, key: &str) -> bool;
+}
+
+pub fn create_store(config: &json) -> Box<dyn KVStore + Sync + Send> {
+    match config["store"].as_str().unwrap() {
+        "rocksdb" => Box::new(RocksDBKVStore::new(
+            config["db_path"].as_str().unwrap())),
+        _ => Box::new(MemKVStore::new()),
+    }
 }
 
 impl Command {

@@ -14,6 +14,7 @@ use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::oneshot::{self, Receiver, Sender};
 use tokio::task::JoinHandle;
+use crate::replicant::kvstore::create_store;
 
 struct ReplicantInner {
     id: i64,
@@ -28,7 +29,7 @@ impl ReplicantInner {
         let id = config["id"].as_i64().unwrap();
         let peers = config["peers"].as_array().unwrap();
         let ip_port = peers[id as usize].as_str().unwrap().to_string();
-        let log = Arc::new(Log::new(Box::new(MemKVStore::new())));
+        let log = Arc::new(Log::new(create_store(config)));
         let multi_paxos = Arc::new(MultiPaxos::new(log.clone(), config));
         let num_peers = peers.len() as i64;
         let client_manager =
