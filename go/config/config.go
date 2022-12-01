@@ -8,14 +8,14 @@ import (
 
 type Config struct {
 	Id             int64
-	Peers          []string
-	CommitInterval int64
+	Peers          []string `json:"peers"`
+	CommitInterval int64    `json:"commit_interval"`
 }
 
 func DefaultConfig(id int64, n int) Config {
 	peers := make([]string, n)
 	for i := 0; i < n; i++ {
-		peers[i] = "127.0.0.1:" + strconv.Itoa(10000 + i * 1000)
+		peers[i] = "127.0.0.1:" + strconv.Itoa(10000+i*1000)
 	}
 
 	config := Config{
