@@ -287,6 +287,7 @@ impl MultiPaxosInner {
             }
             if num_oks > num_peers / 2 {
                 self.log.commit(index).await;
+                responses.detach_all();
                 return ResultType::Ok;
             }
         }
