@@ -13,6 +13,7 @@ type RocksDBStore struct {
 
 func NewRocksDBKVStore(path string) *RocksDBStore {
 	opts := grocksdb.NewDefaultOptions()
+	opts.SetCreateIfMissing(true)
 	db, err := grocksdb.OpenDb(opts, path)
 	if err != nil {
 		logger.Panic(err)
@@ -49,4 +50,8 @@ func (s *RocksDBStore) Del(key string) bool {
 	} else {
 		return false
 	}
+}
+
+func (s *RocksDBStore) Close() {
+	s.db.Close()
 }

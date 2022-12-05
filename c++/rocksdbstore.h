@@ -13,6 +13,10 @@ class RocksDBStore : public KVStore {
   RocksDBStore(RocksDBStore&& store) = delete;
   RocksDBStore& operator=(RocksDBStore&& store) = delete;
 
+  ~RocksDBStore() {
+      db_->Close();
+  }
+
   std::optional<std::string> Get(std::string const& key) override;
   bool Put(std::string const& key, std::string const& value) override;
   bool Del(std::string const& key) override;

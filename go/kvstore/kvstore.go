@@ -3,6 +3,7 @@ package kvstore
 import (
 	"github.com/psu-csl/replicated-store/go/config"
 	pb "github.com/psu-csl/replicated-store/go/multipaxos/comm"
+	logger "github.com/sirupsen/logrus"
 )
 
 const (
@@ -19,14 +20,17 @@ type KVStore interface {
 	Get(key string) *string
 	Put(key string, value string) bool
 	Del(key string) bool
+	Close()
 }
 
 func CreateStore(config config.Config) KVStore {
-	switch config.Store {
-	case "rocksdb":
+	if config.Store == "rocksdb" {
 		return NewRocksDBKVStore(config.DbPath)
-	default:
+	} else if config.Store == "mem" {
 		return NewMemKVStore()
+	} else {
+		logger.Panic("no match kvstore")
+		return nil
 	}
 }
 

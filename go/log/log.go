@@ -126,6 +126,7 @@ func (l *Log) Stop() {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.running = false
+	l.kvStore.Close()
 	l.cvExecutable.Signal()
 }
 

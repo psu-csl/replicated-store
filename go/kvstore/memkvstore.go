@@ -33,3 +33,5 @@ func (s *MemKVStore) Del(key string) bool {
 		return false
 	}
 }
+
+func (s *MemKVStore) Close() {}

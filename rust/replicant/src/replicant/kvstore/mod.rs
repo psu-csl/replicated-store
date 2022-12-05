@@ -24,11 +24,16 @@ pub trait KVStore {
 }
 
 pub fn create_store(config: &json) -> Box<dyn KVStore + Sync + Send> {
-    match config["store"].as_str().unwrap() {
-        "rocksdb" => Box::new(RocksDBKVStore::new(
-            config["db_path"].as_str().unwrap())),
-        _ => Box::new(MemKVStore::new()),
+    let store_type = config["store"].as_str().unwrap();
+    if store_type == "rocksdb" {
+        return Box::new(RocksDBKVStore::new(
+            config["db_path"].as_str().unwrap()));
+    } else if store_type == "mem" {
+        return Box::new(MemKVStore::new());
+    } else {
+        assert!(false);
     }
+    return Box::new(MemKVStore::new());
 }
 
 impl Command {
