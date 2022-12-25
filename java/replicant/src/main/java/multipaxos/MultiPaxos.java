@@ -324,6 +324,14 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
     request.setSender(this.id);
     request.setBallot(ballot);
     for (var peer : rpcPeers) {
+      if (peer.id == this.id){
+        state.mu.lock();
+        state.numOks++;
+        state.numRpcs++;
+        state.cv.signal();
+        state.mu.unlock();
+        continue;
+      }
       threadPool.submit(() -> {
         multipaxos.PrepareResponse response;
         try {
@@ -390,6 +398,20 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
     request.setInstance(makeProtoInstance(instance));
 
     for (var peer : rpcPeers) {
+      if (peer.id == this.id) {
+        mu.lock();
+        if (instance.getBallot() >= this.ballot){
+          becomeFollower(instance.getBallot());
+          log.append(instance);
+        }
+        mu.unlock();
+        state.mu.lock();
+        state.numOks++;
+        state.numRpcs++;
+        state.cv.signal();
+        state.mu.unlock();
+        continue;
+      }
       threadPool.submit(() -> {
         multipaxos.AcceptResponse response;
         try {
@@ -448,6 +470,22 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
     request.setLastExecuted(state.minLastExecuted);
     request.setGlobalLastExecuted(globalLastExecuted);
     for (var peer : rpcPeers) {
+      if (peer.id == this.id) {
+        mu.lock();
+        if(request.getBallot() >= this.ballot){
+          commitReceived.set(true);
+          becomeFollower(request.getBallot());
+          log.commitUntil(request.getLastExecuted(),request.getBallot());
+          log.trimUntil(request.getGlobalLastExecuted());
+        }
+        mu.unlock();
+        state.mu.lock();
+        state.numRpcs++;
+        state.numOks++;
+        state.cv.signal();
+        state.mu.unlock();
+        continue;
+      }
       threadPool.submit(() -> {
         multipaxos.CommitResponse response;
         try {
