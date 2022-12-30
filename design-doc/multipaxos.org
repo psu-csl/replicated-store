@@ -493,6 +493,47 @@
        state.mu_.unlock()
 
     - run_accept_phase(ballot: int, index: int, cmd: command, client_id: int)
+      accept_state state
+      accept.leader_ = id_
+
+      instance instance
+      instance.set_ballot(ballot)
+      instance.set_index(index)
+      instance.set_client_id(client_id)
+      instance.command = command
+
+      accept_request request
+      request.set_sender(id_)
+      request.instance = instance
+
+      for peer in rpc_peers {
+        tp_.post(lambda {
+          accept_response response
+          peer->accet(request, response)
+          state.mu_.lock()
+          state.num_rpcs_++
+          if response.ok():
+            state.num_oks++
+          else:
+            mu_.lock()
+            if response.ballot > ballot_:
+              become_follower(response.ballot)
+              state->leader_ = ExtractLeaderId(ballot_)
+            mu_.unlock()
+          state.mu_.unlock()
+          state.cv_.notify_one()
+
+      state.mu_lock()
+      while state.leader_ == id &&
+          state.num_oks_ <= num_peers_ / 2 &&
+          state.num_rpcs_ != num_peers
+        state.cv_.wait(mu_)
+      if state.num_oks > num_peers / 2):
+        log_.commit(index)
+        return {ok, nullopt}
+      if state->leader_ != id_:
+        return {someone_else_leader, state.leader_}
+      return {retry, nullopt}
 
     - run_commit_phase(ballot: int, global_last_executed: int)
 
