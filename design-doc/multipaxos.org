@@ -440,7 +440,7 @@
       # in among the received instances and a log that is the result of merging
       # all of the logs received from other peers.
       prepare_state state
-      state.id_ = id_
+      state.leader_ = id_
 
       prepare_request request
       request.set_sender(id_)
@@ -477,13 +477,13 @@
        # not all peers have responded; since we send each RPC to ourselves as
        # well, our condition check is <= and not <.
        while state.leader_ == id &&
-         state.num_oks <= rpc_peers_.size() / 2 &&
-           state.num_rpcs != rpc_peers_.size():
+         state.num_oks <= num_peers_ / 2 &&
+           state.num_rpcs != num_peers_:
          state.cv_.wait(mu_)
        # we exited the loop meaning one of the conditions has changed
        # if we reached the quorum, respond with the highest index observed and
        # the merged log.
-       if state.num_oks > rpc_peers_.size() / 2:
+       if state.num_oks > num_peers_ / 2:
          return {state.last_index_, state.log_}
        # we haven't reached the quorum and have exited the while loop, so either
        # someone else became a leader or we didn't get a positive response from
@@ -526,9 +526,9 @@
       state.mu_lock()
       while state.leader_ == id &&
           state.num_oks_ <= num_peers_ / 2 &&
-          state.num_rpcs_ != num_peers
+          state.num_rpcs_ != num_peers_
         state.cv_.wait(mu_)
-      if state.num_oks > num_peers / 2):
+      if state.num_oks > num_peers_ / 2):
         log_.commit(index)
         return {ok, nullopt}
       if state->leader_ != id_:
