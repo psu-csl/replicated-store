@@ -517,9 +517,15 @@
 
       # we've already sent an RPC to ourselves and we have appended the instance
       # to our log.
-      state.num_rpcs++
-      state.num_oks++
-      log_.append(instance)
+      mu_.lock()
+      current_leader = ExtractLeaderId(ballot_)
+      if current_leader == id_:
+        state.num_rpcs++
+        state.num_oks++
+        log_.append(instance)
+      else:
+        return {someone_else_leader, current_leader}
+      mu_.unlock()
 
       for peer in rpc_peers {
         if peer.id == id_:
