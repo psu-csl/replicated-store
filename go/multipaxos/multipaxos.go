@@ -272,7 +272,22 @@ func (p *Multipaxos) RunPreparePhase(ballot int64) (int64,
 		Ballot: ballot,
 	}
 
+	p.mu.Lock()
+	if ballot > p.ballot {
+		state.NumRpcs++
+		state.NumOks++
+		state.Log = p.log.GetLog()
+		state.MaxLastIndex = p.log.LastIndex()
+	} else {
+		p.mu.Unlock()
+		return -1, nil
+	}
+	p.mu.Unlock()
+
 	for _, peer := range p.rpcPeers {
+		if peer.Id == p.id {
+			continue
+		}
 		go func(peer *RpcPeer) {
 			ctx := context.Background()
 			response, err := peer.Stub.Prepare(ctx, &request)
@@ -330,12 +345,34 @@ func (p *Multipaxos) RunAcceptPhase(ballot int64, index int64,
 		Command:  command,
 	}
 
+	p.mu.Lock()
+	currentLeaderId := ExtractLeaderId(p.ballot)
+	if currentLeaderId == p.id {
+		instance := pb.Instance{
+			Ballot:   ballot,
+			Index:    index,
+			ClientId: clientId,
+			State:    pb.InstanceState_INPROGRESS,
+			Command:  command,
+		}
+		state.NumRpcs++
+		state.NumOks++
+		p.log.Append(&instance)
+	} else {
+		p.mu.Unlock()
+		return Result{SomeElseLeader, currentLeaderId}
+	}
+	p.mu.Unlock()
+
 	request := pb.AcceptRequest{
 		Sender:   p.id,
 		Instance: &instance,
 	}
 
 	for _, peer := range p.rpcPeers {
+		if peer.Id == p.id {
+			continue
+		}
 		go func(peer *RpcPeer) {
 			ctx := context.Background()
 			response, err := peer.Stub.Accept(ctx, &request)
@@ -388,7 +425,15 @@ func (p *Multipaxos) RunCommitPhase(ballot int64, globalLastExecuted int64) int6
 		GlobalLastExecuted: globalLastExecuted,
 	}
 
+	state.NumRpcs++
+	state.NumOks++
+	state.MinLastExecuted = p.log.LastExecuted()
+	p.log.TrimUntil(globalLastExecuted)
+
 	for _, peer := range p.rpcPeers {
+		if peer.Id == p.id {
+			continue
+		}
 		go func(peer *RpcPeer) {
 			ctx := context.Background()
 
