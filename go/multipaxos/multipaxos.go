@@ -119,8 +119,8 @@ func (p *Multipaxos) sleepForCommitInterval() {
 }
 
 func (p *Multipaxos) sleepForRandomInterval() {
-	sleepTime := p.commitInterval + p.commitInterval/ 2 +
-		rand.Int63n(p.commitInterval/ 2)
+	sleepTime := p.commitInterval + p.commitInterval/2 +
+		rand.Int63n(p.commitInterval/2)
 	time.Sleep(time.Duration(sleepTime) * time.Millisecond)
 }
 
@@ -210,8 +210,8 @@ func (p *Multipaxos) StopCommitThread() {
 func (p *Multipaxos) Replicate(command *pb.Command, clientId int64) Result {
 	ballot := p.Ballot()
 	if IsLeader(ballot, p.id) {
-			return p.RunAcceptPhase(ballot, p.log.AdvanceLastIndex(), command,
-				clientId)
+		return p.RunAcceptPhase(ballot, p.log.AdvanceLastIndex(), command,
+			clientId)
 	}
 	if IsSomeoneElseLeader(ballot, p.id) {
 		return Result{Type: SomeElseLeader, Leader: ExtractLeaderId(ballot)}
@@ -307,12 +307,12 @@ func (p *Multipaxos) RunPreparePhase(ballot int64) (int64,
 
 	state.Mu.Lock()
 	defer state.Mu.Unlock()
-	for state.Leader == p.id && state.NumOks <= len(p.rpcPeers) / 2 &&
-		  state.NumRpcs != len(p.rpcPeers) {
+	for state.Leader == p.id && state.NumOks <= len(p.rpcPeers)/2 &&
+		state.NumRpcs != len(p.rpcPeers) {
 		state.Cv.Wait()
 	}
 
-	if state.NumOks > len(p.rpcPeers) / 2 {
+	if state.NumOks > len(p.rpcPeers)/2 {
 		return state.MaxLastIndex, state.Log
 	}
 	return -1, nil
@@ -363,12 +363,12 @@ func (p *Multipaxos) RunAcceptPhase(ballot int64, index int64,
 
 	state.Mu.Lock()
 	defer state.Mu.Unlock()
-	for state.Leader == p.id && state.NumOks <= len(p.rpcPeers) / 2 &&
-		  state.NumRpcs != len(p.rpcPeers) {
+	for state.Leader == p.id && state.NumOks <= len(p.rpcPeers)/2 &&
+		state.NumRpcs != len(p.rpcPeers) {
 		state.Cv.Wait()
 	}
 
-	if state.NumOks > len(p.rpcPeers) / 2 {
+	if state.NumOks > len(p.rpcPeers)/2 {
 		p.log.Commit(index)
 		return Result{Type: Ok, Leader: -1}
 	}
