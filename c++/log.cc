@@ -137,3 +137,8 @@ Instance const* Log::at(std::size_t i) const {
   auto it = log_.find(i);
   return it == log_.end() ? nullptr : &it->second;
 }
+
+std::unordered_map<int64_t, multipaxos::Instance> Log::GetLog() {
+  std::unordered_map<int64_t, multipaxos::Instance> local_log(log_);
+  return local_log;
+}
