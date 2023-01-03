@@ -448,10 +448,15 @@
 
       # we've already sent an RPC to ourselves and we have appended the instance
       # to our log.
-      state.num_rpcs++;
-      state.num_oks++;
-      state.log_ = log_.log();
-      state.last_index = log_.last_index();
+      mu_.lock()
+      if ballot > ballot_:
+        state.num_rpcs++
+        state.num_oks++
+        state.log_ = log_.log()
+        state.last_index = log_.last_index()
+      else:
+        return nullopt
+      mu_.unlock()
 
       # for each peer run a closure in a separate thread that sends out an RPC
       # request and updates the state and signals the main thread.
