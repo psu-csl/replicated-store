@@ -204,20 +204,36 @@ impl MultiPaxosInner {
     ) -> Option<(i64, HashMap<i64, Instance>)> {
         let num_peers = self.rpc_peers.len();
         let mut responses = JoinSet::new();
-
-        self.rpc_peers.iter().for_each(|peer| {
-            let request = Request::new(PrepareRequest {
-                ballot,
-                sender: self.id,
-            });
-            let mut stub = peer.stub.clone();
-            responses.spawn(async move { stub.prepare(request).await });
-            info!("{} sent prepare request to {}", self.id, peer.id);
-        });
-
         let mut num_oks = 0;
         let mut log = HashMap::new();
         let mut last_index = 0;
+
+        {
+            let current_ballot = self.ballot.lock();
+            if ballot > *current_ballot {
+                num_oks += 1;
+                log = self.log.get_log();
+                last_index = self.log.last_index();
+                if num_oks > num_peers / 2 {
+                    return Some((last_index, log));
+                }
+            } else {
+                return None;
+            }
+        }
+
+        self.rpc_peers.iter().for_each(|peer| {
+            if peer.id != self.id {
+                let request = Request::new(PrepareRequest {
+                    ballot,
+                    sender: self.id,
+                });
+                let mut stub = peer.stub.clone();
+                responses.spawn(async move { stub.prepare(request).await });
+                info!("{} sent prepare request to {}", self.id, peer.id);
+            }
+        });
+
 
         while let Some(response) = responses.join_next().await {
             if let Ok(Ok(response)) = response {
@@ -252,21 +268,40 @@ impl MultiPaxosInner {
     ) -> ResultType {
         let num_peers = self.rpc_peers.len();
         let mut responses = JoinSet::new();
-
-        self.rpc_peers.iter().for_each(|peer| {
-            let request = Request::new(AcceptRequest {
-                instance: Some(Instance::inprogress(
-                    ballot, index, command, client_id,
-                )),
-                sender: self.id,
-            });
-            let mut stub = peer.stub.clone();
-            responses.spawn(async move { stub.accept(request).await });
-            info!("{} sent accept request to {}", self.id, peer.id);
-        });
-
         let mut num_oks = 0;
         let mut current_leader = self.id;
+
+        {
+            let mut current_ballot = self.ballot.lock();
+            let current_leader_id = extract_leader(*current_ballot);
+            if current_leader_id == self.id {
+                num_oks += 1;
+                let instance = Instance::inprogress(
+                    ballot, index, command, client_id,
+                );
+                self.log.append(instance);
+            } else {
+                return ResultType::SomeoneElseLeader(current_leader_id);
+            }
+        }
+        if num_oks > num_peers / 2 {
+            self.log.commit(index).await;
+            return ResultType::Ok;
+        }
+
+        self.rpc_peers.iter().for_each(|peer| {
+            if peer.id != self.id {
+                let request = Request::new(AcceptRequest {
+                    instance: Some(Instance::inprogress(
+                        ballot, index, command, client_id,
+                    )),
+                    sender: self.id,
+                });
+                let mut stub = peer.stub.clone();
+                responses.spawn(async move { stub.accept(request).await });
+                info!("{} sent accept request to {}", self.id, peer.id);
+            }
+        });
 
         while let Some(response_result) = responses.join_next().await {
             if let Ok(Ok(response)) = response_result {
@@ -304,21 +339,28 @@ impl MultiPaxosInner {
     ) -> i64 {
         let num_peers = self.rpc_peers.len();
         let mut responses = JoinSet::new();
+        let mut num_oks = 0;
         let mut min_last_executed = self.log.last_executed();
 
         self.rpc_peers.iter().for_each(|peer| {
-            let request = Request::new(CommitRequest {
-                ballot,
-                last_executed: min_last_executed,
-                global_last_executed,
-                sender: self.id,
-            });
-            let mut stub = peer.stub.clone();
-            responses.spawn(async move { stub.commit(request).await });
-            info!("{} sent commit request to {}", self.id, peer.id);
+            if peer.id != self.id {
+                let request = Request::new(CommitRequest {
+                    ballot,
+                    last_executed: min_last_executed,
+                    global_last_executed,
+                    sender: self.id,
+                });
+                let mut stub = peer.stub.clone();
+                responses.spawn(async move { stub.commit(request).await });
+                info!("{} sent commit request to {}", self.id, peer.id);
+            }
         });
 
-        let mut num_oks = 0;
+        num_oks += 1;
+        self.log.trim_until(global_last_executed);
+        if num_oks == num_peers {
+            return min_last_executed;
+        }
 
         while let Some(response_result) = responses.join_next().await {
             if let Ok(Ok(response)) = response_result {

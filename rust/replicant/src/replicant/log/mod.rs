@@ -365,6 +365,13 @@ impl Log {
         let inner = self.inner.lock();
         inner.log.get(&index).cloned()
     }
+
+    pub fn get_log(&self) -> HashMap<i64, Instance> {
+        let inner = self.inner.lock();
+        let mut log = HashMap::new();
+        log.clone_from(&inner.log);
+        log
+    }
 }
 
 #[cfg(test)]
