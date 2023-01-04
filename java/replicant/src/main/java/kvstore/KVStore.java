@@ -7,10 +7,13 @@ import multipaxos.Configuration;
 public interface KVStore {
 
   static KVStore createStore(Configuration config) {
-    if (config.isStore()) {
+    if (config.getStore().equals("rocksdb")) {
       return new RocksDBStore(config.getRocksDBPath());
-    } else {
+    } else if (config.getStore().equals("mem")) {
       return new MemKVStore();
+    } else {
+      assert false;
+      return null;
     }
   }
 

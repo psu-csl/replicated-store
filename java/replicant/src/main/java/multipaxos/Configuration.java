@@ -15,9 +15,10 @@ public class Configuration {
   @JsonProperty("peers")
   private List<String> peers;
   @JsonProperty("store")
-  private boolean store;
+  private String store;
   @JsonProperty("db_path")
-  private  String rocksDBPath;
+  private String rocksDBPath;
+
   public long getId() {
     return id;
   }
@@ -54,7 +55,7 @@ public class Configuration {
     return rocksDBPath;
   }
 
-  public boolean isStore() {
+  public String getStore() {
     return store;
   }
 }
