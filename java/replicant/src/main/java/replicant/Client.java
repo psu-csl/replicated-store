@@ -1,24 +1,35 @@
 package replicant;
 
 import command.Command;
-import io.netty.channel.Channel;
 import multipaxos.MultiPaxos;
 import multipaxos.MultiPaxosResultType;
 
-public class Client {
+import java.io.*;
+import java.net.Socket;
+
+public class Client implements Runnable {
 
     private final long id;
-    private final Channel socket;
+    private final Socket socket;
     private final MultiPaxos multiPaxos;
+    private final ClientManager manager;
+    private final BufferedReader reader;
+    private final PrintWriter writer;
 
-    public Client(long id, Channel socket, MultiPaxos multiPaxos) {
+    public Client(long id, Socket socket, MultiPaxos multiPaxos, ClientManager manager) {
         this.id = id;
         this.socket = socket;
         this.multiPaxos = multiPaxos;
+        this.manager = manager;
+        try {
+            this.reader = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+            this.writer = new PrintWriter(socket.getOutputStream());
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     public static Command parse(String request) {
-
         if (request == null) {
             return null;
         }
@@ -44,20 +55,46 @@ public class Client {
         return res;
     }
 
-    public void read(String msg) {
-        var command = parse(msg);
-        var r = multiPaxos.replicate(command, id);
-        if (r.type == MultiPaxosResultType.kOk) {
-            socket.flush();
-        } else if (r.type == MultiPaxosResultType.kRetry) {
-            write("retry");
-        } else {
-            assert r.type == MultiPaxosResultType.kSomeoneElseLeader;
-            write("leader is ...");
+    public void start() {
+        new Thread(this).start();
+    }
+
+    public void stop() {
+        try {
+            socket.close();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public void run() {
+        while (true) {
+            String request;
+            try {
+                request = reader.readLine();
+            } catch (IOException e) {
+                manager.stop(id);
+                return;
+            }
+            var command = parse(request);
+            if (command != null) {
+                var r = multiPaxos.replicate(command, id);
+                if (r.type == MultiPaxosResultType.kOk) {
+                    continue;
+                } else if (r.type == MultiPaxosResultType.kRetry) {
+                    write("retry");
+                } else {
+                    assert r.type == MultiPaxosResultType.kSomeoneElseLeader;
+                    write("leader is ...");
+                }
+            } else {
+                write("bad command");
+            }
         }
     }
 
     public void write(String response) {
-        socket.writeAndFlush(response + "\n");
+        writer.write(response + "\n");
+        writer.flush();
     }
 }
