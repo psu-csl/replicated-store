@@ -13,7 +13,7 @@ import (
 func main() {
 	id := flag.Int64("id", 0, "peer id")
 	debug := flag.Bool("d", false, "enable debug logging")
-	configPath := flag.String("c", "config/config.json", "config path")
+	configPath := flag.String("c", "../c++/config.json", "config path")
 	flag.Parse()
 
 	if *debug {

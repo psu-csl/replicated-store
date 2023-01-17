@@ -78,6 +78,7 @@ class Log {
   }
 
   multipaxos::Instance const* at(std::size_t i) const;
+  std::unordered_map<int64_t, multipaxos::Instance> GetLog();
 
  private:
   bool running_ = true;

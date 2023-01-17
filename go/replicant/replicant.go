@@ -25,7 +25,7 @@ func NewReplicant(config config.Config) *Replicant {
 		id:       config.Id,
 		ipPort:   config.Peers[config.Id],
 	}
-	r.log = consensusLog.NewLog(kvstore.NewMemKVStore())
+	r.log = consensusLog.NewLog(kvstore.CreateStore(config))
 	r.multipaxos = multipaxos.NewMultipaxos(r.log, config)
 	r.clientManager = NewClientManager(r.id, int64(len(config.Peers)), r.multipaxos)
 	return r

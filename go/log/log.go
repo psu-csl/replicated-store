@@ -126,11 +126,12 @@ func (l *Log) Stop() {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.running = false
+	l.kvStore.Close()
 	l.cvExecutable.Signal()
 }
 
 func (l *Log) IsExecutable() bool {
-	instance, ok := l.log[l.lastExecuted+ 1]
+	instance, ok := l.log[l.lastExecuted+1]
 	if ok && IsCommitted(instance) {
 		return true
 	}
@@ -188,9 +189,9 @@ func (l *Log) Execute() (int64, *kvstore.KVResult) {
 		return -1, nil
 	}
 
-	instance, ok := l.log[l.lastExecuted+ 1]
+	instance, ok := l.log[l.lastExecuted+1]
 	if !ok {
-		logger.Panicf("Instance at Index %v empty\n", l.lastExecuted+ 1)
+		logger.Panicf("Instance at Index %v empty\n", l.lastExecuted+1)
 	}
 	result := kvstore.Execute(instance.GetCommand(), l.kvStore)
 	instance.State = pb.InstanceState_EXECUTED
@@ -261,4 +262,15 @@ func (l *Log) At(index int64) *pb.Instance {
 		return instance
 	}
 	return nil
+}
+
+func (l *Log) GetLog() map[int64]*pb.Instance {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	logMap := make(map[int64]*pb.Instance)
+	for index, instance := range l.log {
+		logMap[index] = proto.Clone(instance).(*pb.Instance)
+	}
+	return logMap
 }

@@ -1,7 +1,8 @@
 package replicant;
 
 import ch.qos.logback.classic.Logger;
-import kvstore.MemKVStore;
+
+import kvstore.KVStore;
 import log.Log;
 import multipaxos.Configuration;
 import multipaxos.MultiPaxos;
@@ -27,7 +28,7 @@ public class Replicant {
 
     public Replicant(Configuration config) {
         this.id = config.getId();
-        this.log = new Log(new MemKVStore());
+        this.log = new Log(KVStore.createStore(config));
         this.multiPaxos = new MultiPaxos(log, config);
         this.ipPort = config.getPeers().get((int) id);
         this.acceptor = null;

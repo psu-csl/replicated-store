@@ -119,8 +119,8 @@ func (p *Multipaxos) sleepForCommitInterval() {
 }
 
 func (p *Multipaxos) sleepForRandomInterval() {
-	sleepTime := p.commitInterval + p.commitInterval/ 2 +
-		rand.Int63n(p.commitInterval/ 2)
+	sleepTime := p.commitInterval + p.commitInterval/2 +
+		rand.Int63n(p.commitInterval/2)
 	time.Sleep(time.Duration(sleepTime) * time.Millisecond)
 }
 
@@ -210,8 +210,8 @@ func (p *Multipaxos) StopCommitThread() {
 func (p *Multipaxos) Replicate(command *pb.Command, clientId int64) Result {
 	ballot := p.Ballot()
 	if IsLeader(ballot, p.id) {
-			return p.RunAcceptPhase(ballot, p.log.AdvanceLastIndex(), command,
-				clientId)
+		return p.RunAcceptPhase(ballot, p.log.AdvanceLastIndex(), command,
+			clientId)
 	}
 	if IsSomeoneElseLeader(ballot, p.id) {
 		return Result{Type: SomeElseLeader, Leader: ExtractLeaderId(ballot)}
@@ -272,7 +272,22 @@ func (p *Multipaxos) RunPreparePhase(ballot int64) (int64,
 		Ballot: ballot,
 	}
 
+	p.mu.Lock()
+	if ballot > p.ballot {
+		state.NumRpcs++
+		state.NumOks++
+		state.Log = p.log.GetLog()
+		state.MaxLastIndex = p.log.LastIndex()
+	} else {
+		p.mu.Unlock()
+		return -1, nil
+	}
+	p.mu.Unlock()
+
 	for _, peer := range p.rpcPeers {
+		if peer.Id == p.id {
+			continue
+		}
 		go func(peer *RpcPeer) {
 			ctx := context.Background()
 			response, err := peer.Stub.Prepare(ctx, &request)
@@ -307,12 +322,12 @@ func (p *Multipaxos) RunPreparePhase(ballot int64) (int64,
 
 	state.Mu.Lock()
 	defer state.Mu.Unlock()
-	for state.Leader == p.id && state.NumOks <= len(p.rpcPeers) / 2 &&
-		  state.NumRpcs != len(p.rpcPeers) {
+	for state.Leader == p.id && state.NumOks <= len(p.rpcPeers)/2 &&
+		state.NumRpcs != len(p.rpcPeers) {
 		state.Cv.Wait()
 	}
 
-	if state.NumOks > len(p.rpcPeers) / 2 {
+	if state.NumOks > len(p.rpcPeers)/2 {
 		return state.MaxLastIndex, state.Log
 	}
 	return -1, nil
@@ -330,12 +345,34 @@ func (p *Multipaxos) RunAcceptPhase(ballot int64, index int64,
 		Command:  command,
 	}
 
+	p.mu.Lock()
+	currentLeaderId := ExtractLeaderId(p.ballot)
+	if currentLeaderId == p.id {
+		instance := pb.Instance{
+			Ballot:   ballot,
+			Index:    index,
+			ClientId: clientId,
+			State:    pb.InstanceState_INPROGRESS,
+			Command:  command,
+		}
+		state.NumRpcs++
+		state.NumOks++
+		p.log.Append(&instance)
+	} else {
+		p.mu.Unlock()
+		return Result{SomeElseLeader, currentLeaderId}
+	}
+	p.mu.Unlock()
+
 	request := pb.AcceptRequest{
 		Sender:   p.id,
 		Instance: &instance,
 	}
 
 	for _, peer := range p.rpcPeers {
+		if peer.Id == p.id {
+			continue
+		}
 		go func(peer *RpcPeer) {
 			ctx := context.Background()
 			response, err := peer.Stub.Accept(ctx, &request)
@@ -363,12 +400,12 @@ func (p *Multipaxos) RunAcceptPhase(ballot int64, index int64,
 
 	state.Mu.Lock()
 	defer state.Mu.Unlock()
-	for state.Leader == p.id && state.NumOks <= len(p.rpcPeers) / 2 &&
-		  state.NumRpcs != len(p.rpcPeers) {
+	for state.Leader == p.id && state.NumOks <= len(p.rpcPeers)/2 &&
+		state.NumRpcs != len(p.rpcPeers) {
 		state.Cv.Wait()
 	}
 
-	if state.NumOks > len(p.rpcPeers) / 2 {
+	if state.NumOks > len(p.rpcPeers)/2 {
 		p.log.Commit(index)
 		return Result{Type: Ok, Leader: -1}
 	}
@@ -388,7 +425,15 @@ func (p *Multipaxos) RunCommitPhase(ballot int64, globalLastExecuted int64) int6
 		GlobalLastExecuted: globalLastExecuted,
 	}
 
+	state.NumRpcs++
+	state.NumOks++
+	state.MinLastExecuted = p.log.LastExecuted()
+	p.log.TrimUntil(globalLastExecuted)
+
 	for _, peer := range p.rpcPeers {
+		if peer.Id == p.id {
+			continue
+		}
 		go func(peer *RpcPeer) {
 			ctx := context.Background()
 

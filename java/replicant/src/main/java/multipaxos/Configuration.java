@@ -14,6 +14,10 @@ public class Configuration {
   private int threadPoolSize;
   @JsonProperty("peers")
   private List<String> peers;
+  @JsonProperty("store")
+  private String store;
+  @JsonProperty("db_path")
+  private String rocksDBPath;
 
   public long getId() {
     return id;
@@ -47,4 +51,11 @@ public class Configuration {
     this.peers = peers;
   }
 
+  public String getRocksDBPath() {
+    return rocksDBPath;
+  }
+
+  public String getStore() {
+    return store;
+  }
 }

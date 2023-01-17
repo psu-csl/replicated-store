@@ -129,6 +129,10 @@
       acquire mu_ and release on exit
       return last_executed_
 
+    - log(void) -> map from int to instance
+      acquire mu_ and release on exit
+      return log_
+
     - global_last_executed(void) -> int
       acquire mu_ and release on exit
       return global_last_executed_

@@ -10,6 +10,8 @@ type Config struct {
 	Id             int64
 	Peers          []string `json:"peers"`
 	CommitInterval int64    `json:"commit_interval"`
+	Store          string   `json:"store"`
+	DbPath         string   `json:"db_path"`
 }
 
 func DefaultConfig(id int64, n int) Config {
@@ -22,6 +24,7 @@ func DefaultConfig(id int64, n int) Config {
 		Id:             id,
 		CommitInterval: 3000,
 		Peers:          peers,
+		Store:          "memory",
 	}
 	return config
 }

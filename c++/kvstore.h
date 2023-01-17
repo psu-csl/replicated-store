@@ -4,6 +4,7 @@
 #include <optional>
 #include <string>
 
+#include "json_fwd.h"
 #include "multipaxos.pb.h"
 
 namespace kvstore {
@@ -24,6 +25,8 @@ class KVStore {
   virtual bool Put(std::string const& key, std::string const& value) = 0;
   virtual bool Del(std::string const& key) = 0;
 };
+
+std::unique_ptr<KVStore> CreateStore(nlohmann::json const& config);
 
 KVResult Execute(multipaxos::Command const& command, KVStore* store);
 

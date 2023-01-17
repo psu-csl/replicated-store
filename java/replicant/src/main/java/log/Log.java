@@ -231,6 +231,13 @@ public class Log {
         mu.unlock();
     }
 
+    public HashMap<Long, Instance> getLog() {
+        mu.lock();
+        HashMap<Long, Instance> logMap = new HashMap<>(log);
+        mu.unlock();
+        return logMap;
+    }
+
     @Override
     public String toString() {
         StringBuilder str = new StringBuilder();

@@ -440,15 +440,29 @@
       # in among the received instances and a log that is the result of merging
       # all of the logs received from other peers.
       prepare_state state
-      state.id_ = id_
+      state.leader_ = id_
 
       prepare_request request
       request.set_sender(id_)
       request.set_ballot(ballot)
 
+      # we've already sent an RPC to ourselves and we have appended the instance
+      # to our log.
+      mu_.lock()
+      if ballot > ballot_:
+        state.num_rpcs++
+        state.num_oks++
+        state.log_ = log_.log()
+        state.last_index = log_.last_index()
+      else:
+        return nullopt
+      mu_.unlock()
+
       # for each peer run a closure in a separate thread that sends out an RPC
       # request and updates the state and signals the main thread.
       for peer in rpc_peers_:
+        if peer.id == id_:
+          continue
         tp_.post(lambda {
           # call RPC stub
           prepare_response response
@@ -477,13 +491,13 @@
        # not all peers have responded; since we send each RPC to ourselves as
        # well, our condition check is <= and not <.
        while state.leader_ == id &&
-         state.num_oks <= rpc_peers_.size() / 2 &&
-           state.num_rpcs != rpc_peers_.size():
+         state.num_oks <= num_peers_ / 2 &&
+           state.num_rpcs != num_peers_:
          state.cv_.wait(mu_)
        # we exited the loop meaning one of the conditions has changed
        # if we reached the quorum, respond with the highest index observed and
        # the merged log.
-       if state.num_oks > rpc_peers_.size() / 2:
+       if state.num_oks > num_peers_ / 2:
          return {state.last_index_, state.log_}
        # we haven't reached the quorum and have exited the while loop, so either
        # someone else became a leader or we didn't get a positive response from
@@ -493,8 +507,104 @@
        state.mu_.unlock()
 
     - run_accept_phase(ballot: int, index: int, cmd: command, client_id: int)
+      accept_state state
+      state.leader_ = id_
+
+      instance instance
+      instance.set_ballot(ballot)
+      instance.set_index(index)
+      instance.set_client_id(client_id)
+      instance.command = command
+
+      accept_request request
+      request.set_sender(id_)
+      request.instance = instance
+
+      # we've already sent an RPC to ourselves and we have appended the instance
+      # to our log.
+      mu_.lock()
+      current_leader = ExtractLeaderId(ballot_)
+      if current_leader == id_:
+        state.num_rpcs++
+        state.num_oks++
+        log_.append(instance)
+      else:
+        return {someone_else_leader, current_leader}
+      mu_.unlock()
+
+      for peer in rpc_peers {
+        if peer.id == id_:
+          continue
+        tp_.post(lambda {
+          accept_response response
+          peer->accept(request, response)
+          state.mu_.lock()
+          state.num_rpcs_++
+          if response.ok():
+            state.num_oks++
+          else:
+            mu_.lock()
+            if response.ballot > ballot_:
+              become_follower(response.ballot)
+              state->leader_ = ExtractLeaderId(ballot_)
+            mu_.unlock()
+          state.mu_.unlock()
+          state.cv_.notify_one()
+
+      state.mu_lock()
+      while state.leader_ == id &&
+          state.num_oks_ <= num_peers_ / 2 &&
+          state.num_rpcs_ != num_peers_
+        state.cv_.wait(mu_)
+      if state.num_oks > num_peers_ / 2):
+        log_.commit(index)
+        return {ok, nullopt}
+      if state->leader_ != id_:
+        return {someone_else_leader, state.leader_}
+      return {retry, nullopt}
 
     - run_commit_phase(ballot: int, global_last_executed: int)
+      commit_state state
+      state.leader_ = id_
+
+      commit_request request
+      request.set_ballot(ballot)
+      request.set_sender(id_)
+      request.set_last_executed(state.min_last_executed)
+      request.set_global_last_executed(global_last_executed)
+
+      state.num_rpcs_++
+      state.num_oks++
+      state.min_last_executed = log_.last_executed()
+      log_.trim_until(global_last_executed)
+
+      for peer in rpc_peers {
+        if peer.id == id_:
+          continue
+        tp_.post(lambda {
+          commit_response response
+          peer->commit(request, response)
+          state.mu_.lock()
+          state.num_rpcs_++
+          if response.ok():
+            state.num_oks++
+            if response.last_executed < state.min_last_executed:
+              state.min_last_executed = response.last_executed
+          else:
+            mu_.lock()
+            if response.ballot > ballot_:
+              become_follower(response.ballot)
+              state->leader_ = ExtractLeaderId(ballot_)
+            mu_.unlock()
+          state.mu_.unlock()
+          state.cv_.notify_one()
+
+      state.mu_lock()
+      while state.leader_ == id && state.num_rpcs_ != num_peers_:
+        state.cv_.wait(mu_)
+      if state.num_oks == num_peers_:
+        return state.min_last_executed
+      return global_last_executed
 
     - replay(ballot: int, log: map{int -> instance})
 
@@ -505,7 +615,7 @@
         ballot_ = request_.ballot_
         return prepare_rpc_response{type_: ok,
                                     ballot_: N/A,
-                                    log_: log_.instances_since_global_last_executed()}
+                                    log_: log_.instances()}
       # reject stale RPC requests
       return prepare_rpc_response{type_: reject, ballot_: ballot_, log_: N/A}
 

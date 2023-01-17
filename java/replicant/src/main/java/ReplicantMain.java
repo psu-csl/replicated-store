@@ -1,7 +1,9 @@
 import java.io.File;
 import java.io.IOException;
-import org.codehaus.jackson.map.ObjectMapper;
+import kvstore.MemKVStore;
+import kvstore.RocksDBStore;
 import multipaxos.Configuration;
+import org.codehaus.jackson.map.ObjectMapper;
 import replicant.Replicant;
 
 public class ReplicantMain {
@@ -28,8 +30,7 @@ public class ReplicantMain {
     }
     assert id < config.getPeers().size();
     config.setId(id);
-
-    var replicant = new Replicant(config);
+    Replicant replicant = new Replicant(config);
     replicant.start();
   }
 }
