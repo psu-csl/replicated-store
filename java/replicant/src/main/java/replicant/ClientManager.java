@@ -15,12 +15,12 @@ import java.util.concurrent.locks.ReentrantLock;
 public class ClientManager extends SimpleChannelInboundHandler<String> {
 
     private static final Logger logger = (Logger) LoggerFactory.getLogger(ClientManager.class);
+    private long nextClientId;
     private final long numPeers;
     private final MultiPaxos multiPaxos;
     private final AttributeKey<Long> clientIdAttrKey = AttributeKey.valueOf("ClientID");
     private final ReentrantLock mu = new ReentrantLock();
     private final HashMap<Long, Client> clients = new HashMap<>();
-    private long nextClientId;
 
     public ClientManager(long id, long numPeers, MultiPaxos multiPaxos) {
         this.nextClientId = id;
@@ -36,16 +36,25 @@ public class ClientManager extends SimpleChannelInboundHandler<String> {
 
     @Override
     public void channelActive(final ChannelHandlerContext ctx) {
+        mu.lock();
         var id = nextClientId();
         logger.debug("client joined " + ctx);
         ctx.channel().attr(clientIdAttrKey).set(id);
-        mu.lock();
         clients.put(id, new Client(id, ctx.channel(), multiPaxos));
         mu.unlock();
     }
 
+    public Client get(Long clientId) {
+        mu.lock();
+        try {
+            return clients.get(clientId);
+        } finally {
+            mu.unlock();
+        }
+    }
+
     @Override
-    public void channelUnregistered(ChannelHandlerContext ctx) {
+    public void channelInactive(ChannelHandlerContext ctx) {
         var id = ctx.channel().attr(clientIdAttrKey).get();
         mu.lock();
         var it = clients.get(id);
@@ -61,14 +70,5 @@ public class ClientManager extends SimpleChannelInboundHandler<String> {
         var client = clients.get(clientId);
         mu.unlock();
         if (client != null) client.read(msg);
-    }
-
-    public Client get(Long clientId) {
-        mu.lock();
-        try {
-            return clients.get(clientId);
-        } finally {
-            mu.unlock();
-        }
     }
 }

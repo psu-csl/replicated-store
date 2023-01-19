@@ -18,11 +18,10 @@ public class Client {
     }
 
     public static Command parse(String request) {
-
         if (request == null) {
             return null;
         }
-        String[] tokens = request.split(" ");//"\\s+");
+        String[] tokens = request.split(" ");
         String command = tokens[0];
         String key = tokens[1];
         Command res = new Command();
@@ -46,14 +45,18 @@ public class Client {
 
     public void read(String msg) {
         var command = parse(msg);
-        var r = multiPaxos.replicate(command, id);
-        if (r.type == MultiPaxosResultType.kOk) {
-            socket.flush();
-        } else if (r.type == MultiPaxosResultType.kRetry) {
-            write("retry");
+        if (command != null) {
+            var r = multiPaxos.replicate(command, id);
+            if (r.type == MultiPaxosResultType.kOk) {
+                socket.flush();
+            } else if (r.type == MultiPaxosResultType.kRetry) {
+                write("retry");
+            } else {
+                assert r.type == MultiPaxosResultType.kSomeoneElseLeader;
+                write("leader is ...");
+            }
         } else {
-            assert r.type == MultiPaxosResultType.kSomeoneElseLeader;
-            write("leader is ...");
+            write("bad command");
         }
     }
 
