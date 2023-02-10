@@ -1,4 +1,4 @@
-use crate::replicant::multipaxos::rpc::Command;
+use crate::replicant::multipaxos::msg::{AcceptRequest, Command, CommitRequest};
 use crate::replicant::multipaxos::MultiPaxos;
 use crate::replicant::multipaxos::ResultType;
 use parking_lot::Mutex;
@@ -8,6 +8,8 @@ use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpStream;
+use crate::replicant::multipaxos::msg::{MessageType, PrepareRequest};
+use crate::replicant::multipaxos::tcp::Message;
 
 fn parse(line: &str) -> Option<Command> {
     let tokens: Vec<&str> = line.trim().split(' ').collect();
@@ -37,10 +39,11 @@ impl Client {
         read_half: OwnedReadHalf,
         multi_paxos: Arc<MultiPaxos>,
         manager: Arc<ClientManagerInner>,
+        is_from_client: bool,
     ) -> Self {
         Self {
             read_half: BufReader::new(read_half),
-            client: Arc::new(ClientInner::new(id, multi_paxos, manager)),
+            client: Arc::new(ClientInner::new(id, multi_paxos, manager, is_from_client)),
         }
     }
 
@@ -63,6 +66,7 @@ struct ClientInner {
     id: i64,
     multi_paxos: Arc<MultiPaxos>,
     manager: Arc<ClientManagerInner>,
+    is_from_client: bool,
 }
 
 impl ClientInner {
@@ -70,15 +74,26 @@ impl ClientInner {
         id: i64,
         multi_paxos: Arc<MultiPaxos>,
         manager: Arc<ClientManagerInner>,
+        is_from_client: bool,
     ) -> Self {
         Self {
             id,
             multi_paxos,
             manager,
+            is_from_client,
         }
     }
 
     async fn handle_request(&self, line: &str) -> Option<String> {
+        if self.is_from_client {
+            self.handle_client_request(line).await
+        } else {
+            self.handle_peer_request(line).await;
+            None
+        }
+    }
+
+    async fn handle_client_request(&self, line: &str) -> Option<String> {
         if let Some(command) = parse(&line) {
             match self.multi_paxos.replicate(&command, self.id).await {
                 ResultType::Ok => None,
@@ -90,6 +105,64 @@ impl ClientInner {
         } else {
             Some("bad command".to_string())
         }
+    }
+
+    async fn handle_peer_request(&self, line: &str) {
+        let request: Message = match serde_json::from_str(line) {
+            Ok(request) => request,
+            Err(_) => return
+        };
+
+        let cid = self.id;
+        let client_manager = self.manager.clone();
+        let multi_paxos = self.multi_paxos.clone();
+        tokio::spawn(async move {
+            match request.r#type {
+                t if t == MessageType::PrepareRequest as u8 => {
+                    let prepare_request: PrepareRequest =
+                        serde_json::from_str(&request.msg).unwrap();
+                    let prepare_response =
+                        multi_paxos.prepare(prepare_request).await;
+                    let response_json =
+                        serde_json::to_string(&prepare_response).unwrap();
+                    let tcp_message = serde_json::to_string(&Message {
+                        r#type: MessageType::PrepareResponse as u8,
+                        channel_id: request.channel_id,
+                        msg: response_json,
+                    }).unwrap();
+                    client_manager.write(cid, tcp_message).await;
+                },
+                t if t == MessageType::AcceptRequest as u8 => {
+                    let accept_request: AcceptRequest =
+                        serde_json::from_str(&request.msg).unwrap();
+                    let accept_response =
+                        multi_paxos.accept(accept_request).await;
+                    let response_json =
+                        serde_json::to_string(&accept_response).unwrap();
+                    let tcp_message = serde_json::to_string(&Message {
+                        r#type: MessageType::AcceptResponse as u8,
+                        channel_id: request.channel_id,
+                        msg: response_json,
+                    }).unwrap();
+                    client_manager.write(cid, tcp_message).await;
+                },
+                t if t == MessageType::CommitRequest as u8 => {
+                    let commit_request: CommitRequest =
+                        serde_json::from_str(&request.msg).unwrap();
+                    let commit_response =
+                        multi_paxos.commit(commit_request).await;
+                    let response_json =
+                        serde_json::to_string(&commit_response).unwrap();
+                    let tcp_message = serde_json::to_string(&Message {
+                        r#type: MessageType::CommitResponse as u8,
+                        channel_id: request.channel_id,
+                        msg: response_json,
+                    }).unwrap();
+                    client_manager.write(cid, tcp_message).await;
+                },
+                _ => {}
+            };
+        });
     }
 }
 
@@ -152,13 +225,20 @@ impl ClientManagerInner {
 pub struct ClientManager {
     client_manager: Arc<ClientManagerInner>,
     multi_paxos: Arc<MultiPaxos>,
+    is_from_client: bool,
 }
 
 impl ClientManager {
-    pub fn new(id: i64, num_peers: i64, multi_paxos: Arc<MultiPaxos>) -> Self {
+    pub fn new(
+        id: i64,
+        num_peers: i64,
+        multi_paxos: Arc<MultiPaxos>,
+        is_from_client: bool
+    ) -> Self {
         Self {
             client_manager: Arc::new(ClientManagerInner::new(id, num_peers)),
             multi_paxos,
+            is_from_client,
         }
     }
 
@@ -171,6 +251,7 @@ impl ClientManager {
             read_half,
             self.multi_paxos.clone(),
             self.client_manager.clone(),
+            self.is_from_client,
         );
 
         let write_half = Arc::new(tokio::sync::Mutex::new(write_half));

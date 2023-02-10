@@ -38,7 +38,7 @@ async fn main() {
         .unwrap()
         .insert(String::from("id"), json!(args.id));
 
-    let replicant = Replicant::new(&config);
+    let replicant = Replicant::new(&config).await;
     let shutdown = replicant.start();
     signal::ctrl_c().await.unwrap();
     replicant.stop(shutdown).await;

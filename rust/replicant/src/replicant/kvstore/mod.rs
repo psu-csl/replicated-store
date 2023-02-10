@@ -3,8 +3,7 @@ use thiserror::Error;
 
 use crate::replicant::kvstore::memkvstore::MemKVStore;
 use crate::replicant::kvstore::rocksdbstore::RocksDBKVStore;
-
-use super::multipaxos::rpc::{Command, CommandType};
+use crate::replicant::multipaxos::msg::{Command, CommandType};
 
 pub mod memkvstore;
 pub mod rocksdbstore;
@@ -65,25 +64,26 @@ impl Command {
         &self,
         store: &mut Box<dyn KVStore + Sync + Send>,
     ) -> Result<String, KVStoreError> {
-        match CommandType::from_i32(self.r#type).unwrap() {
-            CommandType::Get => match store.get(&self.key) {
+        match self.r#type {
+            t if t == CommandType::Get as i32 => match store.get(&self.key) {
                 Some(value) => Ok(value),
                 None => Err(KVStoreError::NotFoundError),
             },
-            CommandType::Put => {
+            t if t == CommandType::Put as i32 => {
                 if store.put(&self.key, &self.value) {
                     Ok("".to_string())
                 } else {
                     Err(KVStoreError::PutFailedError)
                 }
             }
-            CommandType::Del => {
+            t if t == CommandType::Del as i32 => {
                 if store.del(&self.key) {
                     Ok("".to_string())
                 } else {
                     Err(KVStoreError::NotFoundError)
                 }
             }
+            _ => panic!("command type not found")
         }
     }
 }

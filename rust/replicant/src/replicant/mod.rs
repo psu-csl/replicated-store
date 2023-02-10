@@ -22,18 +22,23 @@ struct ReplicantInner {
     ip_port: String,
     multi_paxos: Arc<MultiPaxos>,
     client_manager: ClientManager,
+    peer_manager: ClientManager,
+    peer_listener: TcpListener,
 }
 
 impl ReplicantInner {
-    fn new(config: &json) -> Self {
+    async fn new(config: &json) -> Self {
         let id = config["id"].as_i64().unwrap();
         let peers = config["peers"].as_array().unwrap();
         let ip_port = peers[id as usize].as_str().unwrap().to_string();
         let log = Arc::new(Log::new(create_store(config)));
-        let multi_paxos = Arc::new(MultiPaxos::new(log.clone(), config));
+        let peer_listener = TcpListener::bind(ip_port.clone()).await.unwrap();
+        let multi_paxos = Arc::new(MultiPaxos::new(log.clone(), config).await);
         let num_peers = peers.len() as i64;
         let client_manager =
-            ClientManager::new(id, num_peers, multi_paxos.clone());
+            ClientManager::new(id, num_peers, multi_paxos.clone(), true);
+        let peer_manager =
+            ClientManager::new(id, num_peers, multi_paxos.clone(), false);
 
         Self {
             id,
@@ -41,6 +46,8 @@ impl ReplicantInner {
             ip_port,
             multi_paxos,
             client_manager,
+            peer_manager,
+            peer_listener,
         }
     }
 
@@ -72,6 +79,17 @@ impl ReplicantInner {
             }
         }
     }
+
+    async fn peer_server_task_fn(&self, mut shutdown: Receiver<()>) {
+        loop {
+            tokio::select! {
+                Ok((client, _)) = self.peer_listener.accept() => {
+                    self.peer_manager.start(client)
+                },
+                _ = &mut shutdown => break,
+            }
+        }
+    }
 }
 
 pub struct Replicant {
@@ -82,12 +100,13 @@ pub struct ReplicantHandle {
     multi_paxos_handle: MultiPaxosHandle,
     executor_task_handle: JoinHandle<()>,
     server_task_handle: (JoinHandle<()>, Sender<()>),
+    peer_server_task_handle: (JoinHandle<()>, Sender<()>),
 }
 
 impl Replicant {
-    pub fn new(config: &json) -> Self {
+    pub async fn new(config: &json) -> Self {
         Self {
-            replicant: Arc::new(ReplicantInner::new(config)),
+            replicant: Arc::new(ReplicantInner::new(config).await),
         }
     }
 
@@ -96,12 +115,14 @@ impl Replicant {
             multi_paxos_handle: self.replicant.multi_paxos.start(),
             executor_task_handle: self.start_executor_task(),
             server_task_handle: self.start_server_task(),
+            peer_server_task_handle: self.start_peer_server_task(),
         }
     }
 
     pub async fn stop(&self, handle: ReplicantHandle) {
         self.stop_server_task(handle.server_task_handle).await;
         self.stop_executor_task(handle.executor_task_handle).await;
+        self.stop_peer_server_task(handle.peer_server_task_handle).await;
         self.replicant
             .multi_paxos
             .stop(handle.multi_paxos_handle)
@@ -124,6 +145,24 @@ impl Replicant {
         shutdown.send(()).unwrap();
         handle.await.unwrap();
         self.replicant.client_manager.stop_all();
+    }
+
+    fn start_peer_server_task(&self) -> (JoinHandle<()>, Sender<()>) {
+        info!("{} starting paxos server for peer", self.replicant.id);
+        let (shutdown_send, shutdown_recv) = oneshot::channel();
+        let replicant = self.replicant.clone();
+        let handle = tokio::spawn(async move {
+            replicant.peer_server_task_fn(shutdown_recv).await;
+        });
+        (handle, shutdown_send)
+    }
+
+    async fn stop_peer_server_task(&self, handle: (JoinHandle<()>, Sender<()>)) {
+        info!("{} stopping paxos server task", self.replicant.id);
+        let (handle, shutdown) = handle;
+        shutdown.send(()).unwrap();
+        handle.await.unwrap();
+        self.replicant.peer_manager.stop_all();
     }
 
     fn start_executor_task(&self) -> JoinHandle<()> {

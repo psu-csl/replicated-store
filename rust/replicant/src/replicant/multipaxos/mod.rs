@@ -1,35 +1,28 @@
-use std::cmp;
-use std::collections::HashMap;
-use std::net::SocketAddr;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
-
-use futures_util::FutureExt;
+use crate::replicant::kvstore::memkvstore::MemKVStore;
+use crate::replicant::log::{insert, Log};
 use log::info;
 use parking_lot::Mutex;
 use rand::distributions::{Distribution, Uniform};
 use serde_json::json;
 use serde_json::Value as json;
-use tokio::sync::Notify;
+use std::cmp;
+use std::collections::HashMap;
+use std::net::SocketAddr;
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
+use std::sync::Arc;
 use tokio::sync::oneshot::{self, Sender};
+use tokio::sync::{mpsc, Notify};
 use tokio::task::{JoinHandle, JoinSet};
-use tokio::time::{Duration, sleep};
-use tonic::{Request, Response, Status};
-use tonic::transport::{Channel, Endpoint, Server};
+use tokio::time::{sleep, Duration};
+use crate::replicant::multipaxos::msg::{Command, Instance};
+use crate::replicant::multipaxos::msg::{MessageType, ResponseType};
+use crate::replicant::multipaxos::msg::{AcceptRequest, AcceptResponse};
+use crate::replicant::multipaxos::msg::{CommitRequest, CommitResponse};
+use crate::replicant::multipaxos::msg::{PrepareRequest, PrepareResponse};
+use crate::replicant::multipaxos::tcp::TcpLink;
 
-use rpc::{AcceptRequest, AcceptResponse};
-use rpc::{Command, Instance, InstanceState, ResponseType};
-use rpc::{CommitRequest, CommitResponse};
-use rpc::{PrepareRequest, PrepareResponse};
-use rpc::multi_paxos_rpc_client::MultiPaxosRpcClient;
-use rpc::multi_paxos_rpc_server::{MultiPaxosRpc, MultiPaxosRpcServer};
-
-use crate::replicant::kvstore::memkvstore::MemKVStore;
-use crate::replicant::log::{insert, Log};
-
-pub mod rpc {
-    tonic::include_proto!("multipaxos");
-}
+pub mod msg;
+pub mod tcp;
 
 const ID_BITS: i64 = 0xff;
 const ROUND_INCREMENT: i64 = ID_BITS + 1;
@@ -56,7 +49,7 @@ pub enum ResultType {
 
 struct RpcPeer {
     id: i64,
-    stub: MultiPaxosRpcClient<Channel>,
+    stub: Arc<TcpLink>,
 }
 
 struct MultiPaxosInner {
@@ -67,20 +60,23 @@ struct MultiPaxosInner {
     commit_interval: u64,
     port: SocketAddr,
     rpc_peers: Vec<RpcPeer>,
+    next_request_id: AtomicU64,
+    channels: Arc<tokio::sync::Mutex<HashMap<u64, mpsc::Sender<String>>>>,
     prepare_task_running: AtomicBool,
     commit_task_running: AtomicBool,
     became_leader: Notify,
     became_follower: Notify,
 }
 
-fn make_stub(port: &json) -> MultiPaxosRpcClient<Channel> {
-    let address = format!("http://{}", port.as_str().unwrap());
-    let channel = Endpoint::from_shared(address).unwrap().connect_lazy();
-    MultiPaxosRpcClient::new(channel)
+async fn make_stub(
+    port: &json,
+    channels: Arc<tokio::sync::Mutex<HashMap<u64, mpsc::Sender<String>>>>
+) -> Arc<TcpLink> {
+    Arc::new(TcpLink::new(port.as_str().unwrap(), channels).await)
 }
 
 impl MultiPaxosInner {
-    fn new(log: Arc<Log>, config: &json) -> Self {
+    async fn new(log: Arc<Log>, config: &json) -> Self {
         let commit_interval = config["commit_interval"].as_u64().unwrap();
         let id = config["id"].as_i64().unwrap();
         let port = config["peers"][id as usize]
@@ -90,11 +86,12 @@ impl MultiPaxosInner {
             .unwrap();
 
         let mut rpc_peers = Vec::new();
+        let channels = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
         for (id, port) in config["peers"].as_array().unwrap().iter().enumerate()
         {
             rpc_peers.push(RpcPeer {
                 id: id as i64,
-                stub: make_stub(port),
+                stub: make_stub(port, channels.clone()).await,
             });
         }
         Self {
@@ -105,6 +102,8 @@ impl MultiPaxosInner {
             commit_interval,
             port,
             rpc_peers,
+            next_request_id: AtomicU64::new(1),
+            channels,
             prepare_task_running: AtomicBool::new(false),
             commit_task_running: AtomicBool::new(false),
             became_leader: Notify::new(),
@@ -222,36 +221,43 @@ impl MultiPaxosInner {
             return None;
         }
 
+        let request = serde_json::to_string(&PrepareRequest {
+            ballot,
+            sender: self.id,
+        }).unwrap();
+        let (channel_id, mut response_recv) = self.add_channel(num_peers).await;
         self.rpc_peers.iter().for_each(|peer| {
             if peer.id != self.id {
-                let request = Request::new(PrepareRequest {
-                    ballot,
-                    sender: self.id,
+                let request = request.clone();
+                let stub = peer.stub.clone();
+                responses.spawn(async move {
+                    stub.send_await_response(
+                        MessageType::PrepareRequest, channel_id, &request).await;
                 });
-                let mut stub = peer.stub.clone();
-                responses.spawn(async move { stub.prepare(request).await });
                 info!("{} sent prepare request to {}", self.id, peer.id);
             }
         });
 
-        while let Some(response) = responses.join_next().await {
-            if let Ok(Ok(response)) = response {
-                let response = response.into_inner();
-                if response.r#type == ResponseType::Ok as i32 {
-                    num_oks += 1;
-                    for instance in response.instances {
-                        last_index = cmp::max(last_index, instance.index);
-                        insert(&mut log, instance);
-                    }
-                } else {
-                    self.become_follower(response.ballot);
-                    break;
+        loop {
+            let response_result = response_recv.recv().await.unwrap();
+            let prepare_response: PrepareResponse =
+                serde_json::from_str(&response_result).unwrap();
+            if prepare_response.r#type == ResponseType::Ok as i32 {
+                num_oks += 1;
+                for instance in prepare_response.instances {
+                    last_index = cmp::max(last_index, instance.index);
+                    insert(&mut log, instance);
                 }
+            } else {
+                self.become_follower(prepare_response.ballot);
+                break;
             }
             if num_oks > num_peers / 2 {
+                response_recv.close();
                 return Some((last_index, log));
             }
         }
+        response_recv.close();
         None
     }
 
@@ -282,40 +288,47 @@ impl MultiPaxosInner {
             return ResultType::SomeoneElseLeader(current_leader_id);
         }
 
+        let request = serde_json::to_string(&AcceptRequest {
+            instance: Some(Instance::inprogress(
+                ballot, index, command, client_id,
+            )),
+            sender: self.id,
+        }).unwrap();
+        let (channel_id, mut response_recv) = self.add_channel(num_peers).await;
         self.rpc_peers.iter().for_each(|peer| {
             if peer.id != self.id {
-                let request = Request::new(AcceptRequest {
-                    instance: Some(Instance::inprogress(
-                        ballot, index, command, client_id,
-                    )),
-                    sender: self.id,
+                let request = request.clone();
+                let stub = peer.stub.clone();
+                responses.spawn(async move {
+                    stub.send_await_response(
+                        MessageType::AcceptRequest, channel_id, &request).await;
                 });
-                let mut stub = peer.stub.clone();
-                responses.spawn(async move { stub.accept(request).await });
                 info!("{} sent accept request to {}", self.id, peer.id);
             }
         });
 
-        while let Some(response_result) = responses.join_next().await {
-            if let Ok(Ok(response)) = response_result {
-                let accept_response = response.into_inner();
-                if accept_response.r#type == ResponseType::Ok as i32 {
-                    num_oks += 1;
-                } else {
-                    self.become_follower(accept_response.ballot);
-                    current_leader = extract_leader(self.ballot());
-                    break;
-                }
+        loop {
+            let response_result = response_recv.recv().await.unwrap();
+            let accept_response: AcceptResponse =
+                serde_json::from_str(&response_result).unwrap();
+            if accept_response.r#type == ResponseType::Ok as i32 {
+                num_oks += 1;
+            } else {
+                self.become_follower(accept_response.ballot);
+                current_leader = extract_leader(self.ballot());
+                break;
             }
             if num_oks > num_peers / 2 {
                 self.log.commit(index).await;
-                responses.detach_all();
+                response_recv.close();
                 return ResultType::Ok;
             }
         }
         if current_leader != self.id {
+            response_recv.close();
             return ResultType::SomeoneElseLeader(current_leader);
         }
+        response_recv.close();
         ResultType::Retry
     }
 
@@ -329,43 +342,52 @@ impl MultiPaxosInner {
         let mut num_oks = 0;
         let mut min_last_executed = self.log.last_executed();
 
-        self.rpc_peers.iter().for_each(|peer| {
-            if peer.id != self.id {
-                let request = Request::new(CommitRequest {
-                    ballot,
-                    last_executed: min_last_executed,
-                    global_last_executed,
-                    sender: self.id,
-                });
-                let mut stub = peer.stub.clone();
-                responses.spawn(async move { stub.commit(request).await });
-                info!("{} sent commit request to {}", self.id, peer.id);
-            }
-        });
-
         num_oks += 1;
         self.log.trim_until(global_last_executed);
         if num_oks == num_peers {
             return min_last_executed;
         }
 
-        while let Some(response_result) = responses.join_next().await {
-            if let Ok(Ok(response)) = response_result {
-                let commit_response = response.into_inner();
-                if commit_response.r#type == ResponseType::Ok as i32 {
-                    num_oks += 1;
-                    if commit_response.last_executed < min_last_executed {
-                        min_last_executed = commit_response.last_executed;
-                    }
-                } else {
+        let request = serde_json::to_string(&CommitRequest {
+            ballot,
+            last_executed: min_last_executed,
+            global_last_executed,
+            sender: self.id,
+        }).unwrap();
+        let (channel_id, mut response_recv) = self.add_channel(num_peers).await;
+        self.rpc_peers.iter().for_each(|peer| {
+            if peer.id != self.id {
+                let request = request.clone();
+                let stub = peer.stub.clone();
+                responses.spawn(async move {
+                    stub.send_await_response(
+                        MessageType::CommitRequest, channel_id, &request).await;
+                });
+                info!("{} sent commit request to {}", self.id, peer.id);
+            }
+        });
+
+        loop {
+            let response_result = response_recv.recv().await.unwrap();
+            let commit_response: CommitResponse =
+                serde_json::from_str(&response_result).unwrap();
+            if commit_response.r#type == ResponseType::Ok as i32 {
+                num_oks += 1;
+                if commit_response.last_executed < min_last_executed {
+                    min_last_executed = commit_response.last_executed;
+                }
+            } else {
+                if commit_response.ballot > self.ballot() {
                     self.become_follower(commit_response.ballot);
                     break;
                 }
             }
             if num_oks == num_peers {
+                response_recv.close();
                 return min_last_executed;
             }
         }
+        response_recv.close();
         global_last_executed
     }
 
@@ -391,88 +413,13 @@ impl MultiPaxosInner {
             }
         }
     }
-}
 
-struct RpcWrapper(Arc<MultiPaxosInner>);
-
-#[tonic::async_trait]
-impl MultiPaxosRpc for RpcWrapper {
-    async fn prepare(
-        &self,
-        request: Request<PrepareRequest>,
-    ) -> Result<Response<PrepareResponse>, Status> {
-        let request = request.into_inner();
-        info!("{} <--prepare-- {}", self.0.id, request.sender);
-
-        if request.ballot > self.0.ballot() {
-            self.0.become_follower(request.ballot);
-            return Ok(Response::new(PrepareResponse {
-                r#type: ResponseType::Ok as i32,
-                ballot: self.0.ballot(),
-                instances: self.0.log.instances(),
-            }));
-        }
-        Ok(Response::new(PrepareResponse {
-            r#type: ResponseType::Reject as i32,
-            ballot: self.0.ballot(),
-            instances: vec![],
-        }))
-    }
-
-    async fn accept(
-        &self,
-        request: Request<AcceptRequest>,
-    ) -> Result<Response<AcceptResponse>, Status> {
-        let request = request.into_inner();
-        info!("{} <--accept--- {}", self.0.id, request.sender);
-
-        let mut response = Response::new(AcceptResponse {
-            r#type: ResponseType::Ok as i32,
-            ballot: self.0.ballot(),
-        });
-        let instance = request.instance.unwrap();
-        let instance_ballot = instance.ballot;
-        if instance.ballot >= self.0.ballot() {
-            self.0.log.append(instance);
-            if instance_ballot > self.0.ballot() {
-                self.0.become_follower(instance_ballot);
-            }
-        }
-        if instance_ballot < self.0.ballot() {
-            let mut response = response.get_mut();
-            response.ballot = self.0.ballot();
-            response.r#type = ResponseType::Reject as i32;
-        }
-        Ok(response)
-    }
-
-    async fn commit(
-        &self,
-        request: Request<CommitRequest>,
-    ) -> Result<Response<CommitResponse>, Status> {
-        let request = request.into_inner();
-        info!("{} <--commit--- {}", self.0.id, request.sender);
-
-        if request.ballot >= self.0.ballot() {
-            self.0.commit_received.store(true, Ordering::Relaxed);
-            self.0
-                .log
-                .commit_until(request.last_executed, request.ballot);
-            self.0.log.trim_until(request.global_last_executed);
-            if request.ballot > self.0.ballot() {
-                self.0.become_follower(request.ballot);
-            }
-            return Ok(Response::new(CommitResponse {
-                r#type: ResponseType::Ok as i32,
-                ballot: self.0.ballot(),
-                last_executed: self.0.log.last_executed(),
-            }));
-        }
-        Ok(Response::new(CommitResponse {
-            r#type: ResponseType::Reject as i32,
-            ballot: self.0.ballot(),
-            last_executed: 0,
-        }))
+    async fn add_channel(&self, num_peers: usize) -> (u64, mpsc::Receiver<String>) {
+        let (response_send, response_recv) = mpsc::channel(num_peers);
+        let channel_id = self.next_request_id.fetch_add(1, Ordering::Relaxed);
+        let mut channels = self.channels.lock().await;
+        channels.insert(channel_id, response_send);
+        (channel_id, response_recv)
     }
 }
 
@@ -483,13 +430,13 @@ pub struct MultiPaxos {
 pub struct MultiPaxosHandle {
     prepare_task_handle: JoinHandle<()>,
     commit_task_handle: JoinHandle<()>,
-    rpc_server_task_handle: (JoinHandle<()>, Sender<()>),
 }
 
 impl MultiPaxos {
-    pub fn new(log: Arc<Log>, config: &json) -> Self {
+    pub async fn new(log: Arc<Log>, config: &json) -> Self {
         Self {
-            inner: Arc::new(MultiPaxosInner::new(log, config)),
+            inner: Arc::new(
+                MultiPaxosInner::new(log, config).await),
         }
     }
 
@@ -497,45 +444,12 @@ impl MultiPaxos {
         MultiPaxosHandle {
             prepare_task_handle: self.start_prepare_task(),
             commit_task_handle: self.start_commit_task(),
-            rpc_server_task_handle: self.start_rpc_server_task(),
         }
     }
 
     pub async fn stop(&self, handle: MultiPaxosHandle) {
-        self.stop_rpc_server_task(handle.rpc_server_task_handle)
-            .await;
         self.stop_commit_task(handle.commit_task_handle).await;
         self.stop_prepare_task(handle.prepare_task_handle).await;
-    }
-
-    fn start_rpc_server_task(&self) -> (JoinHandle<()>, Sender<()>) {
-        info!(
-            "{} starting rpc server at {}",
-            self.inner.id, self.inner.port
-        );
-
-        let (shutdown_send, shutdown_recv) = oneshot::channel();
-        let port = self.inner.port;
-        let service =
-            MultiPaxosRpcServer::new(RpcWrapper(Arc::clone(&self.inner)));
-        let handle = tokio::spawn(async move {
-            Server::builder()
-                .add_service(service)
-                .serve_with_shutdown(port, shutdown_recv.map(drop))
-                .await
-                .unwrap();
-        });
-        (handle, shutdown_send)
-    }
-
-    async fn stop_rpc_server_task(&self, handle: (JoinHandle<()>, Sender<()>)) {
-        info!(
-            "{} stopping rpc server at {}",
-            self.inner.id, self.inner.port
-        );
-        let (handle, shutdown) = handle;
-        shutdown.send(()).unwrap();
-        handle.await.unwrap();
     }
 
     fn start_prepare_task(&self) -> JoinHandle<()> {
@@ -601,6 +515,71 @@ impl MultiPaxos {
             return ResultType::SomeoneElseLeader(extract_leader(ballot));
         }
         ResultType::Retry
+    }
+
+    pub async fn prepare(&self, request: PrepareRequest) -> PrepareResponse {
+        info!("{} <--prepare-- {}", self.inner.id, request.sender);
+
+        if request.ballot > self.inner.ballot() {
+            self.inner.become_follower(request.ballot);
+            return PrepareResponse {
+                r#type: ResponseType::Ok as i32,
+                ballot: self.inner.ballot(),
+                instances: self.inner.log.instances(),
+            };
+        }
+        PrepareResponse {
+            r#type: ResponseType::Reject as i32,
+            ballot: self.inner.ballot(),
+            instances: vec![],
+        }
+    }
+
+    pub async fn accept(&self, request: AcceptRequest) -> AcceptResponse {
+        info!("{} <--accept--- {}", self.inner.id, request.sender);
+
+        let mut response = AcceptResponse {
+            r#type: ResponseType::Ok as i32,
+            ballot: self.inner.ballot(),
+        };
+        let instance = request.instance.unwrap();
+        let instance_ballot = instance.ballot;
+        if instance.ballot >= self.inner.ballot() {
+            self.inner.log.append(instance);
+            if instance_ballot > self.inner.ballot() {
+                self.inner.become_follower(instance_ballot);
+            }
+        }
+        if instance_ballot < self.inner.ballot() {
+            response.ballot = self.inner.ballot();
+            response.r#type = ResponseType::Reject as i32;
+        }
+        response
+    }
+
+    pub async fn commit(&self, request: CommitRequest) -> CommitResponse {
+        info!("{} <--commit--- {}", self.inner.id, request.sender);
+
+        if request.ballot >= self.inner.ballot() {
+            self.inner.commit_received.store(true, Ordering::Relaxed);
+            self.inner
+                .log
+                .commit_until(request.last_executed, request.ballot);
+            self.inner.log.trim_until(request.global_last_executed);
+            if request.ballot > self.inner.ballot() {
+                self.inner.become_follower(request.ballot);
+            }
+            return CommitResponse {
+                r#type: ResponseType::Ok as i32,
+                ballot: self.inner.ballot(),
+                last_executed: self.inner.log.last_executed(),
+            };
+        }
+        CommitResponse {
+            r#type: ResponseType::Reject as i32,
+            ballot: self.inner.ballot(),
+            last_executed: 0,
+        }
     }
 
     fn next_ballot(&self) -> i64 {

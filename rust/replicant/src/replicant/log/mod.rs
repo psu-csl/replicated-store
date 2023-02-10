@@ -7,8 +7,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{oneshot, Notify};
 
-use super::multipaxos::rpc::Command;
-use super::multipaxos::rpc::{Instance, InstanceState};
+use crate::replicant::multipaxos::msg::{Command, Instance, InstanceState};
 
 impl Instance {
     pub fn inprogress(
