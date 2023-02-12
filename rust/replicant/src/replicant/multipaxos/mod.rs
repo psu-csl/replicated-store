@@ -47,7 +47,7 @@ pub enum ResultType {
     SomeoneElseLeader(i64),
 }
 
-struct RpcPeer {
+struct Peer {
     id: i64,
     stub: Arc<TcpLink>,
 }
@@ -59,7 +59,7 @@ struct MultiPaxosInner {
     commit_received: AtomicBool,
     commit_interval: u64,
     port: SocketAddr,
-    rpc_peers: Vec<RpcPeer>,
+    peers: Vec<Peer>,
     next_request_id: AtomicU64,
     channels: Arc<tokio::sync::Mutex<HashMap<u64, mpsc::Sender<String>>>>,
     prepare_task_running: AtomicBool,
@@ -89,7 +89,7 @@ impl MultiPaxosInner {
         let channels = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
         for (id, port) in config["peers"].as_array().unwrap().iter().enumerate()
         {
-            rpc_peers.push(RpcPeer {
+            rpc_peers.push(Peer {
                 id: id as i64,
                 stub: make_stub(port, channels.clone()).await,
             });
@@ -101,7 +101,7 @@ impl MultiPaxosInner {
             commit_received: AtomicBool::new(false),
             commit_interval,
             port,
-            rpc_peers,
+            peers: rpc_peers,
             next_request_id: AtomicU64::new(1),
             channels,
             prepare_task_running: AtomicBool::new(false),
@@ -204,7 +204,7 @@ impl MultiPaxosInner {
         &self,
         ballot: i64,
     ) -> Option<(i64, HashMap<i64, Instance>)> {
-        let num_peers = self.rpc_peers.len();
+        let num_peers = self.peers.len();
         let mut responses = JoinSet::new();
         let mut num_oks = 0;
         let mut log = HashMap::new();
@@ -226,7 +226,7 @@ impl MultiPaxosInner {
             sender: self.id,
         }).unwrap();
         let (channel_id, mut response_recv) = self.add_channel(num_peers).await;
-        self.rpc_peers.iter().for_each(|peer| {
+        self.peers.iter().for_each(|peer| {
             if peer.id != self.id {
                 let request = request.clone();
                 let stub = peer.stub.clone();
@@ -253,11 +253,11 @@ impl MultiPaxosInner {
                 break;
             }
             if num_oks > num_peers / 2 {
-                response_recv.close();
+                self.remove_channel(channel_id, response_recv);
                 return Some((last_index, log));
             }
         }
-        response_recv.close();
+        self.remove_channel(channel_id, response_recv);
         None
     }
 
@@ -268,7 +268,7 @@ impl MultiPaxosInner {
         command: &Command,
         client_id: i64,
     ) -> ResultType {
-        let num_peers = self.rpc_peers.len();
+        let num_peers = self.peers.len();
         let mut responses = JoinSet::new();
         let mut num_oks = 0;
         let mut current_leader = self.id;
@@ -295,7 +295,7 @@ impl MultiPaxosInner {
             sender: self.id,
         }).unwrap();
         let (channel_id, mut response_recv) = self.add_channel(num_peers).await;
-        self.rpc_peers.iter().for_each(|peer| {
+        self.peers.iter().for_each(|peer| {
             if peer.id != self.id {
                 let request = request.clone();
                 let stub = peer.stub.clone();
@@ -320,15 +320,16 @@ impl MultiPaxosInner {
             }
             if num_oks > num_peers / 2 {
                 self.log.commit(index).await;
-                response_recv.close();
+                self.remove_channel(channel_id, response_recv);
+                responses.detach_all();
                 return ResultType::Ok;
             }
         }
         if current_leader != self.id {
-            response_recv.close();
+            self.remove_channel(channel_id, response_recv);
             return ResultType::SomeoneElseLeader(current_leader);
         }
-        response_recv.close();
+        self.remove_channel(channel_id, response_recv);
         ResultType::Retry
     }
 
@@ -337,7 +338,7 @@ impl MultiPaxosInner {
         ballot: i64,
         global_last_executed: i64,
     ) -> i64 {
-        let num_peers = self.rpc_peers.len();
+        let num_peers = self.peers.len();
         let mut responses = JoinSet::new();
         let mut num_oks = 0;
         let mut min_last_executed = self.log.last_executed();
@@ -355,7 +356,7 @@ impl MultiPaxosInner {
             sender: self.id,
         }).unwrap();
         let (channel_id, mut response_recv) = self.add_channel(num_peers).await;
-        self.rpc_peers.iter().for_each(|peer| {
+        self.peers.iter().for_each(|peer| {
             if peer.id != self.id {
                 let request = request.clone();
                 let stub = peer.stub.clone();
@@ -383,11 +384,11 @@ impl MultiPaxosInner {
                 }
             }
             if num_oks == num_peers {
-                response_recv.close();
+                self.remove_channel(channel_id, response_recv);
                 return min_last_executed;
             }
         }
-        response_recv.close();
+        self.remove_channel(channel_id, response_recv);
         global_last_executed
     }
 
@@ -414,12 +415,22 @@ impl MultiPaxosInner {
         }
     }
 
-    async fn add_channel(&self, num_peers: usize) -> (u64, mpsc::Receiver<String>) {
+    async fn add_channel(&self,
+                         num_peers: usize
+    ) -> (u64, mpsc::Receiver<String>) {
         let (response_send, response_recv) = mpsc::channel(num_peers);
         let channel_id = self.next_request_id.fetch_add(1, Ordering::Relaxed);
         let mut channels = self.channels.lock().await;
         channels.insert(channel_id, response_send);
         (channel_id, response_recv)
+    }
+
+    async fn remove_channel(&self, channel_id: u64,
+                            mut response_recv: mpsc::Receiver<String>
+    ) {
+        let mut channels = self.channels.lock().await;
+        channels.remove(&channel_id);
+        response_recv.close();
     }
 }
 

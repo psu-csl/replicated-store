@@ -15,12 +15,6 @@ pub struct Message {
     pub msg: String,
 }
 
-pub trait Communication {
-    fn send_await_response(&self);
-    fn send(&self);
-    fn handle_response(&self);
-}
-
 async fn handle_outgoing_requests(
     mut write_half: OwnedWriteHalf,
     mut request_recv: UnboundedReceiver<String>
@@ -48,10 +42,7 @@ async fn handle_incoming_responses(
         let mut channels = channels.lock().await;
         let response_send = channels.get(&request.channel_id);
         if let Some(response_send) = response_send {
-            match response_send.send(request.msg).await {
-                Ok(_) => (),
-                Err(_) => {channels.remove(&request.channel_id);},
-            }
+            response_send.send(request.msg).await;
         }
         line.clear();
     }

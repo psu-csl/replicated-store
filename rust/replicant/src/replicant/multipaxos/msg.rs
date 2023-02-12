@@ -38,25 +38,11 @@ pub struct Instance {
     pub command: Option<Command>,
 }
 
-pub trait MultiPaxosMessage {
-    fn to_json_string(&self, msg_type: MessageType) -> Message {
-        // let json_string = serde_json::to_string(&self).unwrap();
-        let msg = Message {
-            r#type: msg_type as u8,
-            channel_id: 0,
-            msg: "json_string".to_string(),
-        };
-        msg
-    }
-}
-
 #[derive(Serialize, Deserialize)]
 pub struct PrepareRequest {
     pub ballot: i64,
     pub sender: i64,
 }
-
-impl MultiPaxosMessage for PrepareRequest {}
 
 #[derive(Serialize, Deserialize)]
 pub struct PrepareResponse {
@@ -65,23 +51,17 @@ pub struct PrepareResponse {
     pub instances: Vec<Instance>,
 }
 
-impl MultiPaxosMessage for PrepareResponse {}
-
 #[derive(Serialize, Deserialize)]
 pub struct AcceptRequest {
     pub instance: Option<Instance>,
     pub sender: i64,
 }
 
-impl MultiPaxosMessage for AcceptRequest {}
-
 #[derive(Serialize, Deserialize)]
 pub struct AcceptResponse {
     pub r#type: i32,
     pub ballot: i64,
 }
-
-impl MultiPaxosMessage for AcceptResponse {}
 
 #[derive(Serialize, Deserialize)]
 pub struct CommitRequest {
@@ -91,16 +71,12 @@ pub struct CommitRequest {
     pub sender: i64,
 }
 
-impl MultiPaxosMessage for CommitRequest {}
-
 #[derive(Serialize, Deserialize)]
 pub struct CommitResponse {
     pub r#type: i32,
     pub ballot: i64,
     pub last_executed: i64,
 }
-
-impl MultiPaxosMessage for CommitResponse {}
 
 #[derive(Copy, Clone)]
 #[repr(u8)]
