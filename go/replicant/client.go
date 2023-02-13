@@ -7,6 +7,7 @@ import (
 	pb "github.com/psu-csl/replicated-store/go/multipaxos/network"
 	"net"
 	"strings"
+	"sync"
 )
 
 type Client struct {
@@ -17,6 +18,7 @@ type Client struct {
 	multipaxos   *multipaxos.Multipaxos
 	manager      *ClientManager
 	isFromClient bool
+	mu           sync.Mutex
 }
 
 func NewClient(id int64, conn net.Conn, mp *multipaxos.Multipaxos,
@@ -154,6 +156,8 @@ func (c *Client) handlePeerRequest(line string) {
 }
 
 func (c *Client) Write(response string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	_, err := c.writer.WriteString(response + "\n")
 	if err == nil {
 		c.writer.Flush()

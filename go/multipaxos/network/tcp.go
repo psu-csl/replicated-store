@@ -15,20 +15,17 @@ type Message struct {
 }
 
 type ChannelMap struct {
-	*sync.Mutex
+	sync.Mutex
 	Channels map[uint64]chan string
 }
 
 func handleOutgoingRequests(stream net.Conn, requestChan chan string) {
-	for {
-		select {
-		case request := <-requestChan:
-			request = request + "\n"
-			requestBuffer := []byte(request)
-			_, err := stream.Write(requestBuffer)
-			if err != nil {
-				return
-			}
+	for request := range requestChan {
+		request = request + "\n"
+		requestBuffer := []byte(request)
+		_, err := stream.Write(requestBuffer)
+		if err != nil {
+			return
 		}
 	}
 }
