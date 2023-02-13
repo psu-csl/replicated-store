@@ -1,10 +1,10 @@
 package util
 
-import pb "github.com/psu-csl/replicated-store/go/multipaxos/comm"
+import pb "github.com/psu-csl/replicated-store/go/multipaxos/network"
 
 func MakeInstance(ballot int64, index int64) *pb.Instance {
 	return &pb.Instance{Ballot: ballot, Command: &pb.Command{},
-		Index: index, State: pb.InstanceState_INPROGRESS, ClientId: 0}
+		Index: index, State: pb.Inprogress, ClientId: 0}
 }
 
 func MakeInstanceWithState(ballot int64, index int64,
@@ -28,4 +28,3 @@ func MakeInstanceWithAll(ballot int64, index int64, state pb.InstanceState,
 	instance.Command.Type = cmdType
 	return instance
 }
-

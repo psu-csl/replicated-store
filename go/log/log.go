@@ -1,57 +1,56 @@
 package log
 
 import (
-	"github.com/golang/protobuf/proto"
 	"github.com/psu-csl/replicated-store/go/kvstore"
-	pb "github.com/psu-csl/replicated-store/go/multipaxos/comm"
+	pb "github.com/psu-csl/replicated-store/go/multipaxos/network"
 	logger "github.com/sirupsen/logrus"
 	"sync"
 )
 
 func IsCommitted(instance *pb.Instance) bool {
-	return instance.GetState() == pb.InstanceState_COMMITTED
+	return instance.State == pb.Committed
 }
 
 func IsExecuted(instance *pb.Instance) bool {
-	return instance.GetState() == pb.InstanceState_EXECUTED
+	return instance.State == pb.Executed
 }
 
 func IsInProgress(instance *pb.Instance) bool {
-	return instance.GetState() == pb.InstanceState_INPROGRESS
+	return instance.State == pb.Inprogress
 }
 
 func IsEqualCommand(cmd1, cmd2 *pb.Command) bool {
-	return cmd1.GetType() == cmd2.GetType() && cmd1.GetKey() == cmd2.GetKey() &&
-		cmd1.GetValue() == cmd2.GetValue()
+	return cmd1.Type == cmd2.Type && cmd1.Key == cmd2.Key &&
+		cmd1.Value == cmd2.Value
 }
 
 func IsEqualInstance(a, b *pb.Instance) bool {
-	return a.GetBallot() == b.GetBallot() && a.GetIndex() == b.GetIndex() &&
-		a.GetClientId() == b.GetClientId() && a.GetState() == b.GetState() &&
-		IsEqualCommand(a.GetCommand(), b.GetCommand())
+	return a.Ballot == b.Ballot && a.Index == b.Index &&
+		a.ClientId == b.ClientId && a.State == b.State &&
+		IsEqualCommand(a.Command, b.Command)
 }
 
 func Insert(log map[int64]*pb.Instance, instance *pb.Instance) bool {
-	i := instance.GetIndex()
+	i := instance.Index
 	if _, ok := log[i]; !ok {
 		log[i] = instance
 		return true
 	}
 
 	if IsCommitted(log[i]) || IsExecuted(log[i]) {
-		if !IsEqualCommand(log[i].GetCommand(), instance.GetCommand()) {
+		if !IsEqualCommand(log[i].Command, instance.Command) {
 			logger.Panicf("case 2 violation\n")
 		}
 		return false
 	}
 
-	if instance.GetBallot() > log[i].GetBallot() {
+	if instance.Ballot > log[i].Ballot {
 		log[i] = instance
 		return false
 	}
 
-	if instance.GetBallot() == log[i].GetBallot() {
-		if !IsEqualCommand(log[i].GetCommand(), instance.GetCommand()) {
+	if instance.Ballot == log[i].Ballot {
+		if !IsEqualCommand(log[i].Command, instance.Command) {
 			logger.Panicf("case 3 violation\n")
 		}
 	}
@@ -142,7 +141,7 @@ func (l *Log) Append(instance *pb.Instance) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	i := instance.GetIndex()
+	i := instance.Index
 	if i <= l.globalLastExecuted {
 		return
 	}
@@ -170,7 +169,7 @@ func (l *Log) Commit(index int64) {
 	}
 
 	if IsInProgress(instance) {
-		instance.State = pb.InstanceState_COMMITTED
+		instance.State = pb.Committed
 	}
 	if l.IsExecutable() {
 		l.cvExecutable.Signal()
@@ -193,8 +192,8 @@ func (l *Log) Execute() (int64, *kvstore.KVResult) {
 	if !ok {
 		logger.Panicf("Instance at Index %v empty\n", l.lastExecuted+1)
 	}
-	result := kvstore.Execute(instance.GetCommand(), l.kvStore)
-	instance.State = pb.InstanceState_EXECUTED
+	result := kvstore.Execute(instance.Command, l.kvStore)
+	instance.State = pb.Executed
 	l.lastExecuted += 1
 	return instance.ClientId, &result
 }
@@ -215,11 +214,11 @@ func (l *Log) CommitUntil(leaderLastExecuted int64, ballot int64) {
 		if !ok {
 			break
 		}
-		if ballot < instance.GetBallot() {
+		if ballot < instance.Ballot {
 			panic("CommitUntil case 2")
 		}
-		if instance.GetBallot() == ballot {
-			instance.State = pb.InstanceState_COMMITTED
+		if instance.Ballot == ballot {
+			instance.State = pb.Committed
 		}
 	}
 	if l.IsExecutable() {
@@ -247,9 +246,9 @@ func (l *Log) Instances() []*pb.Instance {
 
 	instances := make([]*pb.Instance, 0, len(l.log))
 	for i := l.globalLastExecuted + 1; i <= l.lastIndex; i++ {
-		instance := proto.Clone(l.log[i]).(*pb.Instance)
-		if instance != nil {
-			instances = append(instances, instance)
+		if i, ok := l.log[i]; ok {
+			instance := *i
+			instances = append(instances, &instance)
 		}
 	}
 	return instances
@@ -270,7 +269,8 @@ func (l *Log) GetLog() map[int64]*pb.Instance {
 
 	logMap := make(map[int64]*pb.Instance)
 	for index, instance := range l.log {
-		logMap[index] = proto.Clone(instance).(*pb.Instance)
+		copyInstance := *instance
+		logMap[index] = &copyInstance
 	}
 	return logMap
 }

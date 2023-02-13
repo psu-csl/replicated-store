@@ -5,7 +5,7 @@ import (
 	"github.com/psu-csl/replicated-store/go/config"
 	"github.com/psu-csl/replicated-store/go/kvstore"
 	"github.com/psu-csl/replicated-store/go/log"
-	pb "github.com/psu-csl/replicated-store/go/multipaxos/comm"
+	pb "github.com/psu-csl/replicated-store/go/multipaxos/network"
 	"github.com/psu-csl/replicated-store/go/util"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
@@ -24,7 +24,7 @@ var (
 )
 
 func initPeers() {
-	for i:= int64(0); i < NumPeers; i++ {
+	for i := int64(0); i < NumPeers; i++ {
 		configs[i] = config.DefaultConfig(i, NumPeers)
 		stores[i] = kvstore.NewMemKVStore()
 		logs[i] = log.NewLog(stores[i])
@@ -47,7 +47,7 @@ func tearDown() {
 
 func tearDownServers() {
 	for _, peer := range peers {
-		peer.StopRPCServer()
+		peer.StopPeerConnection()
 	}
 }
 
@@ -110,7 +110,7 @@ func Connect(multipaxos *Multipaxos, addrs []string) {
 			panic("dial error")
 		}
 		client := pb.NewMultiPaxosRPCClient(conn)
-		multipaxos.rpcPeers[i] = NewRpcPeer(int64(i), client)
+		multipaxos.peers[i] = NewPeer(int64(i), client)
 	}
 }
 
@@ -134,7 +134,7 @@ func TestNextBallot(t *testing.T) {
 func TestRequestsWithLowerBallotIgnored(t *testing.T) {
 	setupOnePeer(0)
 	setupOnePeer(1)
-	peers[0].StartRPCServer()
+	peers[0].StartPeerConnection()
 	stub := makeStub(configs[0].Peers[0])
 
 	peers[0].BecomeLeader(peers[0].NextBallot(), logs[0].LastIndex())
@@ -142,33 +142,33 @@ func TestRequestsWithLowerBallotIgnored(t *testing.T) {
 	staleBallot := peers[1].NextBallot()
 
 	r1 := sendPrepare(stub, staleBallot)
-	assert.EqualValues(t, pb.ResponseType_REJECT, r1.GetType())
+	assert.EqualValues(t, pb.Reject, r1.GetType())
 	assert.True(t, IsLeaderByPeer(peers[0]))
 
 	index := logs[0].AdvanceLastIndex()
 	instance := util.MakeInstance(staleBallot, index)
 	r2 := sendAccept(stub, instance)
-	assert.EqualValues(t, pb.ResponseType_REJECT, r2.GetType())
+	assert.EqualValues(t, pb.Reject, r2.GetType())
 	assert.True(t, IsLeaderByPeer(peers[0]))
 	assert.Nil(t, logs[0].At(index))
 
 	r3 := sendCommit(stub, staleBallot, 0, 0)
-	assert.EqualValues(t, pb.ResponseType_REJECT, r3.GetType())
+	assert.EqualValues(t, pb.Reject, r3.GetType())
 	assert.True(t, IsLeaderByPeer(peers[0]))
 
-	peers[0].StopRPCServer()
+	peers[0].StopPeerConnection()
 }
 
 func TestRequestsWithHigherBallotChangeLeaderToFollower(t *testing.T) {
 	setupOnePeer(0)
 	setupOnePeer(1)
-	peers[0].StartRPCServer()
+	peers[0].StartPeerConnection()
 	stub := makeStub(configs[0].Peers[0])
 
 	peers[0].BecomeLeader(peers[0].NextBallot(), logs[0].LastIndex())
 	assert.True(t, IsLeaderByPeer(peers[0]))
 	r1 := sendPrepare(stub, peers[1].NextBallot())
-	assert.EqualValues(t, pb.ResponseType_OK, r1.GetType())
+	assert.EqualValues(t, pb.Ok, r1.GetType())
 	assert.False(t, IsLeaderByPeer(peers[0]))
 	assert.EqualValues(t, 1, LeaderByPeer(peers[0]))
 
@@ -178,7 +178,7 @@ func TestRequestsWithHigherBallotChangeLeaderToFollower(t *testing.T) {
 	index := logs[0].AdvanceLastIndex()
 	instance := util.MakeInstance(peers[1].NextBallot(), index)
 	r2 := sendAccept(stub, instance)
-	assert.EqualValues(t, pb.ResponseType_OK, r2.GetType())
+	assert.EqualValues(t, pb.Ok, r2.GetType())
 	assert.False(t, IsLeaderByPeer(peers[0]))
 	assert.EqualValues(t, 1, LeaderByPeer(peers[0]))
 
@@ -186,16 +186,16 @@ func TestRequestsWithHigherBallotChangeLeaderToFollower(t *testing.T) {
 	peers[0].BecomeLeader(peers[0].NextBallot(), logs[0].LastIndex())
 	assert.True(t, IsLeaderByPeer(peers[0]))
 	r3 := sendCommit(stub, peers[1].NextBallot(), 0, 0)
-	assert.EqualValues(t, pb.ResponseType_OK, r3.GetType())
+	assert.EqualValues(t, pb.Ok, r3.GetType())
 	assert.False(t, IsLeaderByPeer(peers[0]))
 	assert.EqualValues(t, 1, LeaderByPeer(peers[0]))
 
-	peers[0].StopRPCServer()
+	peers[0].StopPeerConnection()
 }
 
 func TestNextBallotAfterCommit(t *testing.T) {
 	initPeers()
-	peers[0].StartRPCServer()
+	peers[0].StartPeerConnection()
 	stub := makeStub(configs[0].Peers[0])
 
 	ballot := peers[0].Id()
@@ -206,12 +206,12 @@ func TestNextBallotAfterCommit(t *testing.T) {
 	ballot += RoundIncrement
 	assert.EqualValues(t, ballot, peers[0].NextBallot())
 
-	peers[0].StopRPCServer()
+	peers[0].StopPeerConnection()
 }
 
 func TestCommitCommitsAndTrims(t *testing.T) {
 	setupOnePeer(0)
-	peers[0].StartRPCServer()
+	peers[0].StartPeerConnection()
 	stub := makeStub(configs[0].Peers[0])
 
 	ballot := peers[0].NextBallot()
@@ -223,7 +223,7 @@ func TestCommitCommitsAndTrims(t *testing.T) {
 	logs[0].Append(util.MakeInstance(ballot, index3))
 
 	r1 := sendCommit(stub, ballot, index2, 0)
-	assert.EqualValues(t, pb.ResponseType_OK, r1.GetType())
+	assert.EqualValues(t, pb.Ok, r1.GetType())
 	assert.EqualValues(t, 0, r1.LastExecuted)
 	assert.True(t, log.IsCommitted(logs[0].At(index1)))
 	assert.True(t, log.IsCommitted(logs[0].At(index2)))
@@ -233,18 +233,18 @@ func TestCommitCommitsAndTrims(t *testing.T) {
 	logs[0].Execute()
 
 	r2 := sendCommit(stub, ballot, index2, index2)
-	assert.EqualValues(t, pb.ResponseType_OK, r2.GetType())
+	assert.EqualValues(t, pb.Ok, r2.GetType())
 	assert.EqualValues(t, index2, r2.LastExecuted)
 	assert.Nil(t, logs[0].At(index1))
 	assert.Nil(t, logs[0].At(index2))
 	assert.True(t, log.IsInProgress(logs[0].At(index3)))
 
-	peers[0].StopRPCServer()
+	peers[0].StopPeerConnection()
 }
 
 func TestPrepareRespondsWithCorrectInstances(t *testing.T) {
 	setupOnePeer(0)
-	peers[0].StartRPCServer()
+	peers[0].StartPeerConnection()
 	stub := makeStub(configs[0].Peers[0])
 
 	ballot := peers[0].NextBallot()
@@ -261,41 +261,41 @@ func TestPrepareRespondsWithCorrectInstances(t *testing.T) {
 	logs[0].Append(instance3)
 
 	r1 := sendPrepare(stub, ballot)
-	assert.EqualValues(t, pb.ResponseType_OK, r1.GetType())
+	assert.EqualValues(t, pb.Ok, r1.GetType())
 	assert.EqualValues(t, 3, len(r1.GetLogs()))
 	assert.True(t, log.IsEqualInstance(instance1, r1.GetLogs()[0]))
 	assert.True(t, log.IsEqualInstance(instance2, r1.GetLogs()[1]))
 	assert.True(t, log.IsEqualInstance(instance3, r1.GetLogs()[2]))
 
 	r2 := sendCommit(stub, ballot, index2, 0)
-	assert.EqualValues(t, pb.ResponseType_OK, r2.GetType())
+	assert.EqualValues(t, pb.Ok, r2.GetType())
 
 	logs[0].Execute()
 	logs[0].Execute()
 
 	ballot = peers[0].NextBallot()
 	r3 := sendPrepare(stub, ballot)
-	assert.EqualValues(t, pb.ResponseType_OK, r3.GetType())
+	assert.EqualValues(t, pb.Ok, r3.GetType())
 	assert.EqualValues(t, 3, len(r3.GetLogs()))
 	assert.True(t, log.IsExecuted(r3.GetLogs()[0]))
 	assert.True(t, log.IsExecuted(r3.GetLogs()[1]))
 	assert.True(t, log.IsInProgress(r1.GetLogs()[2]))
 
 	r4 := sendCommit(stub, ballot, index2, 2)
-	assert.EqualValues(t, pb.ResponseType_OK, r4.GetType())
+	assert.EqualValues(t, pb.Ok, r4.GetType())
 
 	ballot = peers[0].NextBallot()
 	r5 := sendPrepare(stub, ballot)
-	assert.EqualValues(t, pb.ResponseType_OK, r5.GetType())
+	assert.EqualValues(t, pb.Ok, r5.GetType())
 	assert.EqualValues(t, 1, len(r5.GetLogs()))
 	assert.True(t, log.IsEqualInstance(instance3, r5.GetLogs()[0]))
 
-	peers[0].StopRPCServer()
+	peers[0].StopPeerConnection()
 }
 
 func TestAcceptAppendsToLog(t *testing.T) {
 	setupOnePeer(0)
-	peers[0].StartRPCServer()
+	peers[0].StartPeerConnection()
 	stub := makeStub(configs[0].Peers[0])
 
 	ballot := peers[0].NextBallot()
@@ -305,23 +305,23 @@ func TestAcceptAppendsToLog(t *testing.T) {
 	instance2 := util.MakeInstance(ballot, index2)
 
 	r1 := sendAccept(stub, instance1)
-	assert.EqualValues(t, pb.ResponseType_OK, r1.GetType())
+	assert.EqualValues(t, pb.Ok, r1.GetType())
 	assert.True(t, log.IsEqualInstance(instance1, logs[0].At(index1)))
 	assert.Nil(t, logs[0].At(index2))
 
 	r2 := sendAccept(stub, instance2)
-	assert.EqualValues(t, pb.ResponseType_OK, r2.GetType())
+	assert.EqualValues(t, pb.Ok, r2.GetType())
 	assert.True(t, log.IsEqualInstance(instance1, logs[0].At(index1)))
 	assert.True(t, log.IsEqualInstance(instance2, logs[0].At(index2)))
 
-	peers[0].StopRPCServer()
+	peers[0].StopPeerConnection()
 }
 
 func TestPrepareResponseWithHigherBallotChangesLeaderToFollower(t *testing.T) {
 	initPeers()
 	defer tearDownServers()
 	for _, peer := range peers {
-		peer.StartRPCServer()
+		peer.StartPeerConnection()
 	}
 	for id, peer := range peers {
 		Connect(peer, configs[id].Peers)
@@ -337,7 +337,7 @@ func TestPrepareResponseWithHigherBallotChangesLeaderToFollower(t *testing.T) {
 	peers[2].BecomeLeader(peer2Ballot, logs[2].LastIndex())
 
 	r := sendCommit(stub1, peer2Ballot, 0, 0)
-	assert.EqualValues(t, pb.ResponseType_OK, r.GetType())
+	assert.EqualValues(t, pb.Ok, r.GetType())
 	assert.False(t, IsLeaderByPeer(peers[1]))
 	assert.EqualValues(t, 2, LeaderByPeer(peers[1]))
 
@@ -352,7 +352,7 @@ func TestAcceptResponseWithHigherBallotChangesLeaderToFollower(t *testing.T) {
 	initPeers()
 	defer tearDownServers()
 	for _, peer := range peers {
-		peer.StartRPCServer()
+		peer.StartPeerConnection()
 	}
 	for id, peer := range peers {
 		Connect(peer, configs[id].Peers)
@@ -366,7 +366,7 @@ func TestAcceptResponseWithHigherBallotChangesLeaderToFollower(t *testing.T) {
 	peers[2].BecomeLeader(peer2Ballot, logs[2].LastIndex())
 
 	r := sendCommit(stub1, peer2Ballot, 0, 0)
-	assert.EqualValues(t, pb.ResponseType_OK, r.GetType())
+	assert.EqualValues(t, pb.Ok, r.GetType())
 	assert.False(t, IsLeaderByPeer(peers[1]))
 	assert.EqualValues(t, 2, LeaderByPeer(peers[1]))
 
@@ -382,7 +382,7 @@ func TestCommitResponseWithHigherBallotChangesLeaderToFollower(t *testing.T) {
 	initPeers()
 	defer tearDownServers()
 	for _, peer := range peers {
-		peer.StartRPCServer()
+		peer.StartPeerConnection()
 	}
 	Connect(peers[0], configs[0].Peers)
 	stub1 := makeStub(configs[0].Peers[1])
@@ -394,7 +394,7 @@ func TestCommitResponseWithHigherBallotChangesLeaderToFollower(t *testing.T) {
 	peers[2].BecomeLeader(peer2Ballot, logs[2].LastIndex())
 
 	r := sendCommit(stub1, peer2Ballot, 0, 0)
-	assert.EqualValues(t, pb.ResponseType_OK, r.GetType())
+	assert.EqualValues(t, pb.Ok, r.GetType())
 	assert.False(t, IsLeaderByPeer(peers[1]))
 	assert.EqualValues(t, 2, LeaderByPeer(peers[1]))
 
@@ -406,8 +406,8 @@ func TestCommitResponseWithHigherBallotChangesLeaderToFollower(t *testing.T) {
 
 func TestRunPreparePhase(t *testing.T) {
 	initPeers()
-	peers[0].StartRPCServer()
-	defer peers[0].StopRPCServer()
+	peers[0].StartPeerConnection()
+	defer peers[0].StopPeerConnection()
 
 	const (
 		index1 int64 = iota + 1
@@ -425,28 +425,28 @@ func TestRunPreparePhase(t *testing.T) {
 	expectedLog := make(map[int64]*pb.Instance)
 
 	logs[0].Append(util.MakeInstanceWithType(ballot0, index1,
-		pb.CommandType_PUT))
+		pb.Put))
 	logs[1].Append(util.MakeInstanceWithType(ballot0, index1,
-		pb.CommandType_PUT))
+		pb.Put))
 	expectedLog[index1] = util.MakeInstanceWithType(ballot0, index1,
-		pb.CommandType_PUT)
+		pb.Put)
 
 	logs[1].Append(util.MakeInstance(ballot0, index2))
 	expectedLog[index2] = util.MakeInstance(ballot0, index2)
 
 	logs[0].Append(util.MakeInstanceWithAll(ballot0, index3,
-		pb.InstanceState_COMMITTED, pb.CommandType_DEL))
+		pb.Committed, pb.Del))
 	logs[1].Append(util.MakeInstanceWithAll(ballot1, index3,
-		pb.InstanceState_INPROGRESS, pb.CommandType_DEL))
+		pb.Inprogress, pb.Del))
 	expectedLog[index3] = util.MakeInstanceWithAll(ballot0, index3,
-		pb.InstanceState_COMMITTED, pb.CommandType_DEL)
+		pb.Committed, pb.Del)
 
 	logs[0].Append(util.MakeInstanceWithAll(ballot0, index4,
-		pb.InstanceState_EXECUTED, pb.CommandType_DEL))
+		pb.Executed, pb.Del))
 	logs[1].Append(util.MakeInstanceWithAll(ballot1, index4,
-		pb.InstanceState_INPROGRESS, pb.CommandType_DEL))
+		pb.Inprogress, pb.Del))
 	expectedLog[index4] = util.MakeInstanceWithAll(ballot0, index4,
-		pb.InstanceState_EXECUTED, pb.CommandType_DEL)
+		pb.Executed, pb.Del)
 
 	ballot0 = peers[0].NextBallot()
 	peers[0].BecomeLeader(ballot0, logs[0].LastIndex())
@@ -454,26 +454,25 @@ func TestRunPreparePhase(t *testing.T) {
 	peers[1].BecomeLeader(ballot1, logs[1].LastIndex())
 
 	logs[0].Append(util.MakeInstanceWithAll(ballot0, index5,
-		pb.InstanceState_INPROGRESS, pb.CommandType_GET))
+		pb.Inprogress, pb.Get))
 	logs[1].Append(util.MakeInstanceWithAll(ballot1, index5,
-		pb.InstanceState_INPROGRESS, pb.CommandType_PUT))
+		pb.Inprogress, pb.Put))
 	expectedLog[index5] = util.MakeInstanceWithAll(ballot1, index5,
-		pb.InstanceState_INPROGRESS, pb.CommandType_PUT)
+		pb.Inprogress, pb.Put)
 
 	ballot := peers[0].NextBallot()
 	_, logMap := peers[0].RunPreparePhase(ballot)
 	assert.Nil(t, logMap)
 
-	peers[1].StartRPCServer()
-	defer peers[1].StopRPCServer()
+	peers[1].StartPeerConnection()
+	defer peers[1].StopPeerConnection()
 	Connect(peers[0], configs[0].Peers)
 
 	lastIndex, logMap := peers[0].RunPreparePhase(ballot)
 	assert.EqualValues(t, 5, lastIndex)
 	for index, instance := range logMap {
 		if index == 3 || index == 4 {
-			assert.True(t, log.IsEqualCommand(expectedLog[index].GetCommand(
-				), instance.GetCommand()))
+			assert.True(t, log.IsEqualCommand(expectedLog[index].GetCommand(), instance.GetCommand()))
 		} else {
 			assert.True(t, log.IsEqualInstance(expectedLog[index], instance),
 				"index: %v", index)
@@ -483,15 +482,15 @@ func TestRunPreparePhase(t *testing.T) {
 
 func TestRunAcceptPhase(t *testing.T) {
 	initPeers()
-	peers[0].StartRPCServer()
-	defer peers[0].StopRPCServer()
+	peers[0].StartPeerConnection()
+	defer peers[0].StopPeerConnection()
 
 	ballot := peers[0].NextBallot()
 	peers[0].BecomeLeader(ballot, logs[0].LastIndex())
 	index1 := logs[0].AdvanceLastIndex()
-	instance1 := util.MakeInstanceWithType(ballot, index1, pb.CommandType_PUT)
+	instance1 := util.MakeInstanceWithType(ballot, index1, pb.Put)
 
-	r1 := peers[0].RunAcceptPhase(ballot, index1, &pb.Command{Type: pb.CommandType_PUT}, 0)
+	r1 := peers[0].RunAcceptPhase(ballot, index1, &pb.Command{Type: pb.Put}, 0)
 	assert.EqualValues(t, Retry, r1.Type)
 	assert.EqualValues(t, -1, r1.Leader)
 
@@ -499,11 +498,11 @@ func TestRunAcceptPhase(t *testing.T) {
 	assert.Nil(t, logs[1].At(index1))
 	assert.Nil(t, logs[2].At(index1))
 
-	peers[1].StartRPCServer()
-	defer peers[1].StopRPCServer()
+	peers[1].StartPeerConnection()
+	defer peers[1].StopPeerConnection()
 	Connect(peers[0], configs[0].Peers)
 
-	r2 := peers[0].RunAcceptPhase(ballot, index1, &pb.Command{Type: pb.CommandType_PUT}, 0)
+	r2 := peers[0].RunAcceptPhase(ballot, index1, &pb.Command{Type: pb.Put}, 0)
 	assert.EqualValues(t, Ok, r2.Type)
 	assert.EqualValues(t, -1, r2.Leader)
 
@@ -515,8 +514,8 @@ func TestRunAcceptPhase(t *testing.T) {
 func TestRunCommitPhase(t *testing.T) {
 	initPeers()
 	defer tearDownServers()
-	peers[0].StartRPCServer()
-	peers[1].StartRPCServer()
+	peers[0].StartPeerConnection()
+	peers[1].StartPeerConnection()
 
 	numInstances := int64(3)
 	ballot := peers[0].NextBallot()
@@ -528,7 +527,7 @@ func TestRunCommitPhase(t *testing.T) {
 				continue
 			}
 			instance := util.MakeInstanceWithState(ballot, index,
-				pb.InstanceState_COMMITTED)
+				pb.Committed)
 			log.Append(instance)
 			log.Execute()
 		}
@@ -538,7 +537,7 @@ func TestRunCommitPhase(t *testing.T) {
 	gle = peers[0].RunCommitPhase(ballot, gle)
 	assert.EqualValues(t, 0, gle)
 
-	peers[2].StartRPCServer()
+	peers[2].StartPeerConnection()
 	logs[2].Append(util.MakeInstance(ballot, 3))
 	time.Sleep(2 * time.Second)
 
@@ -553,10 +552,10 @@ func TestRunCommitPhase(t *testing.T) {
 
 func TestReplay(t *testing.T) {
 	initPeers()
-	peers[0].StartRPCServer()
-	peers[1].StartRPCServer()
-	defer peers[0].StopRPCServer()
-	defer peers[1].StopRPCServer()
+	peers[0].StartPeerConnection()
+	peers[1].StartPeerConnection()
+	defer peers[0].StopPeerConnection()
+	defer peers[1].StopPeerConnection()
 	Connect(peers[0], configs[0].Peers)
 
 	ballot := peers[0].NextBallot()
@@ -569,11 +568,11 @@ func TestReplay(t *testing.T) {
 	)
 	replayLog := map[int64]*pb.Instance{
 		index1: util.MakeInstanceWithAll(ballot, index1,
-			pb.InstanceState_COMMITTED, pb.CommandType_PUT),
+			pb.Committed, pb.Put),
 		index2: util.MakeInstanceWithAll(ballot, index2,
-			pb.InstanceState_EXECUTED, pb.CommandType_GET),
+			pb.Executed, pb.Get),
 		index3: util.MakeInstanceWithAll(ballot, index3,
-			pb.InstanceState_INPROGRESS, pb.CommandType_DEL),
+			pb.Inprogress, pb.Del),
 	}
 
 	assert.Nil(t, logs[0].At(index1))
@@ -589,23 +588,23 @@ func TestReplay(t *testing.T) {
 	peers[0].Replay(newBallot, replayLog)
 
 	assert.True(t, log.IsEqualInstance(util.MakeInstanceWithAll(newBallot,
-		index1, pb.InstanceState_COMMITTED, pb.CommandType_PUT),
+		index1, pb.Committed, pb.Put),
 		logs[0].At(index1)))
 	assert.True(t, log.IsEqualInstance(util.MakeInstanceWithAll(newBallot,
-		index2, pb.InstanceState_COMMITTED, pb.CommandType_GET),
+		index2, pb.Committed, pb.Get),
 		logs[0].At(index2)))
 	assert.True(t, log.IsEqualInstance(util.MakeInstanceWithAll(newBallot,
-		index3, pb.InstanceState_COMMITTED, pb.CommandType_DEL),
+		index3, pb.Committed, pb.Del),
 		logs[0].At(index3)))
 
 	assert.True(t, log.IsEqualInstance(util.MakeInstanceWithAll(newBallot,
-		index1, pb.InstanceState_INPROGRESS, pb.CommandType_PUT),
+		index1, pb.Inprogress, pb.Put),
 		logs[1].At(index1)))
 	assert.True(t, log.IsEqualInstance(util.MakeInstanceWithAll(newBallot,
-		index2, pb.InstanceState_INPROGRESS, pb.CommandType_GET),
+		index2, pb.Inprogress, pb.Get),
 		logs[1].At(index2)))
 	assert.True(t, log.IsEqualInstance(util.MakeInstanceWithAll(newBallot,
-		index3, pb.InstanceState_INPROGRESS, pb.CommandType_DEL),
+		index3, pb.Inprogress, pb.Del),
 		logs[1].At(index3)))
 }
 

@@ -1,7 +1,7 @@
 package kvstore
 
 import (
-	pb "github.com/psu-csl/replicated-store/go/multipaxos/comm"
+	pb "github.com/psu-csl/replicated-store/go/multipaxos/network"
 	"github.com/stretchr/testify/assert"
 	"testing"
 )
@@ -44,15 +44,14 @@ func TestMemKVStore_GetPutDel(t *testing.T) {
 	assert.Nil(t, store.Get(key2))
 }
 
-
 func TestMemKVStore_Execute(t *testing.T) {
 	store := NewMemKVStore()
-	getKey1 := &pb.Command{Key: key1, Value: "", Type: pb.CommandType_GET}
-	getKey2 := &pb.Command{Key: key2, Value: "", Type: pb.CommandType_GET}
-	delKey1 := &pb.Command{Key: key1, Value: "", Type: pb.CommandType_DEL}
-	putKey1Val1 := &pb.Command{Key: key1, Value: val1, Type: pb.CommandType_PUT}
-	putKey2Val2 := &pb.Command{Key: key2, Value: val2, Type: pb.CommandType_PUT}
-	putKey1Val2 := &pb.Command{Key: key1, Value: val2, Type: pb.CommandType_PUT}
+	getKey1 := &pb.Command{Key: key1, Value: "", Type: pb.Get}
+	getKey2 := &pb.Command{Key: key2, Value: "", Type: pb.Get}
+	delKey1 := &pb.Command{Key: key1, Value: "", Type: pb.Del}
+	putKey1Val1 := &pb.Command{Key: key1, Value: val1, Type: pb.Put}
+	putKey2Val2 := &pb.Command{Key: key2, Value: val2, Type: pb.Put}
+	putKey1Val2 := &pb.Command{Key: key1, Value: val2, Type: pb.Put}
 
 	{
 		r := Execute(getKey1, store)

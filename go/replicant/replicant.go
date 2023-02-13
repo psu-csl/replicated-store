@@ -18,16 +18,22 @@ type Replicant struct {
 	ipPort        string
 	acceptor      net.Listener
 	clientManager *ClientManager
+	peerManager   *ClientManager
+	peerListener  net.Listener
 }
 
 func NewReplicant(config config.Config) *Replicant {
 	r := &Replicant{
-		id:       config.Id,
-		ipPort:   config.Peers[config.Id],
+		id:     config.Id,
+		ipPort: config.Peers[config.Id],
 	}
 	r.log = consensusLog.NewLog(kvstore.CreateStore(config))
+	r.peerListener, _ = net.Listen("tcp", r.ipPort)
 	r.multipaxos = multipaxos.NewMultipaxos(r.log, config)
-	r.clientManager = NewClientManager(r.id, int64(len(config.Peers)), r.multipaxos)
+	numPeers := int64(len(config.Peers))
+	r.clientManager = NewClientManager(r.id, numPeers, r.multipaxos, true)
+	r.peerManager = NewClientManager(r.id, numPeers, r.multipaxos, false)
+	go r.StartPeerServer()
 	return r
 }
 
@@ -40,6 +46,7 @@ func (r *Replicant) Start() {
 func (r *Replicant) Stop() {
 	r.StopServer()
 	r.StopExecutorThread()
+	r.StopPeerServer()
 	r.multipaxos.Stop()
 }
 
@@ -55,7 +62,7 @@ func (r *Replicant) StartServer() {
 	}
 	port += 1
 
-	acceptor, err := net.Listen("tcp", ":" + strconv.Itoa(port))
+	acceptor, err := net.Listen("tcp", ":"+strconv.Itoa(port))
 	if err != nil {
 		logger.Fatalln(err)
 	}
@@ -67,6 +74,23 @@ func (r *Replicant) StartServer() {
 func (r *Replicant) StopServer() {
 	r.acceptor.Close()
 	r.clientManager.StopAll()
+}
+
+func (r *Replicant) StartPeerServer() {
+	logger.Infof("%v starting rpc server at %v", r.id, r.ipPort)
+	for {
+		client, err := r.peerListener.Accept()
+		if err != nil {
+			logger.Error(err)
+			break
+		}
+		r.peerManager.Start(client)
+	}
+}
+
+func (r *Replicant) StopPeerServer() {
+	r.peerListener.Close()
+	r.peerManager.StopAll()
 }
 
 func (r *Replicant) StartExecutorThread() {

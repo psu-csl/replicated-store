@@ -1,7 +1,7 @@
 package multipaxos
 
 import (
-	pb "github.com/psu-csl/replicated-store/go/multipaxos/comm"
+	pb "github.com/psu-csl/replicated-store/go/multipaxos/network"
 	"sync"
 )
 
@@ -11,17 +11,13 @@ const (
 	MaxNumPeers    int64 = 0xf
 )
 
-type RpcPeer struct {
+type Peer struct {
 	Id   int64
-	Stub pb.MultiPaxosRPCClient
+	Stub *pb.TcpLink
 }
 
-func NewRpcPeer(id int64, stub pb.MultiPaxosRPCClient) *RpcPeer {
-	peer := &RpcPeer{
-		Id:   id,
-		Stub: stub,
-	}
-	return peer
+func MakePeer(addr string, channels *pb.ChannelMap) *pb.TcpLink {
+	return pb.NewTcpLink(addr, channels)
 }
 
 type ResultType int
