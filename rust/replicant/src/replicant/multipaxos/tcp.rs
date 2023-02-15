@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 use serde::{Deserialize, Serialize};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Interest};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
@@ -21,7 +21,8 @@ async fn handle_outgoing_requests(
 ) {
     while let Some(mut request) = request_recv.recv().await {
         request.push('\n');
-        write_half.write(request.as_bytes()).await.expect("peer cannot send msg");
+        write_half.write_all(request.as_bytes()).await
+            .expect("peer cannot send msg");
     }
 }
 
@@ -39,7 +40,7 @@ async fn handle_incoming_responses(
             Ok(request) => request,
             Err(_) => continue
         };
-        let mut channels = channels.lock().await;
+        let channels = channels.lock().await;
         let response_send = channels.get(&request.channel_id);
         if let Some(response_send) = response_send {
             response_send.send(request.msg).await;
@@ -59,7 +60,7 @@ impl TcpLink {
         addr: &str,
         channels: Arc<tokio::sync::Mutex<HashMap<u64, Sender<String>>>>
     ) -> Self {
-        let mut stream;
+        let stream;
         loop {
             match TcpStream::connect(addr).await {
                 Ok(s) => {stream = s; break;},

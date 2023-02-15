@@ -5,6 +5,7 @@ use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::str;
 use std::sync::Arc;
+use log::info;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpStream;
@@ -213,7 +214,7 @@ impl ClientManagerInner {
         let client = clients.remove(&id);
         drop(clients);
         assert!(client.is_some());
-        println!("client_manager stopped client {}", id);
+        info!("client_manager stopped client {}", id);
     }
 
     fn stop_all(&self) {
@@ -264,7 +265,7 @@ impl ClientManager {
         tokio::spawn(async move {
             client.start().await;
         });
-        println!("client_manager started client {}", id);
+        info!("client_manager started client {}", id);
     }
 
     pub async fn write(&self, client_id: i64, buf: String) {

@@ -10,9 +10,8 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 use std::sync::Arc;
-use tokio::sync::oneshot::{self, Sender};
 use tokio::sync::{mpsc, Notify};
-use tokio::task::{JoinHandle, JoinSet};
+use tokio::task::JoinHandle;
 use tokio::time::{sleep, Duration};
 use crate::replicant::multipaxos::msg::{Command, Instance};
 use crate::replicant::multipaxos::msg::{MessageType, ResponseType};
@@ -60,12 +59,12 @@ struct MultiPaxosInner {
     commit_interval: u64,
     port: SocketAddr,
     peers: Vec<Peer>,
-    next_request_id: AtomicU64,
+    next_channel_id: AtomicU64,
     channels: Arc<tokio::sync::Mutex<HashMap<u64, mpsc::Sender<String>>>>,
-    prepare_task_running: AtomicBool,
-    commit_task_running: AtomicBool,
     became_leader: Notify,
     became_follower: Notify,
+    prepare_task_running: AtomicBool,
+    commit_task_running: AtomicBool,
 }
 
 async fn make_stub(
@@ -102,7 +101,7 @@ impl MultiPaxosInner {
             commit_interval,
             port,
             peers: rpc_peers,
-            next_request_id: AtomicU64::new(1),
+            next_channel_id: AtomicU64::new(1),
             channels,
             prepare_task_running: AtomicBool::new(false),
             commit_task_running: AtomicBool::new(false),
@@ -205,7 +204,6 @@ impl MultiPaxosInner {
         ballot: i64,
     ) -> Option<(i64, HashMap<i64, Instance>)> {
         let num_peers = self.peers.len();
-        let mut responses = JoinSet::new();
         let mut num_oks = 0;
         let mut log = HashMap::new();
         let mut last_index = 0;
@@ -230,7 +228,7 @@ impl MultiPaxosInner {
             if peer.id != self.id {
                 let request = request.clone();
                 let stub = peer.stub.clone();
-                responses.spawn(async move {
+                tokio::spawn(async move {
                     stub.send_await_response(
                         MessageType::PrepareRequest, channel_id, &request).await;
                 });
@@ -253,11 +251,11 @@ impl MultiPaxosInner {
                 break;
             }
             if num_oks > num_peers / 2 {
-                self.remove_channel(channel_id, response_recv);
+                self.remove_channel(channel_id, response_recv).await;
                 return Some((last_index, log));
             }
         }
-        self.remove_channel(channel_id, response_recv);
+        self.remove_channel(channel_id, response_recv).await;
         None
     }
 
@@ -269,7 +267,6 @@ impl MultiPaxosInner {
         client_id: i64,
     ) -> ResultType {
         let num_peers = self.peers.len();
-        let mut responses = JoinSet::new();
         let mut num_oks = 0;
         let mut current_leader = self.id;
 
@@ -299,7 +296,7 @@ impl MultiPaxosInner {
             if peer.id != self.id {
                 let request = request.clone();
                 let stub = peer.stub.clone();
-                responses.spawn(async move {
+                tokio::spawn(async move {
                     stub.send_await_response(
                         MessageType::AcceptRequest, channel_id, &request).await;
                 });
@@ -320,16 +317,15 @@ impl MultiPaxosInner {
             }
             if num_oks > num_peers / 2 {
                 self.log.commit(index).await;
-                self.remove_channel(channel_id, response_recv);
-                responses.detach_all();
+                self.remove_channel(channel_id, response_recv).await;
                 return ResultType::Ok;
             }
         }
         if current_leader != self.id {
-            self.remove_channel(channel_id, response_recv);
+            self.remove_channel(channel_id, response_recv).await;
             return ResultType::SomeoneElseLeader(current_leader);
         }
-        self.remove_channel(channel_id, response_recv);
+        self.remove_channel(channel_id, response_recv).await;
         ResultType::Retry
     }
 
@@ -339,7 +335,6 @@ impl MultiPaxosInner {
         global_last_executed: i64,
     ) -> i64 {
         let num_peers = self.peers.len();
-        let mut responses = JoinSet::new();
         let mut num_oks = 0;
         let mut min_last_executed = self.log.last_executed();
 
@@ -360,7 +355,7 @@ impl MultiPaxosInner {
             if peer.id != self.id {
                 let request = request.clone();
                 let stub = peer.stub.clone();
-                responses.spawn(async move {
+                tokio::spawn(async move {
                     stub.send_await_response(
                         MessageType::CommitRequest, channel_id, &request).await;
                 });
@@ -384,11 +379,11 @@ impl MultiPaxosInner {
                 }
             }
             if num_oks == num_peers {
-                self.remove_channel(channel_id, response_recv);
+                self.remove_channel(channel_id, response_recv).await;
                 return min_last_executed;
             }
         }
-        self.remove_channel(channel_id, response_recv);
+        self.remove_channel(channel_id, response_recv).await;
         global_last_executed
     }
 
@@ -415,18 +410,21 @@ impl MultiPaxosInner {
         }
     }
 
-    async fn add_channel(&self,
-                         num_peers: usize
+    async fn add_channel(
+        &self,
+        num_peers: usize
     ) -> (u64, mpsc::Receiver<String>) {
         let (response_send, response_recv) = mpsc::channel(num_peers);
-        let channel_id = self.next_request_id.fetch_add(1, Ordering::Relaxed);
+        let channel_id = self.next_channel_id.fetch_add(1, Ordering::Relaxed);
         let mut channels = self.channels.lock().await;
         channels.insert(channel_id, response_send);
         (channel_id, response_recv)
     }
 
-    async fn remove_channel(&self, channel_id: u64,
-                            mut response_recv: mpsc::Receiver<String>
+    async fn remove_channel(
+        &self,
+        channel_id: u64,
+        mut response_recv: mpsc::Receiver<String>
     ) {
         let mut channels = self.channels.lock().await;
         channels.remove(&channel_id);
