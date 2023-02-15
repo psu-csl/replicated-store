@@ -2,7 +2,7 @@ package kvstore
 
 import (
 	"github.com/psu-csl/replicated-store/go/config"
-	pb "github.com/psu-csl/replicated-store/go/multipaxos/network"
+	tcp "github.com/psu-csl/replicated-store/go/multipaxos/network"
 	logger "github.com/sirupsen/logrus"
 )
 
@@ -34,8 +34,8 @@ func CreateStore(config config.Config) KVStore {
 	}
 }
 
-func Execute(cmd *pb.Command, store KVStore) KVResult {
-	if cmd.Type == pb.Get {
+func Execute(cmd *tcp.Command, store KVStore) KVResult {
+	if cmd.Type == tcp.Get {
 		value := store.Get(cmd.Key)
 		if value != nil {
 			return KVResult{Ok: true, Value: *value}
@@ -44,14 +44,14 @@ func Execute(cmd *pb.Command, store KVStore) KVResult {
 		}
 	}
 
-	if cmd.Type == pb.Put {
+	if cmd.Type == tcp.Put {
 		if store.Put(cmd.Key, cmd.Value) {
 			return KVResult{Ok: true, Value: Empty}
 		}
 		return KVResult{Ok: false, Value: NotFound}
 	}
 
-	if cmd.Type != pb.Del {
+	if cmd.Type != tcp.Del {
 		panic("Command type not Del")
 	}
 

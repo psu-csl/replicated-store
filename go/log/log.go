@@ -2,35 +2,35 @@ package log
 
 import (
 	"github.com/psu-csl/replicated-store/go/kvstore"
-	pb "github.com/psu-csl/replicated-store/go/multipaxos/network"
+	tcp "github.com/psu-csl/replicated-store/go/multipaxos/network"
 	logger "github.com/sirupsen/logrus"
 	"sync"
 )
 
-func IsCommitted(instance *pb.Instance) bool {
-	return instance.State == pb.Committed
+func IsCommitted(instance *tcp.Instance) bool {
+	return instance.State == tcp.Committed
 }
 
-func IsExecuted(instance *pb.Instance) bool {
-	return instance.State == pb.Executed
+func IsExecuted(instance *tcp.Instance) bool {
+	return instance.State == tcp.Executed
 }
 
-func IsInProgress(instance *pb.Instance) bool {
-	return instance.State == pb.Inprogress
+func IsInProgress(instance *tcp.Instance) bool {
+	return instance.State == tcp.Inprogress
 }
 
-func IsEqualCommand(cmd1, cmd2 *pb.Command) bool {
+func IsEqualCommand(cmd1, cmd2 *tcp.Command) bool {
 	return cmd1.Type == cmd2.Type && cmd1.Key == cmd2.Key &&
 		cmd1.Value == cmd2.Value
 }
 
-func IsEqualInstance(a, b *pb.Instance) bool {
+func IsEqualInstance(a, b *tcp.Instance) bool {
 	return a.Ballot == b.Ballot && a.Index == b.Index &&
 		a.ClientId == b.ClientId && a.State == b.State &&
 		IsEqualCommand(a.Command, b.Command)
 }
 
-func Insert(log map[int64]*pb.Instance, instance *pb.Instance) bool {
+func Insert(log map[int64]*tcp.Instance, instance *tcp.Instance) bool {
 	i := instance.Index
 	if _, ok := log[i]; !ok {
 		log[i] = instance
@@ -60,7 +60,7 @@ func Insert(log map[int64]*pb.Instance, instance *pb.Instance) bool {
 type Log struct {
 	running            bool
 	kvStore            kvstore.KVStore
-	log                map[int64]*pb.Instance
+	log                map[int64]*tcp.Instance
 	lastIndex          int64
 	lastExecuted       int64
 	globalLastExecuted int64
@@ -73,7 +73,7 @@ func NewLog(s kvstore.KVStore) *Log {
 	l := Log{
 		running:            true,
 		kvStore:            s,
-		log:                make(map[int64]*pb.Instance),
+		log:                make(map[int64]*tcp.Instance),
 		lastIndex:          0,
 		lastExecuted:       0,
 		globalLastExecuted: 0,
@@ -137,7 +137,7 @@ func (l *Log) IsExecutable() bool {
 	return false
 }
 
-func (l *Log) Append(instance *pb.Instance) {
+func (l *Log) Append(instance *tcp.Instance) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -169,7 +169,7 @@ func (l *Log) Commit(index int64) {
 	}
 
 	if IsInProgress(instance) {
-		instance.State = pb.Committed
+		instance.State = tcp.Committed
 	}
 	if l.IsExecutable() {
 		l.cvExecutable.Signal()
@@ -193,7 +193,7 @@ func (l *Log) Execute() (int64, *kvstore.KVResult) {
 		logger.Panicf("Instance at Index %v empty\n", l.lastExecuted+1)
 	}
 	result := kvstore.Execute(instance.Command, l.kvStore)
-	instance.State = pb.Executed
+	instance.State = tcp.Executed
 	l.lastExecuted += 1
 	return instance.ClientId, &result
 }
@@ -218,7 +218,7 @@ func (l *Log) CommitUntil(leaderLastExecuted int64, ballot int64) {
 			panic("CommitUntil case 2")
 		}
 		if instance.Ballot == ballot {
-			instance.State = pb.Committed
+			instance.State = tcp.Committed
 		}
 	}
 	if l.IsExecutable() {
@@ -240,11 +240,11 @@ func (l *Log) TrimUntil(leaderGlobalLastExecuted int64) {
 	}
 }
 
-func (l *Log) Instances() []*pb.Instance {
+func (l *Log) Instances() []*tcp.Instance {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	instances := make([]*pb.Instance, 0, len(l.log))
+	instances := make([]*tcp.Instance, 0, len(l.log))
 	for i := l.globalLastExecuted + 1; i <= l.lastIndex; i++ {
 		if i, ok := l.log[i]; ok {
 			instance := *i
@@ -254,7 +254,7 @@ func (l *Log) Instances() []*pb.Instance {
 	return instances
 }
 
-func (l *Log) At(index int64) *pb.Instance {
+func (l *Log) At(index int64) *tcp.Instance {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if instance, ok := l.log[index]; ok {
@@ -263,11 +263,11 @@ func (l *Log) At(index int64) *pb.Instance {
 	return nil
 }
 
-func (l *Log) GetLog() map[int64]*pb.Instance {
+func (l *Log) GetLog() map[int64]*tcp.Instance {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	logMap := make(map[int64]*pb.Instance)
+	logMap := make(map[int64]*tcp.Instance)
 	for index, instance := range l.log {
 		copyInstance := *instance
 		logMap[index] = &copyInstance

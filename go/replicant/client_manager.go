@@ -9,6 +9,7 @@ import (
 
 type ClientManager struct {
 	nextId       int64
+	clientIdMu   sync.Mutex
 	numPeers     int64
 	multipaxos   *multipaxos.Multipaxos
 	mu           sync.Mutex
@@ -31,6 +32,8 @@ func NewClientManager(id int64,
 }
 
 func (cm *ClientManager) NextClientId() int64 {
+	cm.clientIdMu.Lock()
+	defer cm.clientIdMu.Unlock()
 	id := cm.nextId
 	cm.nextId += cm.numPeers
 	return id
@@ -44,7 +47,7 @@ func (cm *ClientManager) Start(socket net.Conn) {
 	cm.clients[id] = client
 	cm.mu.Unlock()
 	logger.Infof("client_manager started client %v\n", id)
-	client.Start()
+	go client.Start()
 }
 
 func (cm *ClientManager) Get(id int64) *Client {

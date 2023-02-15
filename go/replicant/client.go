@@ -62,14 +62,6 @@ func (c *Client) Parse(request string) *pb.Command {
 }
 
 func (c *Client) Start() {
-	go c.Read()
-}
-
-func (c *Client) Stop() {
-	c.socket.Close()
-}
-
-func (c *Client) Read() {
 	for {
 		request, err := c.reader.ReadString('\n')
 		if err != nil {
@@ -78,6 +70,10 @@ func (c *Client) Read() {
 		}
 		c.handleRequest(request)
 	}
+}
+
+func (c *Client) Stop() {
+	c.socket.Close()
 }
 
 func (c *Client) handleRequest(request string) {
