@@ -5,6 +5,7 @@ use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::str;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicI64, Ordering};
 use log::info;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
@@ -168,7 +169,7 @@ impl ClientInner {
 }
 
 struct ClientManagerInner {
-    next_id: Mutex<i64>,
+    next_id: AtomicI64,
     num_peers: i64,
     clients: Mutex<HashMap<i64, Arc<tokio::sync::Mutex<OwnedWriteHalf>>>>,
 }
@@ -176,17 +177,14 @@ struct ClientManagerInner {
 impl ClientManagerInner {
     fn new(id: i64, num_peers: i64) -> Self {
         Self {
-            next_id: Mutex::new(id),
+            next_id: AtomicI64::new(id),
             num_peers,
             clients: Mutex::new(HashMap::new()),
         }
     }
 
     fn next_client_id(&self) -> i64 {
-        let mut next_id = self.next_id.lock();
-        let id = *next_id;
-        *next_id += self.num_peers;
-        id
+        self.next_id.fetch_add(self.num_peers, Ordering::Relaxed)
     }
 
     async fn write(&self, client_id: i64, mut buf: String) {

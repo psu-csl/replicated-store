@@ -9,7 +9,6 @@ import (
 
 type ClientManager struct {
 	nextId       int64
-	clientIdMu   sync.Mutex
 	numPeers     int64
 	multipaxos   *multipaxos.Multipaxos
 	mu           sync.Mutex
@@ -32,8 +31,6 @@ func NewClientManager(id int64,
 }
 
 func (cm *ClientManager) NextClientId() int64 {
-	cm.clientIdMu.Lock()
-	defer cm.clientIdMu.Unlock()
 	id := cm.nextId
 	cm.nextId += cm.numPeers
 	return id
