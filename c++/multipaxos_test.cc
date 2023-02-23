@@ -554,6 +554,7 @@ TEST_F(MultiPaxosTest, Replay) {
   EXPECT_EQ(nullptr, logs_[1]->at(index3));
 
   auto new_ballot = peers_[0]->NextBallot();
+  peers_[0]->BecomeLeader(new_ballot, logs_[0]->LastIndex());
   peers_[0]->Replay(new_ballot, log);
 
   i1.set_ballot(new_ballot);
