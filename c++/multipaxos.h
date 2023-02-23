@@ -67,13 +67,9 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
 
   int64_t Id() const { return id_; }
 
-  int64_t Ballot() const {
-    std::scoped_lock lock(mu_);
-    return ballot_;
-  }
+  int64_t Ballot() const { return ballot_; }
 
   int64_t NextBallot() {
-    std::scoped_lock lock(mu_);
     int64_t next_ballot = ballot_;
     next_ballot += kRoundIncrement;
     next_ballot = (next_ballot & ~kIdBits) | id_;
@@ -90,6 +86,9 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
   }
 
   void BecomeFollower(int64_t new_ballot) {
+    std::scoped_lock lock(mu_);
+    if (new_ballot <= ballot_)
+      return;
     auto old_leader_id = ExtractLeaderId(ballot_);
     auto new_leader_id = ExtractLeaderId(new_ballot);
     if (new_leader_id != id_ &&
@@ -156,7 +155,7 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
                       const multipaxos::CommitRequest*,
                       multipaxos::CommitResponse*) override;
 
-  int64_t ballot_;
+  std::atomic<int64_t> ballot_;
   Log* log_;
   int64_t id_;
   std::atomic<bool> commit_received_;

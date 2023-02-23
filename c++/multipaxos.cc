@@ -218,11 +218,8 @@ MultiPaxos::RunPreparePhase(int64_t ballot) {
               Insert(&state->log_, std::move(response.instances(i)));
             }
           } else {
-            std::scoped_lock lock(mu_);
-            if (response.ballot() > ballot_) {
-              BecomeFollower(response.ballot());
-              state->leader_ = ExtractLeaderId(ballot_);
-            }
+            BecomeFollower(response.ballot());
+            state->leader_ = ExtractLeaderId(ballot_);
           }
         }
       }
@@ -285,11 +282,8 @@ Result MultiPaxos::RunAcceptPhase(int64_t ballot,
           if (response.type() == OK) {
             ++state->num_oks_;
           } else {
-            std::scoped_lock lock(mu_);
-            if (response.ballot() > ballot_) {
-              BecomeFollower(response.ballot());
-              state->leader_ = ExtractLeaderId(ballot_);
-            }
+            BecomeFollower(response.ballot());
+            state->leader_ = ExtractLeaderId(ballot_);
           }
         }
       }
@@ -344,11 +338,8 @@ int64_t MultiPaxos::RunCommitPhase(int64_t ballot,
             if (response.last_executed() < state->min_last_executed_)
               state->min_last_executed_ = response.last_executed();
           } else {
-            std::scoped_lock lock(mu_);
-            if (response.ballot() > ballot_) {
-              BecomeFollower(response.ballot());
-              state->leader_ = ExtractLeaderId(ballot_);
-            }
+            BecomeFollower(response.ballot());
+            state->leader_ = ExtractLeaderId(ballot_);
           }
         }
       }
@@ -382,7 +373,6 @@ void MultiPaxos::Replay(
 Status MultiPaxos::Prepare(ServerContext*,
                            const PrepareRequest* request,
                            PrepareResponse* response) {
-  std::scoped_lock lock(mu_);
   DLOG(INFO) << id_ << " <--prepare-- " << request->sender();
   if (request->ballot() > ballot_) {
     BecomeFollower(request->ballot());
@@ -399,13 +389,14 @@ Status MultiPaxos::Prepare(ServerContext*,
 Status MultiPaxos::Accept(ServerContext*,
                           const AcceptRequest* request,
                           AcceptResponse* response) {
-  std::scoped_lock lock(mu_);
   DLOG(INFO) << id_ << " <--accept--- " << request->sender();
   if (request->instance().ballot() >= ballot_) {
-    BecomeFollower(request->instance().ballot());
     log_->Append(request->instance());
     response->set_type(OK);
-  } else {
+    if (request->instance().ballot() > ballot_)
+      BecomeFollower(request->instance().ballot());
+  }
+  if (request->instance().ballot() < ballot_) {
     response->set_ballot(ballot_);
     response->set_type(REJECT);
   }
@@ -415,7 +406,6 @@ Status MultiPaxos::Accept(ServerContext*,
 Status MultiPaxos::Commit(ServerContext*,
                           const CommitRequest* request,
                           CommitResponse* response) {
-  std::scoped_lock lock(mu_);
   DLOG(INFO) << id_ << " <--commit--- " << request->sender();
   if (request->ballot() >= ballot_) {
     commit_received_ = true;
