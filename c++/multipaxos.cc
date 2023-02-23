@@ -185,16 +185,13 @@ MultiPaxos::RunPreparePhase(int64_t ballot) {
   request.set_sender(id_);
   request.set_ballot(ballot);
 
-  {
-    std::scoped_lock lock(mu_);
-    if (ballot > ballot_) {
-      ++state->num_rpcs_;
-      ++state->num_oks_;
-      state->log_ = log_->GetLog();
-      state->max_last_index_ = log_->LastIndex();
-    } else {
-      return std::nullopt;
-    }
+  if (ballot > ballot_) {
+    ++state->num_rpcs_;
+    ++state->num_oks_;
+    state->log_ = log_->GetLog();
+    state->max_last_index_ = log_->LastIndex();
+  } else {
+    return std::nullopt;
   }
 
   for (auto& peer : rpc_peers_) {
@@ -250,16 +247,12 @@ Result MultiPaxos::RunAcceptPhase(int64_t ballot,
   instance.set_state(INPROGRESS);
   *instance.mutable_command() = std::move(command);
 
-  {
-    std::scoped_lock lock(mu_);
-    int64_t current_leader_id = ExtractLeaderId(ballot_);
-    if (current_leader_id == id_) {
-      ++state->num_rpcs_;
-      ++state->num_oks_;
-      log_->Append(instance);
-    } else {
-      return Result{ResultType::kSomeoneElseLeader, state->leader_};
-    }
+  if (ballot == ballot_) {
+    ++state->num_rpcs_;
+    ++state->num_oks_;
+    log_->Append(instance);
+  } else {
+    return Result{ResultType::kSomeoneElseLeader, state->leader_};
   }
 
   AcceptRequest request;
