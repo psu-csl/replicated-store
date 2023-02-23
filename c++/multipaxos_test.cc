@@ -534,7 +534,7 @@ TEST_F(MultiPaxosTest, Replay) {
   peers_[1]->StartRPCServer();
 
   auto ballot = peers_[0]->NextBallot();
-  peers_[0]->BecomeLeader(ballot, logs_[0]->LastIndex);
+  peers_[0]->BecomeLeader(ballot, logs_[0]->LastIndex());
 
   auto index1 = 1;
   auto i1 = MakeInstance(ballot, index1, COMMITTED, PUT);
