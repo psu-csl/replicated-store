@@ -259,9 +259,7 @@ Result MultiPaxos::RunAcceptPhase(int64_t ballot,
     if (current_leader_id == id_) {
       ++state->num_rpcs_;
       ++state->num_oks_;
-      Instance local_instance;
-      local_instance.CopyFrom(instance);
-      log_->Append(local_instance);
+      log_->Append(instance);
     } else {
       return Result{ResultType::kSomeoneElseLeader, state->leader_};
     }
