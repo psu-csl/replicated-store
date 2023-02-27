@@ -579,7 +579,8 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
       if (request.getInstance().getBallot() > this.ballot.get()) {
         becomeFollower(request.getInstance().getBallot());
       }
-    } else {
+    }
+    if (request.getInstance().getBallot() < this.ballot.get()) {
       responseBuilder = responseBuilder.setBallot(ballot.get()).setType(multipaxos.ResponseType.REJECT);
     }
     var response = responseBuilder.build();
