@@ -252,7 +252,8 @@ Result MultiPaxos::RunAcceptPhase(int64_t ballot,
     ++state->num_oks_;
     log_->Append(instance);
   } else {
-    return Result{ResultType::kSomeoneElseLeader, state->leader_};
+    auto leader = ExtractLeaderId(ballot_);
+    return Result{ResultType::kSomeoneElseLeader, leader};
   }
 
   AcceptRequest request;
@@ -402,11 +403,12 @@ Status MultiPaxos::Commit(ServerContext*,
   DLOG(INFO) << id_ << " <--commit--- " << request->sender();
   if (request->ballot() >= ballot_) {
     commit_received_ = true;
-    BecomeFollower(request->ballot());
     log_->CommitUntil(request->last_executed(), request->ballot());
     log_->TrimUntil(request->global_last_executed());
     response->set_last_executed(log_->LastExecuted());
     response->set_type(OK);
+    if (request->ballot() > ballot_)
+      BecomeFollower(request->ballot());
   } else {
     response->set_ballot(ballot_);
     response->set_type(REJECT);
