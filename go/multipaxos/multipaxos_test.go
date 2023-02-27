@@ -333,6 +333,8 @@ func TestPrepareResponseWithHigherBallotChangesLeaderToFollower(t *testing.T) {
 	peers[1].BecomeLeader(peers[1].NextBallot(), logs[1].LastIndex())
 	peer2Ballot := peers[2].NextBallot()
 	peers[2].BecomeLeader(peer2Ballot, logs[2].LastIndex())
+	peer2Ballot = peers[2].NextBallot()
+	peers[2].BecomeLeader(peer2Ballot, logs[2].LastIndex())
 
 	r := sendCommit(stub1, peer2Ballot, 0, 0)
 	assert.EqualValues(t, pb.ResponseType_OK, r.GetType())
@@ -340,6 +342,7 @@ func TestPrepareResponseWithHigherBallotChangesLeaderToFollower(t *testing.T) {
 	assert.EqualValues(t, 2, LeaderByPeer(peers[1]))
 
 	assert.True(t, IsLeaderByPeer(peers[0]))
+	peer0Ballot = peers[0].NextBallot()
 	peers[0].RunPreparePhase(peer0Ballot)
 	assert.False(t, IsLeaderByPeer(peers[0]))
 	assert.EqualValues(t, 2, LeaderByPeer(peers[0]))
@@ -484,6 +487,7 @@ func TestRunAcceptPhase(t *testing.T) {
 	defer peers[0].StopRPCServer()
 
 	ballot := peers[0].NextBallot()
+	peers[0].BecomeLeader(ballot, logs[0].LastIndex())
 	index1 := logs[0].AdvanceLastIndex()
 	instance1 := util.MakeInstanceWithType(ballot, index1, pb.CommandType_PUT)
 
@@ -555,6 +559,7 @@ func TestReplay(t *testing.T) {
 	Connect(peers[0], configs[0].Peers)
 
 	ballot := peers[0].NextBallot()
+	peers[0].BecomeLeader(ballot, logs[0].LastIndex())
 
 	const (
 		index1 int64 = iota + 1
@@ -579,6 +584,7 @@ func TestReplay(t *testing.T) {
 	assert.Nil(t, logs[1].At(index3))
 
 	newBallot := peers[0].NextBallot()
+	peers[0].BecomeLeader(newBallot, logs[0].LastIndex())
 	peers[0].Replay(newBallot, replayLog)
 
 	assert.True(t, log.IsEqualInstance(util.MakeInstanceWithAll(newBallot,

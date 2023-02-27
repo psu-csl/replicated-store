@@ -76,17 +76,11 @@ func (p *Multipaxos) Id() int64 {
 }
 
 func (p *Multipaxos) Ballot() int64 {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	return p.ballot
+	return atomic.LoadInt64(&p.ballot)
 }
 
 func (p *Multipaxos) NextBallot() int64 {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	nextBallot := p.ballot
+	nextBallot := p.Ballot()
 	nextBallot += RoundIncrement
 	nextBallot = (nextBallot & ^IdBits) | p.id
 	return nextBallot
@@ -96,22 +90,28 @@ func (p *Multipaxos) BecomeLeader(newBallot int64, newLastIndex int64) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	logger.Infof("%v became a leader: ballot: %v -> %v\n", p.id, p.ballot,
+	logger.Infof("%v became a leader: ballot: %v -> %v\n", p.id, p.Ballot(),
 		newBallot)
-	p.ballot = newBallot
+	atomic.StoreInt64(&p.ballot, newBallot)
 	p.log.SetLastIndex(newLastIndex)
 	p.cvLeader.Signal()
 }
 
 func (p *Multipaxos) BecomeFollower(newBallot int64) {
-	oldLeaderId := ExtractLeaderId(p.ballot)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if newBallot <= p.Ballot() {
+		return
+	}
+
+	oldLeaderId := ExtractLeaderId(p.Ballot())
 	newLeaderId := ExtractLeaderId(newBallot)
 	if newLeaderId != p.id && (oldLeaderId == p.id || oldLeaderId == MaxNumPeers) {
 		logger.Infof("%v became a follower: ballot: %v -> %v\n", p.id,
-			p.ballot, newBallot)
+			p.Ballot(), newBallot)
 		p.cvFollower.Signal()
 	}
-	p.ballot = newBallot
+	atomic.StoreInt64(&p.ballot, newBallot)
 }
 
 func (p *Multipaxos) sleepForCommitInterval() {
@@ -222,7 +222,7 @@ func (p *Multipaxos) Replicate(command *pb.Command, clientId int64) Result {
 func (p *Multipaxos) PrepareThread() {
 	for atomic.LoadInt32(&p.prepareThreadRunning) == 1 {
 		p.mu.Lock()
-		for atomic.LoadInt32(&p.prepareThreadRunning) == 1 && IsLeader(p.ballot, p.id) {
+		for atomic.LoadInt32(&p.prepareThreadRunning) == 1 && IsLeader(p.Ballot(), p.id) {
 			p.cvFollower.Wait()
 		}
 		p.mu.Unlock()
@@ -246,7 +246,7 @@ func (p *Multipaxos) PrepareThread() {
 func (p *Multipaxos) CommitThread() {
 	for atomic.LoadInt32(&p.commitThreadRunning) == 1 {
 		p.mu.Lock()
-		for atomic.LoadInt32(&p.commitThreadRunning) == 1 && !IsLeader(p.ballot, p.id) {
+		for atomic.LoadInt32(&p.commitThreadRunning) == 1 && !IsLeader(p.Ballot(), p.id) {
 			p.cvLeader.Wait()
 		}
 		p.mu.Unlock()
@@ -272,17 +272,14 @@ func (p *Multipaxos) RunPreparePhase(ballot int64) (int64,
 		Ballot: ballot,
 	}
 
-	p.mu.Lock()
-	if ballot > p.ballot {
+	if ballot > p.Ballot() {
 		state.NumRpcs++
 		state.NumOks++
 		state.Log = p.log.GetLog()
 		state.MaxLastIndex = p.log.LastIndex()
 	} else {
-		p.mu.Unlock()
 		return -1, nil
 	}
-	p.mu.Unlock()
 
 	for _, peer := range p.rpcPeers {
 		if peer.Id == p.id {
@@ -308,12 +305,8 @@ func (p *Multipaxos) RunPreparePhase(ballot int64) (int64,
 						Log.Insert(state.Log, instance)
 					}
 				} else {
-					p.mu.Lock()
-					if response.GetBallot() > p.ballot {
-						p.BecomeFollower(response.GetBallot())
-						state.Leader = ExtractLeaderId(p.ballot)
-					}
-					p.mu.Unlock()
+					p.BecomeFollower(response.GetBallot())
+					state.Leader = ExtractLeaderId(p.Ballot())
 				}
 			}
 			state.Cv.Signal()
@@ -345,9 +338,7 @@ func (p *Multipaxos) RunAcceptPhase(ballot int64, index int64,
 		Command:  command,
 	}
 
-	p.mu.Lock()
-	currentLeaderId := ExtractLeaderId(p.ballot)
-	if currentLeaderId == p.id {
+	if ballot == p.Ballot() {
 		instance := pb.Instance{
 			Ballot:   ballot,
 			Index:    index,
@@ -359,10 +350,9 @@ func (p *Multipaxos) RunAcceptPhase(ballot int64, index int64,
 		state.NumOks++
 		p.log.Append(&instance)
 	} else {
-		p.mu.Unlock()
-		return Result{SomeElseLeader, currentLeaderId}
+		leader := ExtractLeaderId(p.Ballot())
+		return Result{SomeElseLeader, leader}
 	}
-	p.mu.Unlock()
 
 	request := pb.AcceptRequest{
 		Sender:   p.id,
@@ -386,12 +376,8 @@ func (p *Multipaxos) RunAcceptPhase(ballot int64, index int64,
 				if response.GetType() == pb.ResponseType_OK {
 					state.NumOks += 1
 				} else {
-					p.mu.Lock()
-					if response.GetBallot() > p.ballot {
-						p.BecomeFollower(response.GetBallot())
-						state.Leader = ExtractLeaderId(p.ballot)
-					}
-					p.mu.Unlock()
+					p.BecomeFollower(response.GetBallot())
+					state.Leader = ExtractLeaderId(p.Ballot())
 				}
 			}
 			state.Cv.Signal()
@@ -451,12 +437,8 @@ func (p *Multipaxos) RunCommitPhase(ballot int64, globalLastExecuted int64) int6
 						state.MinLastExecuted = response.GetLastExecuted()
 					}
 				} else {
-					p.mu.Lock()
-					if response.GetBallot() > p.ballot {
-						p.BecomeFollower(response.GetBallot())
-						state.Leader = ExtractLeaderId(p.ballot)
-					}
-					p.mu.Unlock()
+					p.BecomeFollower(response.GetBallot())
+					state.Leader = ExtractLeaderId(p.Ballot())
 				}
 			}
 			state.Cv.Signal()
@@ -490,12 +472,9 @@ func (p *Multipaxos) Replay(ballot int64, log map[int64]*pb.Instance) {
 
 func (p *Multipaxos) Prepare(ctx context.Context,
 	request *pb.PrepareRequest) (*pb.PrepareResponse, error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
 	logger.Infof("%v <--prepare-- %v", p.id, request.GetSender())
 	response := &pb.PrepareResponse{}
-	if request.GetBallot() > p.ballot {
+	if request.GetBallot() > p.Ballot() {
 		p.BecomeFollower(request.GetBallot())
 		response.Logs = make([]*pb.Instance, 0, len(p.log.Instances()))
 		for _, i := range p.log.Instances() {
@@ -503,7 +482,7 @@ func (p *Multipaxos) Prepare(ctx context.Context,
 		}
 		response.Type = pb.ResponseType_OK
 	} else {
-		response.Ballot = p.ballot
+		response.Ballot = p.Ballot()
 		response.Type = pb.ResponseType_REJECT
 	}
 	return response, nil
@@ -511,17 +490,17 @@ func (p *Multipaxos) Prepare(ctx context.Context,
 
 func (p *Multipaxos) Accept(ctx context.Context,
 	request *pb.AcceptRequest) (*pb.AcceptResponse, error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
 	logger.Infof("%v <--accept-- %v", p.id, request.GetSender())
 	response := &pb.AcceptResponse{}
-	if request.GetInstance().GetBallot() >= p.ballot {
-		p.BecomeFollower(request.GetInstance().GetBallot())
+	if request.GetInstance().GetBallot() >= p.Ballot() {
 		p.log.Append(request.GetInstance())
 		response.Type = pb.ResponseType_OK
-	} else {
-		response.Ballot = p.ballot
+		if request.GetInstance().GetBallot() > p.Ballot() {
+			p.BecomeFollower(request.GetInstance().GetBallot())
+		}
+	}
+	if request.GetInstance().GetBallot() < p.Ballot() {
+		response.Ballot = p.Ballot()
 		response.Type = pb.ResponseType_REJECT
 	}
 	return response, nil
@@ -529,20 +508,19 @@ func (p *Multipaxos) Accept(ctx context.Context,
 
 func (p *Multipaxos) Commit(ctx context.Context,
 	request *pb.CommitRequest) (*pb.CommitResponse, error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
 	logger.Infof("%v <--commit-- %v", p.id, request.GetSender())
 	response := &pb.CommitResponse{}
-	if request.GetBallot() >= p.ballot {
+	if request.GetBallot() >= p.Ballot() {
 		atomic.StoreInt32(&p.commitReceived, 1)
-		p.BecomeFollower(request.GetBallot())
 		p.log.CommitUntil(request.GetLastExecuted(), request.GetBallot())
 		p.log.TrimUntil(request.GetGlobalLastExecuted())
 		response.LastExecuted = p.log.LastExecuted()
 		response.Type = pb.ResponseType_OK
+		if request.GetBallot() > p.Ballot() {
+			p.BecomeFollower(request.GetBallot())
+		}
 	} else {
-		response.Ballot = p.ballot
+		response.Ballot = p.Ballot()
 		response.Type = pb.ResponseType_REJECT
 	}
 	return response, nil
