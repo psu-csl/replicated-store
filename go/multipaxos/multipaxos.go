@@ -265,7 +265,7 @@ func (p *Multipaxos) CommitThread() {
 
 func (p *Multipaxos) RunPreparePhase(ballot int64) (int64,
 	map[int64]*pb.Instance) {
-	state := NewPrepareState(p.id)
+	state := NewPrepareState()
 
 	request := pb.PrepareRequest{
 		Sender: p.id,
@@ -306,7 +306,6 @@ func (p *Multipaxos) RunPreparePhase(ballot int64) (int64,
 					}
 				} else {
 					p.BecomeFollower(response.GetBallot())
-					state.Leader = ExtractLeaderId(p.Ballot())
 				}
 			}
 			state.Cv.Signal()
@@ -315,8 +314,7 @@ func (p *Multipaxos) RunPreparePhase(ballot int64) (int64,
 
 	state.Mu.Lock()
 	defer state.Mu.Unlock()
-	for state.Leader == p.id && state.NumOks <= len(p.rpcPeers)/2 &&
-		state.NumRpcs != len(p.rpcPeers) {
+	for state.NumOks <= len(p.rpcPeers)/2 && state.NumRpcs != len(p.rpcPeers) {
 		state.Cv.Wait()
 	}
 
@@ -328,7 +326,7 @@ func (p *Multipaxos) RunPreparePhase(ballot int64) (int64,
 
 func (p *Multipaxos) RunAcceptPhase(ballot int64, index int64,
 	command *pb.Command, clientId int64) Result {
-	state := NewAcceptState(p.id)
+	state := NewAcceptState()
 
 	instance := pb.Instance{
 		Ballot:   ballot,
@@ -350,8 +348,7 @@ func (p *Multipaxos) RunAcceptPhase(ballot int64, index int64,
 		state.NumOks++
 		p.log.Append(&instance)
 	} else {
-		leader := ExtractLeaderId(p.Ballot())
-		return Result{SomeElseLeader, leader}
+		return Result{SomeElseLeader, ExtractLeaderId(p.Ballot())}
 	}
 
 	request := pb.AcceptRequest{
@@ -377,7 +374,6 @@ func (p *Multipaxos) RunAcceptPhase(ballot int64, index int64,
 					state.NumOks += 1
 				} else {
 					p.BecomeFollower(response.GetBallot())
-					state.Leader = ExtractLeaderId(p.Ballot())
 				}
 			}
 			state.Cv.Signal()
@@ -386,7 +382,7 @@ func (p *Multipaxos) RunAcceptPhase(ballot int64, index int64,
 
 	state.Mu.Lock()
 	defer state.Mu.Unlock()
-	for state.Leader == p.id && state.NumOks <= len(p.rpcPeers)/2 &&
+	for IsLeader(p.Ballot(), p.id) && state.NumOks <= len(p.rpcPeers)/2 &&
 		state.NumRpcs != len(p.rpcPeers) {
 		state.Cv.Wait()
 	}
@@ -395,14 +391,14 @@ func (p *Multipaxos) RunAcceptPhase(ballot int64, index int64,
 		p.log.Commit(index)
 		return Result{Type: Ok, Leader: -1}
 	}
-	if state.Leader != p.id {
-		return Result{Type: SomeElseLeader, Leader: state.Leader}
+	if !IsLeader(p.Ballot(), p.id) {
+		return Result{Type: SomeElseLeader, Leader: ExtractLeaderId(p.Ballot())}
 	}
 	return Result{Type: Retry, Leader: -1}
 }
 
 func (p *Multipaxos) RunCommitPhase(ballot int64, globalLastExecuted int64) int64 {
-	state := NewCommitState(p.id, p.log.LastExecuted())
+	state := NewCommitState(p.log.LastExecuted())
 
 	request := pb.CommitRequest{
 		Ballot:             ballot,
@@ -438,7 +434,6 @@ func (p *Multipaxos) RunCommitPhase(ballot int64, globalLastExecuted int64) int6
 					}
 				} else {
 					p.BecomeFollower(response.GetBallot())
-					state.Leader = ExtractLeaderId(p.Ballot())
 				}
 			}
 			state.Cv.Signal()
@@ -447,7 +442,7 @@ func (p *Multipaxos) RunCommitPhase(ballot int64, globalLastExecuted int64) int6
 
 	state.Mu.Lock()
 	defer state.Mu.Unlock()
-	for state.Leader == p.id && state.NumRpcs != len(p.rpcPeers) {
+	for IsLeader(p.Ballot(), p.id) && state.NumRpcs != len(p.rpcPeers) {
 		state.Cv.Wait()
 	}
 	if state.NumOks == len(p.rpcPeers) {

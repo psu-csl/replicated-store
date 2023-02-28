@@ -52,18 +52,16 @@ func IsSomeoneElseLeader(ballot int64, id int64) bool {
 type PrepareState struct {
 	NumRpcs      int
 	NumOks       int
-	Leader       int64
 	MaxLastIndex int64
 	Log          map[int64]*pb.Instance
 	Mu           sync.Mutex
 	Cv           *sync.Cond
 }
 
-func NewPrepareState(leader int64) *PrepareState {
+func NewPrepareState() *PrepareState {
 	prepareState := &PrepareState{
 		NumRpcs:      0,
 		NumOks:       0,
-		Leader:       leader,
 		MaxLastIndex: 0,
 		Log:          make(map[int64]*pb.Instance),
 	}
@@ -74,16 +72,14 @@ func NewPrepareState(leader int64) *PrepareState {
 type AcceptState struct {
 	NumRpcs int
 	NumOks  int
-	Leader  int64
 	Mu      sync.Mutex
 	Cv      *sync.Cond
 }
 
-func NewAcceptState(leader int64) *AcceptState {
+func NewAcceptState() *AcceptState {
 	acceptState := &AcceptState{
 		NumRpcs: 0,
 		NumOks:  0,
-		Leader:  leader,
 	}
 	acceptState.Cv = sync.NewCond(&acceptState.Mu)
 	return acceptState
@@ -92,17 +88,15 @@ func NewAcceptState(leader int64) *AcceptState {
 type CommitState struct {
 	NumRpcs         int
 	NumOks          int
-	Leader          int64
 	MinLastExecuted int64
 	Mu              sync.Mutex
 	Cv              *sync.Cond
 }
 
-func NewCommitState(leader int64, minLastExecuted int64) *CommitState {
+func NewCommitState(minLastExecuted int64) *CommitState {
 	commitState := &CommitState{
 		NumRpcs:         0,
 		NumOks:          0,
-		Leader:          leader,
 		MinLastExecuted: minLastExecuted,
 	}
 	commitState.Cv = sync.NewCond(&commitState.Mu)

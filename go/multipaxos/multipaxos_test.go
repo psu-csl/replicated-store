@@ -520,6 +520,7 @@ func TestRunCommitPhase(t *testing.T) {
 
 	numInstances := int64(3)
 	ballot := peers[0].NextBallot()
+	peers[0].BecomeLeader(ballot, logs[0].LastIndex())
 
 	for index := int64(1); index <= numInstances; index++ {
 		for peerId, log := range logs {
