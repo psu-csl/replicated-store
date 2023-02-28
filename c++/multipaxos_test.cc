@@ -496,6 +496,7 @@ TEST_F(MultiPaxosTest, RunCommitPhase) {
   peers_[1]->StartRPCServer();
 
   auto ballot = peers_[0]->NextBallot();
+  peers_[0]->BecomeLeader(ballot, logs_[0]->LastIndex());
 
   for (size_t index = 1; index <= 3; ++index) {
     for (size_t peer = 0; peer < kNumPeers; ++peer) {

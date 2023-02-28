@@ -179,7 +179,7 @@ void MultiPaxos::CommitThread() {
 std::optional<
     std::pair<int64_t, std::unordered_map<int64_t, multipaxos::Instance>>>
 MultiPaxos::RunPreparePhase(int64_t ballot) {
-  auto state = std::make_shared<prepare_state_t>(id_);
+  auto state = std::make_shared<prepare_state_t>();
 
   PrepareRequest request;
   request.set_sender(id_);
@@ -216,7 +216,6 @@ MultiPaxos::RunPreparePhase(int64_t ballot) {
             }
           } else {
             BecomeFollower(response.ballot());
-            state->leader_ = ExtractLeaderId(ballot_);
           }
         }
       }
@@ -225,8 +224,7 @@ MultiPaxos::RunPreparePhase(int64_t ballot) {
   }
   {
     std::unique_lock lock(state->mu_);
-    while (state->leader_ == id_ && state->num_oks_ <= num_peers_ / 2 &&
-           state->num_rpcs_ != num_peers_)
+    while (state->num_oks_ <= num_peers_ / 2 && state->num_rpcs_ != num_peers_)
       state->cv_.wait(lock);
     if (state->num_oks_ > num_peers_ / 2)
       return std::make_pair(state->max_last_index_, std::move(state->log_));
@@ -238,7 +236,7 @@ Result MultiPaxos::RunAcceptPhase(int64_t ballot,
                                   int64_t index,
                                   Command command,
                                   int64_t client_id) {
-  auto state = std::make_shared<accept_state_t>(id_);
+  auto state = std::make_shared<accept_state_t>();
 
   Instance instance;
   instance.set_ballot(ballot);
@@ -273,12 +271,10 @@ Result MultiPaxos::RunAcceptPhase(int64_t ballot,
         std::scoped_lock lock(state->mu_);
         ++state->num_rpcs_;
         if (s.ok()) {
-          if (response.type() == OK) {
+          if (response.type() == OK)
             ++state->num_oks_;
-          } else {
+          else
             BecomeFollower(response.ballot());
-            state->leader_ = ExtractLeaderId(ballot_);
-          }
         }
       }
       state->cv_.notify_one();
@@ -286,22 +282,22 @@ Result MultiPaxos::RunAcceptPhase(int64_t ballot,
   }
   {
     std::unique_lock lock(state->mu_);
-    while (state->leader_ == id_ && state->num_oks_ <= num_peers_ / 2 &&
+    while (IsLeader(ballot_, id_) && state->num_oks_ <= num_peers_ / 2 &&
            state->num_rpcs_ != num_peers_)
       state->cv_.wait(lock);
     if (state->num_oks_ > num_peers_ / 2) {
       log_->Commit(index);
       return Result{ResultType::kOk, std::nullopt};
     }
-    if (state->leader_ != id_)
-      return Result{ResultType::kSomeoneElseLeader, state->leader_};
+    if (!IsLeader(ballot_, id_))
+      return Result{ResultType::kSomeoneElseLeader, ExtractLeaderId(ballot_)};
   }
   return Result{ResultType::kRetry, std::nullopt};
 }
 
 int64_t MultiPaxos::RunCommitPhase(int64_t ballot,
                                    int64_t global_last_executed) {
-  auto state = std::make_shared<commit_state_t>(id_, log_->LastExecuted());
+  auto state = std::make_shared<commit_state_t>(log_->LastExecuted());
 
   CommitRequest request;
   request.set_ballot(ballot);
@@ -333,7 +329,6 @@ int64_t MultiPaxos::RunCommitPhase(int64_t ballot,
               state->min_last_executed_ = response.last_executed();
           } else {
             BecomeFollower(response.ballot());
-            state->leader_ = ExtractLeaderId(ballot_);
           }
         }
       }
@@ -342,7 +337,7 @@ int64_t MultiPaxos::RunCommitPhase(int64_t ballot,
   }
   {
     std::unique_lock lock(state->mu_);
-    while (state->leader_ == id_ && state->num_rpcs_ != num_peers_)
+    while (IsLeader(ballot_, id_) && state->num_rpcs_ != num_peers_)
       state->cv_.wait(lock);
     if (state->num_oks_ == num_peers_)
       return state->min_last_executed_;
