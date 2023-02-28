@@ -1,28 +1,31 @@
-use crate::replicant::kvstore::memkvstore::MemKVStore;
-use crate::replicant::log::{insert, Log};
+use std::cmp;
+use std::collections::HashMap;
+use std::net::SocketAddr;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
+
 use futures_util::FutureExt;
 use log::info;
 use parking_lot::Mutex;
 use rand::distributions::{Distribution, Uniform};
-use rpc::multi_paxos_rpc_client::MultiPaxosRpcClient;
-use rpc::multi_paxos_rpc_server::{MultiPaxosRpc, MultiPaxosRpcServer};
+use serde_json::json;
+use serde_json::Value as json;
+use tokio::sync::Notify;
+use tokio::sync::oneshot::{self, Sender};
+use tokio::task::{JoinHandle, JoinSet};
+use tokio::time::{Duration, sleep};
+use tonic::{Request, Response, Status};
+use tonic::transport::{Channel, Endpoint, Server};
+
 use rpc::{AcceptRequest, AcceptResponse};
 use rpc::{Command, Instance, InstanceState, ResponseType};
 use rpc::{CommitRequest, CommitResponse};
 use rpc::{PrepareRequest, PrepareResponse};
-use serde_json::json;
-use serde_json::Value as json;
-use std::cmp;
-use std::collections::HashMap;
-use std::net::SocketAddr;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-use tokio::sync::oneshot::{self, Sender};
-use tokio::sync::Notify;
-use tokio::task::{JoinHandle, JoinSet};
-use tokio::time::{sleep, Duration};
-use tonic::transport::{Channel, Endpoint, Server};
-use tonic::{Request, Response, Status};
+use rpc::multi_paxos_rpc_client::MultiPaxosRpcClient;
+use rpc::multi_paxos_rpc_server::{MultiPaxosRpc, MultiPaxosRpcServer};
+
+use crate::replicant::kvstore::memkvstore::MemKVStore;
+use crate::replicant::log::{insert, Log};
 
 pub mod rpc {
     tonic::include_proto!("multipaxos");
@@ -57,7 +60,7 @@ struct RpcPeer {
 }
 
 struct MultiPaxosInner {
-    ballot: Mutex<i64>,
+    ballot: AtomicI64,
     log: Arc<Log>,
     id: i64,
     commit_received: AtomicBool,
@@ -95,7 +98,7 @@ impl MultiPaxosInner {
             });
         }
         Self {
-            ballot: Mutex::new(0),
+            ballot: AtomicI64::new(MAX_NUM_PEERS),
             log,
             id,
             commit_received: AtomicBool::new(false),
@@ -109,43 +112,43 @@ impl MultiPaxosInner {
         }
     }
 
+    fn ballot(&self) -> i64 {
+        self.ballot.load(Ordering::Relaxed)
+    }
+
     fn next_ballot(&self) -> i64 {
-        let ballot = self.ballot.lock();
-        let mut next_ballot = *ballot;
+        let mut next_ballot = self.ballot();
         next_ballot += ROUND_INCREMENT;
         next_ballot = (next_ballot & !ID_BITS) | self.id;
         next_ballot
     }
 
     fn become_leader(&self, new_ballot: i64, new_last_index: i64) {
-        let mut ballot = self.ballot.lock();
         info!(
             "{} became a leader: ballot: {} -> {}",
-            self.id, *ballot, new_ballot
+            self.id, self.ballot(), new_ballot
         );
         self.log.set_last_index(new_last_index);
-        *ballot = new_ballot;
+        self.ballot.store(new_ballot, Ordering::Relaxed);
         self.became_leader.notify_one();
     }
 
-    fn become_follower(&self, ballot: &mut i64, new_ballot: i64) {
-        let old_leader_id = extract_leader(*ballot);
+    fn become_follower(&self, new_ballot: i64) {
+        if new_ballot <= self.ballot() {
+            return;
+        }
+        let old_leader_id = extract_leader(self.ballot());
         let new_leader_id = extract_leader(new_ballot);
         if new_leader_id != self.id
             && (old_leader_id == self.id || old_leader_id == MAX_NUM_PEERS)
         {
             info!(
                 "{} became a follower: ballot: {} -> {}",
-                self.id, *ballot, new_ballot
+                self.id, self.ballot(), new_ballot
             );
             self.became_follower.notify_one();
         }
-        *ballot = new_ballot;
-    }
-
-    fn ballot(&self) -> i64 {
-        let ballot = self.ballot.lock();
-        *ballot
+        self.ballot.store(new_ballot, Ordering::Relaxed);
     }
 
     async fn sleep_for_commit_interval(&self) {
@@ -208,18 +211,15 @@ impl MultiPaxosInner {
         let mut log = HashMap::new();
         let mut last_index = 0;
 
-        {
-            let current_ballot = self.ballot.lock();
-            if ballot > *current_ballot {
-                num_oks += 1;
-                log = self.log.get_log();
-                last_index = self.log.last_index();
-                if num_oks > num_peers / 2 {
-                    return Some((last_index, log));
-                }
-            } else {
-                return None;
+        if ballot > self.ballot() {
+            num_oks += 1;
+            log = self.log.get_log();
+            last_index = self.log.last_index();
+            if num_oks > num_peers / 2 {
+                return Some((last_index, log));
             }
+        } else {
+            return None;
         }
 
         self.rpc_peers.iter().for_each(|peer| {
@@ -244,11 +244,8 @@ impl MultiPaxosInner {
                         insert(&mut log, instance);
                     }
                 } else {
-                    let mut ballot = self.ballot.lock();
-                    if response.ballot > *ballot {
-                        self.become_follower(&mut *ballot, response.ballot);
-                        break;
-                    }
+                    self.become_follower(response.ballot);
+                    break;
                 }
             }
             if num_oks > num_peers / 2 {
@@ -270,21 +267,19 @@ impl MultiPaxosInner {
         let mut num_oks = 0;
         let mut current_leader = self.id;
 
-        {
-            let mut current_ballot = self.ballot.lock();
-            let current_leader_id = extract_leader(*current_ballot);
-            if current_leader_id == self.id {
-                num_oks += 1;
-                let instance =
-                    Instance::inprogress(ballot, index, command, client_id);
-                self.log.append(instance);
-            } else {
-                return ResultType::SomeoneElseLeader(current_leader_id);
+        if ballot == self.ballot() {
+            num_oks += 1;
+            let instance = Instance::inprogress(
+                ballot, index, command, client_id,
+            );
+            self.log.append(instance);
+            if num_oks > num_peers / 2 {
+                self.log.commit(index).await;
+                return ResultType::Ok;
             }
-        }
-        if num_oks > num_peers / 2 {
-            self.log.commit(index).await;
-            return ResultType::Ok;
+        } else {
+            let current_leader_id = extract_leader(self.ballot());
+            return ResultType::SomeoneElseLeader(current_leader_id);
         }
 
         self.rpc_peers.iter().for_each(|peer| {
@@ -307,15 +302,9 @@ impl MultiPaxosInner {
                 if accept_response.r#type == ResponseType::Ok as i32 {
                     num_oks += 1;
                 } else {
-                    let mut ballot = self.ballot.lock();
-                    if accept_response.ballot > *ballot {
-                        self.become_follower(
-                            &mut *ballot,
-                            accept_response.ballot,
-                        );
-                        current_leader = extract_leader(*ballot);
-                        break;
-                    }
+                    self.become_follower(accept_response.ballot);
+                    current_leader = extract_leader(self.ballot());
+                    break;
                 }
             }
             if num_oks > num_peers / 2 {
@@ -369,12 +358,8 @@ impl MultiPaxosInner {
                         min_last_executed = commit_response.last_executed;
                     }
                 } else {
-                    let mut ballot = self.ballot.lock();
-                    if commit_response.ballot > *ballot {
-                        self.become_follower(
-                            &mut *ballot,
-                            commit_response.ballot,
-                        );
+                    if commit_response.ballot > self.ballot() {
+                        self.become_follower(commit_response.ballot);
                         break;
                     }
                 }
@@ -421,18 +406,17 @@ impl MultiPaxosRpc for RpcWrapper {
         let request = request.into_inner();
         info!("{} <--prepare-- {}", self.0.id, request.sender);
 
-        let mut ballot = self.0.ballot.lock();
-        if request.ballot > *ballot {
-            self.0.become_follower(&mut *ballot, request.ballot);
+        if request.ballot > self.0.ballot() {
+            self.0.become_follower(request.ballot);
             return Ok(Response::new(PrepareResponse {
                 r#type: ResponseType::Ok as i32,
-                ballot: *ballot,
+                ballot: self.0.ballot(),
                 instances: self.0.log.instances(),
             }));
         }
         Ok(Response::new(PrepareResponse {
             r#type: ResponseType::Reject as i32,
-            ballot: *ballot,
+            ballot: self.0.ballot(),
             instances: vec![],
         }))
     }
@@ -444,20 +428,24 @@ impl MultiPaxosRpc for RpcWrapper {
         let request = request.into_inner();
         info!("{} <--accept--- {}", self.0.id, request.sender);
 
+        let mut response = Response::new(AcceptResponse {
+            r#type: ResponseType::Ok as i32,
+            ballot: self.0.ballot(),
+        });
         let instance = request.instance.unwrap();
-        let mut ballot = self.0.ballot.lock();
-        if instance.ballot >= *ballot {
-            self.0.become_follower(&mut *ballot, instance.ballot);
+        let instance_ballot = instance.ballot;
+        if instance.ballot >= self.0.ballot() {
             self.0.log.append(instance);
-            return Ok(Response::new(AcceptResponse {
-                r#type: ResponseType::Ok as i32,
-                ballot: *ballot,
-            }));
+            if instance_ballot > self.0.ballot() {
+                self.0.become_follower(instance_ballot);
+            }
         }
-        Ok(Response::new(AcceptResponse {
-            r#type: ResponseType::Reject as i32,
-            ballot: *ballot,
-        }))
+        if instance_ballot < self.0.ballot() {
+            let mut response = response.get_mut();
+            response.ballot = self.0.ballot();
+            response.r#type = ResponseType::Reject as i32;
+        }
+        Ok(response)
     }
 
     async fn commit(
@@ -467,23 +455,24 @@ impl MultiPaxosRpc for RpcWrapper {
         let request = request.into_inner();
         info!("{} <--commit--- {}", self.0.id, request.sender);
 
-        let mut ballot = self.0.ballot.lock();
-        if request.ballot >= *ballot {
+        if request.ballot >= self.0.ballot() {
             self.0.commit_received.store(true, Ordering::Relaxed);
-            self.0.become_follower(&mut *ballot, request.ballot);
             self.0
                 .log
                 .commit_until(request.last_executed, request.ballot);
             self.0.log.trim_until(request.global_last_executed);
+            if request.ballot > self.0.ballot() {
+                self.0.become_follower(request.ballot);
+            }
             return Ok(Response::new(CommitResponse {
                 r#type: ResponseType::Ok as i32,
-                ballot: *ballot,
+                ballot: self.0.ballot(),
                 last_executed: self.0.log.last_executed(),
             }));
         }
         Ok(Response::new(CommitResponse {
             r#type: ResponseType::Reject as i32,
-            ballot: *ballot,
+            ballot: self.0.ballot(),
             last_executed: 0,
         }))
     }
@@ -773,7 +762,7 @@ mod tests {
         assert!(is_leader(&peer0));
 
         let r = send_prepare(&mut stub, peer1.next_ballot()).await;
-        assert_eq!(ResponseType::Ok as i32, r.r#type,);
+        assert_eq!(ResponseType::Ok as i32, r.r#type, );
         assert!(!is_leader(&peer0));
         assert_eq!(1, leader(&peer0));
 
@@ -939,10 +928,12 @@ mod tests {
         let handle1 = peer1.start_rpc_server_task();
         let handle2 = peer2.start_rpc_server_task();
 
-        let peer0_ballot = peer0.next_ballot();
+        let mut peer0_ballot = peer0.next_ballot();
         peer0.become_leader(peer0_ballot, peer0.inner.log.last_index());
         peer1.become_leader(peer1.next_ballot(), peer1.inner.log.last_index());
-        let peer2_ballot = peer2.next_ballot();
+        let mut peer2_ballot = peer2.next_ballot();
+        peer2.become_leader(peer2_ballot, peer2.inner.log.last_index());
+        peer2_ballot = peer2.next_ballot();
         peer2.become_leader(peer2_ballot, peer2.inner.log.last_index());
 
         let r = send_commit(&mut stub1, peer2_ballot, 0, 0).await;
@@ -951,6 +942,7 @@ mod tests {
         assert_eq!(2, leader(&peer1));
 
         assert!(is_leader(&peer0));
+        peer0_ballot = peer0.next_ballot();
         peer0.inner.run_prepare_phase(peer0_ballot).await;
         assert!(!is_leader(&peer0));
         assert_eq!(2, leader(&peer0));
@@ -1106,6 +1098,7 @@ mod tests {
         let handle0 = peer0.start_rpc_server_task();
 
         let ballot = peer0.next_ballot();
+        peer0.become_leader(ballot, peer0.inner.log.last_index());
         let index = peer0.inner.log.advance_last_index();
 
         let result = peer0
@@ -1195,6 +1188,7 @@ mod tests {
         let handle1 = peer1.start_rpc_server_task();
 
         let ballot = peer0.next_ballot();
+        peer0.become_leader(ballot, peer0.inner.log.last_index());
 
         let index1 = 1;
         let mut i1 = Instance::committed_put(ballot, index1);
@@ -1217,6 +1211,7 @@ mod tests {
         assert_eq!(None, peer1.inner.log.at(index3));
 
         let new_ballot = peer0.next_ballot();
+        peer0.become_leader(new_ballot, peer0.inner.log.last_index());
         peer0.inner.replay(new_ballot, log).await;
 
         i1.ballot = new_ballot;
