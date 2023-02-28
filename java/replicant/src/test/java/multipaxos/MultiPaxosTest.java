@@ -496,6 +496,7 @@ class MultiPaxosTest {
         peers.get(1).startRPCServer();
 
         var ballot = peers.get(0).nextBallot();
+        peers.get(0).becomeLeader(ballot, logs.get(0).getLastIndex());
 
         for (long index = 1; index <= 3; ++index) {
             for (int peer = 0; peer < kNumPeers; ++peer) {
