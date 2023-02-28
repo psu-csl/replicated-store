@@ -123,8 +123,8 @@ impl MultiPaxosInner {
             "{} became a leader: ballot: {} -> {}",
             self.id, *ballot, new_ballot
         );
-        *ballot = new_ballot;
         self.log.set_last_index(new_last_index);
+        *ballot = new_ballot;
         self.became_leader.notify_one();
     }
 
@@ -234,7 +234,6 @@ impl MultiPaxosInner {
             }
         });
 
-
         while let Some(response) = responses.join_next().await {
             if let Ok(Ok(response)) = response {
                 let response = response.into_inner();
@@ -276,9 +275,8 @@ impl MultiPaxosInner {
             let current_leader_id = extract_leader(*current_ballot);
             if current_leader_id == self.id {
                 num_oks += 1;
-                let instance = Instance::inprogress(
-                    ballot, index, command, client_id,
-                );
+                let instance =
+                    Instance::inprogress(ballot, index, command, client_id);
                 self.log.append(instance);
             } else {
                 return ResultType::SomeoneElseLeader(current_leader_id);

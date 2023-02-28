@@ -92,8 +92,8 @@ func (p *Multipaxos) BecomeLeader(newBallot int64, newLastIndex int64) {
 
 	logger.Infof("%v became a leader: ballot: %v -> %v\n", p.id, p.Ballot(),
 		newBallot)
-	atomic.StoreInt64(&p.ballot, newBallot)
 	p.log.SetLastIndex(newLastIndex)
+	atomic.StoreInt64(&p.ballot, newBallot)
 	p.cvLeader.Signal()
 }
 

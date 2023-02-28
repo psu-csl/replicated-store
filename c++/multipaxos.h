@@ -80,8 +80,8 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
     std::scoped_lock lock(mu_);
     DLOG(INFO) << id_ << " became a leader: ballot: " << ballot_ << " -> "
                << new_ballot;
-    ballot_ = new_ballot;
     log_->SetLastIndex(new_last_index);
+    ballot_ = new_ballot;
     cv_leader_.notify_one();
   }
 

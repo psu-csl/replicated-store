@@ -640,8 +640,8 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
     mu.lock();
     try {
       logger.debug(id + " became a leader: ballot: " + ballot + " -> " + newBallot);
-      ballot.set(newBallot);
       log.setLastIndex(newLastIndex);
+      ballot.set(newBallot);
       cvLeader.signal();
     } finally {
       mu.unlock();
@@ -748,4 +748,3 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
   }
 
 }
-
