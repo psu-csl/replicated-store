@@ -38,7 +38,7 @@ func TestInsert(t *testing.T) {
 	)
 	assert.True(t, Insert(log, util.MakeInstanceWithType(ballot, index,
 		pb.Put)))
-	assert.Equal(t, pb.Put, log[index].GetCommand().GetType())
+	assert.Equal(t, pb.Put, log[index].Command.Type)
 	assert.False(t, Insert(log, util.MakeInstanceWithType(ballot, index,
 		pb.Put)))
 }
@@ -51,10 +51,10 @@ func TestInsertUpdateInProgress(t *testing.T) {
 	)
 	assert.True(t, Insert(log, util.MakeInstanceWithType(ballot,
 		index, pb.Put)))
-	assert.Equal(t, pb.Put, log[index].GetCommand().GetType())
+	assert.Equal(t, pb.Put, log[index].Command.Type)
 	assert.False(t, Insert(log, util.MakeInstanceWithType(ballot+1,
 		index, pb.Del)))
-	assert.Equal(t, pb.Del, log[index].GetCommand().GetType())
+	assert.Equal(t, pb.Del, log[index].Command.Type)
 }
 
 func TestInsertUpdateCommitted(t *testing.T) {
@@ -77,10 +77,10 @@ func TestInsertStale(t *testing.T) {
 	)
 	assert.True(t, Insert(log, util.MakeInstanceWithType(ballot,
 		index, pb.Put)))
-	assert.Equal(t, pb.Put, log[index].GetCommand().GetType())
+	assert.Equal(t, pb.Put, log[index].Command.Type)
 	assert.False(t, Insert(log, util.MakeInstanceWithType(ballot-1,
 		index, pb.Del)))
-	assert.Equal(t, pb.Put, log[index].GetCommand().GetType())
+	assert.Equal(t, pb.Put, log[index].Command.Type)
 }
 
 func TestInsertCase2Committed(t *testing.T) {
@@ -132,8 +132,8 @@ func TestAppend(t *testing.T) {
 	setup()
 	log.Append(util.MakeInstance(0, log.AdvanceLastIndex()))
 	log.Append(util.MakeInstance(0, log.AdvanceLastIndex()))
-	assert.Equal(t, int64(1), log.At(1).GetIndex())
-	assert.Equal(t, int64(2), log.At(2).GetIndex())
+	assert.Equal(t, int64(1), log.At(1).Index)
+	assert.Equal(t, int64(2), log.At(2).Index)
 }
 
 func TestAppendWithGap(t *testing.T) {
@@ -141,7 +141,7 @@ func TestAppendWithGap(t *testing.T) {
 
 	var index int64 = 42
 	log.Append(util.MakeInstance(0, index))
-	assert.Equal(t, index, log.At(index).GetIndex())
+	assert.Equal(t, index, log.At(index).Index)
 	assert.Equal(t, index+1, log.AdvanceLastIndex())
 }
 
@@ -164,7 +164,7 @@ func TestAppendHighBallotOverride(t *testing.T) {
 	)
 	log.Append(util.MakeInstanceWithType(loBallot, index, pb.Put))
 	log.Append(util.MakeInstanceWithType(hiBallot, index, pb.Del))
-	assert.Equal(t, pb.Del, log.At(index).GetCommand().Type)
+	assert.Equal(t, pb.Del, log.At(index).Command.Type)
 }
 
 func TestAppendLowBallotNoEffect(t *testing.T) {
@@ -177,7 +177,7 @@ func TestAppendLowBallotNoEffect(t *testing.T) {
 	)
 	log.Append(util.MakeInstanceWithType(hiBallot, index, pb.Put))
 	log.Append(util.MakeInstanceWithType(loBallot, index, pb.Del))
-	assert.Equal(t, pb.Put, log.At(index).GetCommand().Type)
+	assert.Equal(t, pb.Put, log.At(index).Command.Type)
 }
 
 func TestCommit(t *testing.T) {
