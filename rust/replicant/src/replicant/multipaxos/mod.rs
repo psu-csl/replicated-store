@@ -358,10 +358,8 @@ impl MultiPaxosInner {
                         min_last_executed = commit_response.last_executed;
                     }
                 } else {
-                    if commit_response.ballot > self.ballot() {
-                        self.become_follower(commit_response.ballot);
-                        break;
-                    }
+                    self.become_follower(commit_response.ballot);
+                    break;
                 }
             }
             if num_oks == num_peers {
