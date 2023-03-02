@@ -459,9 +459,6 @@ func (p *Multipaxos) removeChannel(channelId uint64) {
 }
 
 func (p *Multipaxos) Prepare(request tcp.PrepareRequest) tcp.PrepareResponse {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
 	logger.Infof("%v <--prepare-- %v", p.id, request.Sender)
 	response := tcp.PrepareResponse{}
 	if request.Ballot > p.Ballot() {
