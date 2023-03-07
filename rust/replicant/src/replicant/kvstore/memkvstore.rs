@@ -30,7 +30,7 @@ impl KVStore for MemKVStore {
 
 #[cfg(test)]
 mod tests {
-    use crate::replicant::{kvstore::KVStoreError, multipaxos::rpc::Command};
+    use crate::replicant::{kvstore::KVStoreError, multipaxos::msg::Command};
 
     use super::*;
 

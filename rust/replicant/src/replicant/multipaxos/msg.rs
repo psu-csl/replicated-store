@@ -39,7 +39,7 @@ pub struct Command {
     pub value: String,
 }
 
-#[derive(Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Instance {
     pub ballot: i64,
     pub index: i64,
