@@ -86,11 +86,11 @@ impl MultiPaxosInner {
             .parse()
             .unwrap();
 
-        let mut rpc_peers = Vec::new();
+        let mut peers = Vec::new();
         let channels = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
         for (id, port) in config["peers"].as_array().unwrap().iter().enumerate()
         {
-            rpc_peers.push(Peer {
+            peers.push(Peer {
                 id: id as i64,
                 stub: make_stub(port, channels.clone()).await,
             });
@@ -102,7 +102,7 @@ impl MultiPaxosInner {
             commit_received: AtomicBool::new(false),
             commit_interval,
             port,
-            peers: rpc_peers,
+            peers,
             next_channel_id: AtomicU64::new(1),
             channels,
             prepare_task_running: AtomicBool::new(false),
@@ -208,14 +208,14 @@ impl MultiPaxosInner {
         let num_peers = self.peers.len();
         let mut num_oks = 0;
         let mut log = HashMap::new();
-        let mut last_index = 0;
+        let mut max_last_index = 0;
 
         if ballot > self.ballot() {
             num_oks += 1;
             log = self.log.get_log();
-            last_index = self.log.last_index();
+            max_last_index = self.log.last_index();
             if num_oks > num_peers / 2 {
-                return Some((last_index, log));
+                return Some((max_last_index, log));
             }
         } else {
             return None;
@@ -245,7 +245,7 @@ impl MultiPaxosInner {
             if prepare_response.r#type == ResponseType::Ok as i32 {
                 num_oks += 1;
                 for instance in prepare_response.instances {
-                    last_index = cmp::max(last_index, instance.index);
+                    max_last_index = cmp::max(max_last_index, instance.index);
                     insert(&mut log, instance);
                 }
             } else {
@@ -254,7 +254,7 @@ impl MultiPaxosInner {
             }
             if num_oks > num_peers / 2 {
                 self.remove_channel(channel_id, response_recv).await;
-                return Some((last_index, log));
+                return Some((max_last_index, log));
             }
         }
         self.remove_channel(channel_id, response_recv).await;
