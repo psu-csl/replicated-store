@@ -412,7 +412,7 @@ impl MultiPaxosInner {
         &self,
         num_peers: usize
     ) -> (u64, mpsc::Receiver<String>) {
-        let (response_send, response_recv) = mpsc::channel(num_peers);
+        let (response_send, response_recv) = mpsc::channel(num_peers-1);
         let channel_id = self.next_channel_id.fetch_add(1, Ordering::Relaxed);
         let mut channels = self.channels.lock().await;
         channels.insert(channel_id, response_send);
