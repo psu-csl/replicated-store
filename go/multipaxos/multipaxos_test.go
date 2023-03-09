@@ -702,6 +702,8 @@ func handlePeerRequest(multipaxos *Multipaxos,writer *bufio.Writer, line string)
 				var prepareRequest tcp.PrepareRequest
 				json.Unmarshal(msg, &prepareRequest)
 				prepareResponse = multipaxos.Prepare(prepareRequest)
+			} else {
+				time.Sleep(500 * time.Millisecond)
 			}
 			responseJson, _ := json.Marshal(prepareResponse)
 			tcpMessage, _ := json.Marshal(tcp.Message{
@@ -721,6 +723,8 @@ func handlePeerRequest(multipaxos *Multipaxos,writer *bufio.Writer, line string)
 				var acceptRequest tcp.AcceptRequest
 				json.Unmarshal(msg, &acceptRequest)
 				acceptResponse = multipaxos.Accept(acceptRequest)
+			} else {
+				time.Sleep(500 * time.Millisecond)
 			}
 			responseJson, _ := json.Marshal(acceptResponse)
 			tcpMessage, _ := json.Marshal(tcp.Message{
@@ -739,6 +743,8 @@ func handlePeerRequest(multipaxos *Multipaxos,writer *bufio.Writer, line string)
 				var commitRequest tcp.CommitRequest
 				json.Unmarshal(msg, &commitRequest)
 				commitResponse = multipaxos.Commit(commitRequest)
+			} else {
+				time.Sleep(500 * time.Millisecond)
 			}
 			responseJson, _ := json.Marshal(commitResponse)
 			tcpMessage, _ := json.Marshal(tcp.Message{

@@ -2,7 +2,6 @@ package multipaxos
 
 import (
 	pb "github.com/psu-csl/replicated-store/go/multipaxos/network"
-	"sync"
 )
 
 const (
@@ -43,58 +42,4 @@ func IsLeader(ballot int64, id int64) bool {
 
 func IsSomeoneElseLeader(ballot int64, id int64) bool {
 	return !IsLeader(ballot, id) && ExtractLeaderId(ballot) < MaxNumPeers
-}
-
-type PrepareState struct {
-	NumRpcs      int
-	NumOks       int
-	MaxLastIndex int64
-	Log          map[int64]*pb.Instance
-	Mu           sync.Mutex
-	Cv           *sync.Cond
-}
-
-func NewPrepareState() *PrepareState {
-	prepareState := &PrepareState{
-		NumRpcs:      0,
-		NumOks:       0,
-		MaxLastIndex: 0,
-		Log:          make(map[int64]*pb.Instance),
-	}
-	prepareState.Cv = sync.NewCond(&prepareState.Mu)
-	return prepareState
-}
-
-type AcceptState struct {
-	NumRpcs int
-	NumOks  int
-	Mu      sync.Mutex
-	Cv      *sync.Cond
-}
-
-func NewAcceptState() *AcceptState {
-	acceptState := &AcceptState{
-		NumRpcs: 0,
-		NumOks:  0,
-	}
-	acceptState.Cv = sync.NewCond(&acceptState.Mu)
-	return acceptState
-}
-
-type CommitState struct {
-	NumRpcs         int
-	NumOks          int
-	MinLastExecuted int64
-	Mu              sync.Mutex
-	Cv              *sync.Cond
-}
-
-func NewCommitState(minLastExecuted int64) *CommitState {
-	commitState := &CommitState{
-		NumRpcs:         0,
-		NumOks:          0,
-		MinLastExecuted: minLastExecuted,
-	}
-	commitState.Cv = sync.NewCond(&commitState.Mu)
-	return commitState
 }

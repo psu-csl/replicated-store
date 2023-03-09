@@ -61,10 +61,6 @@ func NewMultipaxos(log *Log.Log, config config.Config) *Multipaxos {
 	return &multipaxos
 }
 
-func (p *Multipaxos) Id() int64 {
-	return p.id
-}
-
 func (p *Multipaxos) Ballot() int64 {
 	return atomic.LoadInt64(&p.ballot)
 }
@@ -116,6 +112,264 @@ func (p *Multipaxos) sleepForRandomInterval() {
 
 func (p *Multipaxos) receivedCommit() bool {
 	return atomic.CompareAndSwapInt32(&p.commitReceived, 1, 0)
+}
+
+func (p *Multipaxos) PrepareThread() {
+	for atomic.LoadInt32(&p.prepareThreadRunning) == 1 {
+		p.mu.Lock()
+		for atomic.LoadInt32(&p.prepareThreadRunning) == 1 && IsLeader(p.Ballot(), p.id) {
+			p.cvFollower.Wait()
+		}
+		p.mu.Unlock()
+
+		for atomic.LoadInt32(&p.prepareThreadRunning) == 1 {
+			p.sleepForRandomInterval()
+			if p.receivedCommit() {
+				continue
+			}
+			nextBallot := p.NextBallot()
+			maxLastIndex, log := p.RunPreparePhase(nextBallot)
+			if log != nil {
+				p.BecomeLeader(nextBallot, maxLastIndex)
+				p.Replay(nextBallot, log)
+				break
+			}
+		}
+	}
+}
+
+func (p *Multipaxos) CommitThread() {
+	for atomic.LoadInt32(&p.commitThreadRunning) == 1 {
+		p.mu.Lock()
+		for atomic.LoadInt32(&p.commitThreadRunning) == 1 && !IsLeader(p.Ballot(), p.id) {
+			p.cvLeader.Wait()
+		}
+		p.mu.Unlock()
+
+		gle := p.log.GlobalLastExecuted()
+		for atomic.LoadInt32(&p.commitThreadRunning) == 1 {
+			ballot := p.Ballot()
+			if !IsLeader(ballot, p.id) {
+				break
+			}
+			gle = p.RunCommitPhase(ballot, gle)
+			p.sleepForCommitInterval()
+		}
+	}
+}
+
+func (p *Multipaxos) RunPreparePhase(ballot int64) (int64,
+	map[int64]*tcp.Instance) {
+	numPeers := len(p.peers)
+	numOks := 0
+	log := make(map[int64]*tcp.Instance)
+	maxLastIndex := int64(0)
+
+	if ballot > p.Ballot() {
+		numOks += 1
+		log = p.log.GetLog()
+		maxLastIndex = p.log.LastIndex()
+		if numOks > numPeers/2 {
+			return maxLastIndex, log
+		}
+	} else {
+		return -1, nil
+	}
+
+	request, _ := json.Marshal(tcp.PrepareRequest{
+		Sender: p.id,
+		Ballot: ballot,
+	})
+	channelId, responseChan := p.addChannel(numPeers)
+	for _, peer := range p.peers {
+		if peer.Id != p.id {
+			go func(peer *Peer) {
+				peer.Stub.SendAwaitResponse(tcp.PREPAREREQUEST,
+					channelId, string(request))
+				logger.Infof("%v sent prepare request to %v", p.id, peer.Id)
+			}(peer)
+		}
+	}
+
+	for {
+		response := <-responseChan
+		var prepareResponse tcp.PrepareResponse
+		json.Unmarshal([]byte(response), &prepareResponse)
+
+		if prepareResponse.Type == tcp.Ok {
+			numOks += 1
+			for _, instance := range prepareResponse.Logs {
+				if instance.Index > maxLastIndex {
+					maxLastIndex = instance.Index
+				}
+				Log.Insert(log, instance)
+			}
+		} else {
+			p.BecomeFollower(prepareResponse.Ballot)
+			break
+		}
+		if numOks > numPeers/2 {
+			p.removeChannel(channelId)
+			return maxLastIndex, log
+		}
+	}
+	p.removeChannel(channelId)
+	return -1, nil
+}
+
+func (p *Multipaxos) RunAcceptPhase(ballot int64, index int64,
+	command *tcp.Command, clientId int64) Result {
+
+	numPeers := len(p.peers)
+	numOks := 0
+
+	if ballot == p.Ballot() {
+		numOks += 1
+		instance := tcp.Instance{
+			Ballot:   ballot,
+			Index:    index,
+			ClientId: clientId,
+			State:    tcp.Inprogress,
+			Command:  command,
+		}
+		p.log.Append(&instance)
+		if numOks > numPeers/2 {
+			p.log.Commit(index)
+			return Result{Type: Ok, Leader: -1}
+		}
+	} else {
+		currentLeaderId := ExtractLeaderId(p.Ballot())
+		return Result{SomeElseLeader, currentLeaderId}
+	}
+
+	instance := tcp.Instance{
+		Ballot:   ballot,
+		Index:    index,
+		ClientId: clientId,
+		State:    tcp.Inprogress,
+		Command:  command,
+	}
+	request, _ := json.Marshal(tcp.AcceptRequest{
+		Sender:   p.id,
+		Instance: &instance,
+	})
+	channelId, responseChan := p.addChannel(numPeers)
+	for _, peer := range p.peers {
+		if peer.Id != p.id {
+			go func(peer *Peer) {
+				peer.Stub.SendAwaitResponse(tcp.ACCEPTREQUEST,
+					channelId, string(request))
+				logger.Infof("%v sent accept request to %v", p.id, peer.Id)
+			}(peer)
+		}
+	}
+
+	for {
+		response := <-responseChan
+		var acceptResponse tcp.AcceptResponse
+		json.Unmarshal([]byte(response), &acceptResponse)
+
+		if acceptResponse.Type == tcp.Ok {
+			numOks += 1
+		} else {
+			p.BecomeFollower(acceptResponse.Ballot)
+			break
+		}
+		if numOks > numPeers/2 {
+			p.log.Commit(index)
+			p.removeChannel(channelId)
+			return Result{Type: Ok, Leader: -1}
+		}
+	}
+	if !IsLeader(p.Ballot(), p.id) {
+		p.removeChannel(channelId)
+		return Result{Type: SomeElseLeader, Leader: ExtractLeaderId(p.Ballot())}
+	}
+	p.removeChannel(channelId)
+	return Result{Type: Retry, Leader: -1}
+}
+
+func (p *Multipaxos) RunCommitPhase(ballot int64, globalLastExecuted int64) int64 {
+	numPeers := len(p.peers)
+	numOks := 0
+	minLastExecuted := p.log.LastExecuted()
+
+	numOks++
+	p.log.TrimUntil(globalLastExecuted)
+	if numOks == numPeers {
+		return minLastExecuted
+	}
+
+	request, _ := json.Marshal(tcp.CommitRequest{
+		Ballot:             ballot,
+		LastExecuted:       minLastExecuted,
+		GlobalLastExecuted: globalLastExecuted,
+		Sender:             p.id,
+	})
+	channelId, responseChan := p.addChannel(numPeers)
+	for _, peer := range p.peers {
+		if peer.Id != p.id {
+			go func(peer *Peer) {
+				peer.Stub.SendAwaitResponse(tcp.COMMITREQUEST,
+					channelId, string(request))
+				logger.Infof("%v sent commit request to %v", p.id, peer.Id)
+			}(peer)
+		}
+	}
+
+	for {
+		response := <-responseChan
+		var commitResponse tcp.CommitResponse
+		json.Unmarshal([]byte(response), &commitResponse)
+		if commitResponse.Type == tcp.Ok {
+			numOks += 1
+			if commitResponse.LastExecuted < minLastExecuted {
+				minLastExecuted = commitResponse.LastExecuted
+			}
+		} else {
+			p.BecomeFollower(commitResponse.Ballot)
+			break
+		}
+		if numOks == numPeers {
+			p.removeChannel(channelId)
+			return minLastExecuted
+		}
+	}
+	p.removeChannel(channelId)
+	return globalLastExecuted
+}
+
+func (p *Multipaxos) Replay(ballot int64, log map[int64]*tcp.Instance) {
+	for _, instance := range log {
+		var r Result
+		for {
+			r = p.RunAcceptPhase(ballot, instance.Index, instance.Command,
+				instance.ClientId)
+			if r.Type != Retry {
+				break
+			}
+		}
+		if r.Type == SomeElseLeader {
+			return
+		}
+	}
+}
+
+func (p *Multipaxos) addChannel(numPeers int) (uint64, chan string) {
+	responseChan := make(chan string, numPeers-1)
+	channelId := atomic.AddUint64(&p.nextChannelId, 1)
+	p.channels.Lock()
+	p.channels.Channels[channelId] = responseChan
+	p.channels.Unlock()
+	return channelId, responseChan
+}
+
+func (p *Multipaxos) removeChannel(channelId uint64) {
+	p.channels.Lock()
+	channel := p.channels.Channels[channelId]
+	delete(p.channels.Channels, channelId)
+	close(channel)
+	p.channels.Unlock()
 }
 
 func (p *Multipaxos) Start() {
@@ -180,299 +434,22 @@ func (p *Multipaxos) Replicate(command *tcp.Command, clientId int64) Result {
 	return Result{Type: Retry, Leader: -1}
 }
 
-func (p *Multipaxos) PrepareThread() {
-	for atomic.LoadInt32(&p.prepareThreadRunning) == 1 {
-		p.mu.Lock()
-		for atomic.LoadInt32(&p.prepareThreadRunning) == 1 && IsLeader(p.Ballot(), p.id) {
-			p.cvFollower.Wait()
-		}
-		p.mu.Unlock()
-
-		for atomic.LoadInt32(&p.prepareThreadRunning) == 1 {
-			p.sleepForRandomInterval()
-			if p.receivedCommit() {
-				continue
-			}
-			nextBallot := p.NextBallot()
-			maxLastIndex, log := p.RunPreparePhase(nextBallot)
-			if log != nil {
-				p.BecomeLeader(nextBallot, maxLastIndex)
-				p.Replay(nextBallot, log)
-				break
-			}
-		}
-	}
-}
-
-func (p *Multipaxos) CommitThread() {
-	for atomic.LoadInt32(&p.commitThreadRunning) == 1 {
-		p.mu.Lock()
-		for atomic.LoadInt32(&p.commitThreadRunning) == 1 && !IsLeader(p.Ballot(), p.id) {
-			p.cvLeader.Wait()
-		}
-		p.mu.Unlock()
-
-		gle := p.log.GlobalLastExecuted()
-		for atomic.LoadInt32(&p.commitThreadRunning) == 1 {
-			ballot := p.Ballot()
-			if !IsLeader(ballot, p.id) {
-				break
-			}
-			gle = p.RunCommitPhase(ballot, gle)
-			p.sleepForCommitInterval()
-		}
-	}
-}
-
-func (p *Multipaxos) RunPreparePhase(ballot int64) (int64,
-	map[int64]*tcp.Instance) {
-	state := NewPrepareState()
-
-	if ballot > p.Ballot() {
-		state.NumRpcs++
-		state.NumOks++
-		state.Log = p.log.GetLog()
-		state.MaxLastIndex = p.log.LastIndex()
-	} else {
-		return -1, nil
-	}
-
-	prepareRequest := tcp.PrepareRequest{
-		Sender: p.id,
-		Ballot: ballot,
-	}
-	request, _ := json.Marshal(prepareRequest)
-	cid, responseChan := p.addChannel(len(p.peers))
-	for _, peer := range p.peers {
-		if peer.Id == p.id {
-			continue
-		}
-		go func(peer *Peer) {
-			peer.Stub.SendAwaitResponse(tcp.PREPAREREQUEST, cid, string(request))
-			logger.Infof("%v sent prepare request to %v", p.id, peer.Id)
-
-			response := <-responseChan
-			var prepareResponse tcp.PrepareResponse
-			json.Unmarshal([]byte(response), &prepareResponse)
-
-			state.Mu.Lock()
-			defer state.Mu.Unlock()
-
-			state.NumRpcs += 1
-			if prepareResponse.Type == tcp.Ok {
-				state.NumOks += 1
-				for i := 0; i < len(prepareResponse.Logs); i++ {
-					instance := prepareResponse.Logs[i]
-					if instance.Index > state.MaxLastIndex {
-						state.MaxLastIndex = instance.Index
-					}
-					Log.Insert(state.Log, instance)
-				}
-			} else {
-				p.BecomeFollower(prepareResponse.Ballot)
-			}
-			state.Cv.Signal()
-		}(peer)
-	}
-
-	state.Mu.Lock()
-	defer state.Mu.Unlock()
-	for state.NumOks <= len(p.peers)/2 && state.NumRpcs != len(p.peers) {
-		state.Cv.Wait()
-	}
-
-	if state.NumOks > len(p.peers)/2 {
-		p.removeChannel(cid)
-		return state.MaxLastIndex, state.Log
-	}
-	p.removeChannel(cid)
-	return -1, nil
-}
-
-func (p *Multipaxos) RunAcceptPhase(ballot int64, index int64,
-	command *tcp.Command, clientId int64) Result {
-	state := NewAcceptState()
-
-	instance := tcp.Instance{
-		Ballot:   ballot,
-		Index:    index,
-		ClientId: clientId,
-		State:    tcp.Inprogress,
-		Command:  command,
-	}
-
-	if ballot == p.Ballot() {
-		instance := tcp.Instance{
-			Ballot:   ballot,
-			Index:    index,
-			ClientId: clientId,
-			State:    tcp.Inprogress,
-			Command:  command,
-		}
-		state.NumRpcs++
-		state.NumOks++
-		p.log.Append(&instance)
-	} else {
-		return Result{SomeElseLeader, ExtractLeaderId(p.Ballot())}
-	}
-
-	acceptRequest := tcp.AcceptRequest{
-		Sender:   p.id,
-		Instance: &instance,
-	}
-	request, _ := json.Marshal(acceptRequest)
-	cid, responseChan := p.addChannel(len(p.peers))
-
-	for _, peer := range p.peers {
-		if peer.Id == p.id {
-			continue
-		}
-		go func(peer *Peer) {
-			peer.Stub.SendAwaitResponse(tcp.ACCEPTREQUEST, cid, string(request))
-			logger.Infof("%v sent accept request to %v", p.id, peer.Id)
-
-			response := <-responseChan
-			var acceptResponse tcp.AcceptResponse
-			json.Unmarshal([]byte(response), &acceptResponse)
-
-			state.Mu.Lock()
-			defer state.Mu.Unlock()
-
-			state.NumRpcs += 1
-			if acceptResponse.Type == tcp.Ok {
-				state.NumOks += 1
-			} else {
-				p.BecomeFollower(acceptResponse.Ballot)
-			}
-			state.Cv.Signal()
-		}(peer)
-	}
-
-	state.Mu.Lock()
-	defer state.Mu.Unlock()
-	for IsLeader(p.Ballot(), p.id) && state.NumOks <= len(p.peers)/2 &&
-		state.NumRpcs != len(p.peers) {
-		state.Cv.Wait()
-	}
-
-	if state.NumOks > len(p.peers)/2 {
-		p.log.Commit(index)
-		p.removeChannel(cid)
-		return Result{Type: Ok, Leader: -1}
-	}
-
-	if !IsLeader(p.Ballot(), p.id) {
-		p.removeChannel(cid)
-		return Result{Type: SomeElseLeader, Leader: ExtractLeaderId(p.Ballot())}
-	}
-	p.removeChannel(cid)
-	return Result{Type: Retry, Leader: -1}
-}
-
-func (p *Multipaxos) RunCommitPhase(ballot int64, globalLastExecuted int64) int64 {
-	state := NewCommitState(p.log.LastExecuted())
-
-	state.NumRpcs++
-	state.NumOks++
-	state.MinLastExecuted = p.log.LastExecuted()
-	p.log.TrimUntil(globalLastExecuted)
-
-	commitRequest := tcp.CommitRequest{
-		Ballot:             ballot,
-		Sender:             p.id,
-		LastExecuted:       state.MinLastExecuted,
-		GlobalLastExecuted: globalLastExecuted,
-	}
-	request, _ := json.Marshal(commitRequest)
-	cid, responseChan := p.addChannel(len(p.peers))
-
-	for _, peer := range p.peers {
-		if peer.Id == p.id {
-			continue
-		}
-		go func(peer *Peer) {
-			peer.Stub.SendAwaitResponse(tcp.COMMITREQUEST, cid, string(request))
-			logger.Infof("%v sent commit request to %v", p.id, peer.Id)
-
-			response := <-responseChan
-			var commitResponse tcp.CommitResponse
-			json.Unmarshal([]byte(response), &commitResponse)
-
-			state.Mu.Lock()
-			defer state.Mu.Unlock()
-
-			state.NumRpcs += 1
-			if commitResponse.Type == tcp.Ok {
-				state.NumOks += 1
-				if commitResponse.LastExecuted < state.MinLastExecuted {
-					state.MinLastExecuted = commitResponse.LastExecuted
-				}
-			} else {
-				p.BecomeFollower(commitResponse.Ballot)
-			}
-			state.Cv.Signal()
-		}(peer)
-	}
-
-	state.Mu.Lock()
-	defer state.Mu.Unlock()
-	for IsLeader(p.Ballot(), p.id) && state.NumRpcs != len(p.peers) {
-		state.Cv.Wait()
-	}
-	if state.NumOks == len(p.peers) {
-		p.removeChannel(cid)
-		return state.MinLastExecuted
-	}
-	p.removeChannel(cid)
-	return globalLastExecuted
-}
-
-func (p *Multipaxos) Replay(ballot int64, log map[int64]*tcp.Instance) {
-	for index, instance := range log {
-		r := p.RunAcceptPhase(ballot, index, instance.Command,
-			instance.ClientId)
-		for r.Type == Retry {
-			r = p.RunAcceptPhase(ballot, index, instance.Command,
-				instance.ClientId)
-		}
-		if r.Type == SomeElseLeader {
-			return
-		}
-	}
-}
-
-func (p *Multipaxos) addChannel(numPeers int) (uint64, chan string) {
-	responseChan := make(chan string, numPeers-1)
-	channelId := atomic.AddUint64(&p.nextChannelId, 1)
-	p.channels.Lock()
-	p.channels.Channels[channelId] = responseChan
-	p.channels.Unlock()
-	return channelId, responseChan
-}
-
-func (p *Multipaxos) removeChannel(channelId uint64) {
-	p.channels.Lock()
-	channel := p.channels.Channels[channelId]
-	close(channel)
-	delete(p.channels.Channels, channelId)
-	p.channels.Unlock()
-}
-
 func (p *Multipaxos) Prepare(request tcp.PrepareRequest) tcp.PrepareResponse {
 	logger.Infof("%v <--prepare-- %v", p.id, request.Sender)
-	response := tcp.PrepareResponse{}
+
 	if request.Ballot > p.Ballot() {
 		p.BecomeFollower(request.Ballot)
-		response.Logs = make([]*tcp.Instance, 0, len(p.log.Instances()))
-		for _, i := range p.log.Instances() {
-			response.Logs = append(response.Logs, i)
+		return tcp.PrepareResponse{
+			Type:   tcp.Ok,
+			Ballot: p.Ballot(),
+			Logs:   p.log.Instances(),
 		}
-		response.Type = tcp.Ok
-	} else {
-		response.Ballot = p.Ballot()
-		response.Type = tcp.Reject
 	}
-	return response
+	return tcp.PrepareResponse{
+		Type:   tcp.Reject,
+		Ballot: p.Ballot(),
+		Logs:   nil,
+	}
 }
 
 func (p *Multipaxos) Accept(request tcp.AcceptRequest) tcp.AcceptResponse {
@@ -494,19 +471,27 @@ func (p *Multipaxos) Accept(request tcp.AcceptRequest) tcp.AcceptResponse {
 
 func (p *Multipaxos) Commit(request tcp.CommitRequest) tcp.CommitResponse {
 	logger.Infof("%v <--commit-- %v", p.id, request.Sender)
-	response := tcp.CommitResponse{}
+
 	if request.Ballot >= p.Ballot() {
 		atomic.StoreInt32(&p.commitReceived, 1)
 		p.log.CommitUntil(request.LastExecuted, request.Ballot)
 		p.log.TrimUntil(request.GlobalLastExecuted)
-		response.LastExecuted = p.log.LastExecuted()
-		response.Type = tcp.Ok
 		if request.Ballot > p.Ballot() {
 			p.BecomeFollower(request.Ballot)
 		}
-	} else {
-		response.Ballot = p.Ballot()
-		response.Type = tcp.Reject
+		return tcp.CommitResponse{
+			Type:         tcp.Ok,
+			Ballot:       p.Ballot(),
+			LastExecuted: p.log.LastExecuted(),
+		}
 	}
-	return response
+	return tcp.CommitResponse{
+		Type:         tcp.Reject,
+		Ballot:       p.Ballot(),
+		LastExecuted: 0,
+	}
+}
+
+func (p *Multipaxos) Id() int64 {
+	return p.id
 }
