@@ -442,7 +442,7 @@ func (p *Multipaxos) Replay(ballot int64, log map[int64]*tcp.Instance) {
 }
 
 func (p *Multipaxos) addChannel(numPeers int) (uint64, chan string) {
-	responseChan := make(chan string, numPeers)
+	responseChan := make(chan string, numPeers-1)
 	channelId := atomic.AddUint64(&p.nextChannelId, 1)
 	p.channels.Lock()
 	p.channels.Channels[channelId] = responseChan
