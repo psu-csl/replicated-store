@@ -45,6 +45,7 @@ async fn handle_incoming_responses(
         if let Some(response_send) = response_send {
             response_send.send(request.msg).await;
         }
+        drop(channels);
         line.clear();
     }
     let mut channels = channels.lock().await;
