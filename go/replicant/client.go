@@ -10,32 +10,7 @@ import (
 	"sync"
 )
 
-type Client struct {
-	id           int64
-	reader       *bufio.Reader
-	writer       *bufio.Writer
-	socket       net.Conn
-	multipaxos   *multipaxos.Multipaxos
-	manager      *ClientManager
-	isFromClient bool
-	mu           sync.Mutex
-}
-
-func NewClient(id int64, conn net.Conn, mp *multipaxos.Multipaxos,
-	manger *ClientManager, isFromClient bool) *Client {
-	client := &Client{
-		id:           id,
-		reader:       bufio.NewReader(conn),
-		writer:       bufio.NewWriter(conn),
-		socket:       conn,
-		multipaxos:   mp,
-		manager:      manger,
-		isFromClient: isFromClient,
-	}
-	return client
-}
-
-func (c *Client) Parse(request string) *pb.Command {
+func parse(request string) *pb.Command {
 	substrings := strings.SplitN(strings.TrimRight(request, "\n"), " ", 3)
 	if len(substrings) < 2 {
 		return nil
@@ -61,15 +36,40 @@ func (c *Client) Parse(request string) *pb.Command {
 	return command
 }
 
+type Client struct {
+	id           int64
+	reader       *bufio.Reader
+	writer       *bufio.Writer
+	socket       net.Conn
+	multipaxos   *multipaxos.Multipaxos
+	manager      *ClientManager
+	isFromClient bool
+	writerLock   sync.Mutex
+}
+
+func NewClient(id int64, conn net.Conn, mp *multipaxos.Multipaxos,
+	manger *ClientManager, isFromClient bool) *Client {
+	client := &Client{
+		id:           id,
+		reader:       bufio.NewReader(conn),
+		writer:       bufio.NewWriter(conn),
+		socket:       conn,
+		multipaxos:   mp,
+		manager:      manger,
+		isFromClient: isFromClient,
+	}
+	return client
+}
+
 func (c *Client) Start() {
 	for {
 		request, err := c.reader.ReadString('\n')
 		if err != nil {
-			c.manager.Stop(c.id)
-			return
+			break
 		}
 		c.handleRequest(request)
 	}
+	c.manager.Stop(c.id)
 }
 
 func (c *Client) Stop() {
@@ -85,7 +85,7 @@ func (c *Client) handleRequest(request string) {
 }
 
 func (c *Client) handleClientRequest(line string) {
-	command := c.Parse(line)
+	command := parse(line)
 	if command != nil {
 		result := c.multipaxos.Replicate(command, c.id)
 		if result.Type == multipaxos.Ok {
@@ -152,8 +152,8 @@ func (c *Client) handlePeerRequest(line string) {
 }
 
 func (c *Client) Write(response string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.writerLock.Lock()
+	defer c.writerLock.Unlock()
 	_, err := c.writer.WriteString(response + "\n")
 	if err == nil {
 		c.writer.Flush()
