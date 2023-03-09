@@ -265,7 +265,6 @@ impl MultiPaxosInner {
         let num_peers = self.rpc_peers.len();
         let mut responses = JoinSet::new();
         let mut num_oks = 0;
-        let mut current_leader = self.id;
 
         if ballot == self.ballot() {
             num_oks += 1;
@@ -303,7 +302,6 @@ impl MultiPaxosInner {
                     num_oks += 1;
                 } else {
                     self.become_follower(accept_response.ballot);
-                    current_leader = extract_leader(self.ballot());
                     break;
                 }
             }
@@ -313,8 +311,8 @@ impl MultiPaxosInner {
                 return ResultType::Ok;
             }
         }
-        if current_leader != self.id {
-            return ResultType::SomeoneElseLeader(current_leader);
+        if !is_leader(self.ballot(), self.id) {
+            return ResultType::SomeoneElseLeader(extract_leader(self.ballot()));
         }
         ResultType::Retry
     }
