@@ -270,7 +270,6 @@ impl MultiPaxosInner {
     ) -> ResultType {
         let num_peers = self.peers.len();
         let mut num_oks = 0;
-        let mut current_leader = self.id;
 
         if ballot == self.ballot() {
             num_oks += 1;
@@ -314,7 +313,6 @@ impl MultiPaxosInner {
                 num_oks += 1;
             } else {
                 self.become_follower(accept_response.ballot);
-                current_leader = extract_leader(self.ballot());
                 break;
             }
             if num_oks > num_peers / 2 {
@@ -323,9 +321,9 @@ impl MultiPaxosInner {
                 return ResultType::Ok;
             }
         }
-        if current_leader != self.id {
+        if !is_leader(self.ballot(), self.id) {
             self.remove_channel(channel_id, response_recv).await;
-            return ResultType::SomeoneElseLeader(current_leader);
+            return ResultType::SomeoneElseLeader(extract_leader(self.ballot()));
         }
         self.remove_channel(channel_id, response_recv).await;
         ResultType::Retry
