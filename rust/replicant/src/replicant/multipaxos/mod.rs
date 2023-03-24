@@ -12,6 +12,7 @@ use serde_json::Value as json;
 use tokio::sync::{mpsc, Notify};
 use tokio::task::JoinHandle;
 use tokio::time::{Duration, sleep};
+use tokio_metrics::TaskMonitor;
 
 use crate::replicant::kvstore::memkvstore::MemKVStore;
 use crate::replicant::log::{insert, Log};
@@ -67,6 +68,7 @@ struct MultiPaxosInner {
     became_follower: Notify,
     prepare_task_running: AtomicBool,
     commit_task_running: AtomicBool,
+    monitor: TaskMonitor,
 }
 
 async fn make_stub(
@@ -77,7 +79,7 @@ async fn make_stub(
 }
 
 impl MultiPaxosInner {
-    async fn new(log: Arc<Log>, config: &json) -> Self {
+    async fn new(log: Arc<Log>, config: &json, monitor: TaskMonitor) -> Self {
         let commit_interval = config["commit_interval"].as_u64().unwrap();
         let id = config["id"].as_i64().unwrap();
         let port = config["peers"][id as usize]
@@ -95,6 +97,16 @@ impl MultiPaxosInner {
                 stub: make_stub(port, channels.clone()).await,
             });
         }
+        let monitor = TaskMonitor::new();
+        {
+            let monitor = monitor.clone();
+            tokio::spawn(async move {
+                for interval in monitor.intervals() {
+                    println!("{:?}", interval);
+                    tokio::time::sleep(Duration::from_millis(1000)).await;
+                }
+            });
+        }
         Self {
             ballot: AtomicI64::new(MAX_NUM_PEERS),
             log,
@@ -109,6 +121,7 @@ impl MultiPaxosInner {
             commit_task_running: AtomicBool::new(false),
             became_leader: Notify::new(),
             became_follower: Notify::new(),
+            monitor,
         }
     }
 
@@ -230,10 +243,10 @@ impl MultiPaxosInner {
             if peer.id != self.id {
                 let request = request.clone();
                 let stub = peer.stub.clone();
-                tokio::spawn(async move {
+                self.monitor.instrument(tokio::spawn(async move {
                     stub.send_await_response(
                         MessageType::PrepareRequest, channel_id, &request).await;
-                });
+                }));
                 info!("{} sent prepare request to {}", self.id, peer.id);
             }
         });
@@ -297,10 +310,10 @@ impl MultiPaxosInner {
             if peer.id != self.id {
                 let request = request.clone();
                 let stub = peer.stub.clone();
-                tokio::spawn(async move {
+                self.monitor.instrument(tokio::spawn(async move {
                     stub.send_await_response(
                         MessageType::AcceptRequest, channel_id, &request).await;
-                });
+                }));
                 info!("{} sent accept request to {}", self.id, peer.id);
             }
         });
@@ -355,10 +368,10 @@ impl MultiPaxosInner {
             if peer.id != self.id {
                 let request = request.clone();
                 let stub = peer.stub.clone();
-                tokio::spawn(async move {
+                self.monitor.instrument(tokio::spawn(async move {
                     stub.send_await_response(
                         MessageType::CommitRequest, channel_id, &request).await;
-                });
+                }));
                 info!("{} sent commit request to {}", self.id, peer.id);
             }
         });
@@ -440,10 +453,10 @@ pub struct MultiPaxosHandle {
 }
 
 impl MultiPaxos {
-    pub async fn new(log: Arc<Log>, config: &json) -> Self {
+    pub async fn new(log: Arc<Log>, config: &json, monitor: TaskMonitor) -> Self {
         Self {
             inner: Arc::new(
-                MultiPaxosInner::new(log, config).await),
+                MultiPaxosInner::new(log, config, monitor).await),
         }
     }
 

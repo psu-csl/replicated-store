@@ -11,6 +11,7 @@ use ::log::info;
 use serde_json::Value as json;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::sync::oneshot::{self, Receiver, Sender};
 use tokio::task::JoinHandle;
@@ -33,12 +34,14 @@ impl ReplicantInner {
         let ip_port = peers[id as usize].as_str().unwrap().to_string();
         let log = Arc::new(Log::new(create_store(config)));
         let peer_listener = TcpListener::bind(ip_port.clone()).await.unwrap();
-        let multi_paxos = Arc::new(MultiPaxos::new(log.clone(), config).await);
+        let monitor = tokio_metrics::TaskMonitor::new();
+        let monitor_clone = monitor.clone();
+        let multi_paxos = Arc::new(MultiPaxos::new(log.clone(), config, monitor_clone).await);
         let num_peers = peers.len() as i64;
         let client_manager =
-            ClientManager::new(id, num_peers, multi_paxos.clone(), true);
+            ClientManager::new(id, num_peers, multi_paxos.clone(), true, monitor.clone());
         let peer_manager =
-            ClientManager::new(id, num_peers, multi_paxos.clone(), false);
+            ClientManager::new(id, num_peers, multi_paxos.clone(), false, monitor.clone());
 
         Self {
             id,

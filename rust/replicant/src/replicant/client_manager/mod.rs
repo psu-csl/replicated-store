@@ -10,6 +10,7 @@ use log::info;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpStream;
+use tokio_metrics::TaskMonitor;
 use crate::replicant::multipaxos::msg::{MessageType, PrepareRequest};
 use crate::replicant::multipaxos::tcp::Message;
 
@@ -42,10 +43,11 @@ impl Client {
         multi_paxos: Arc<MultiPaxos>,
         manager: Arc<ClientManagerInner>,
         is_from_client: bool,
+        monitor: TaskMonitor,
     ) -> Self {
         Self {
             read_half: BufReader::new(read_half),
-            client: Arc::new(ClientInner::new(id, multi_paxos, manager, is_from_client)),
+            client: Arc::new(ClientInner::new(id, multi_paxos, manager, is_from_client, monitor)),
         }
     }
 
@@ -69,6 +71,7 @@ struct ClientInner {
     multi_paxos: Arc<MultiPaxos>,
     manager: Arc<ClientManagerInner>,
     is_from_client: bool,
+    monitor: TaskMonitor,
 }
 
 impl ClientInner {
@@ -77,12 +80,14 @@ impl ClientInner {
         multi_paxos: Arc<MultiPaxos>,
         manager: Arc<ClientManagerInner>,
         is_from_client: bool,
+        monitor: TaskMonitor,
     ) -> Self {
         Self {
             id,
             multi_paxos,
             manager,
             is_from_client,
+            monitor,
         }
     }
 
@@ -118,7 +123,7 @@ impl ClientInner {
         let cid = self.id;
         let client_manager = self.manager.clone();
         let multi_paxos = self.multi_paxos.clone();
-        tokio::spawn(async move {
+        self.monitor.instrument(tokio::spawn(async move {
             match request.r#type {
                 t if t == MessageType::PrepareRequest as u8 => {
                     let prepare_request: PrepareRequest =
@@ -164,7 +169,7 @@ impl ClientInner {
                 },
                 _ => {}
             };
-        });
+        }));
     }
 }
 
@@ -225,6 +230,7 @@ pub struct ClientManager {
     client_manager: Arc<ClientManagerInner>,
     multi_paxos: Arc<MultiPaxos>,
     is_from_client: bool,
+    monitor: TaskMonitor,
 }
 
 impl ClientManager {
@@ -232,12 +238,14 @@ impl ClientManager {
         id: i64,
         num_peers: i64,
         multi_paxos: Arc<MultiPaxos>,
-        is_from_client: bool
+        is_from_client: bool,
+        monitor: TaskMonitor
     ) -> Self {
         Self {
             client_manager: Arc::new(ClientManagerInner::new(id, num_peers)),
             multi_paxos,
             is_from_client,
+            monitor,
         }
     }
 
@@ -245,12 +253,14 @@ impl ClientManager {
         let (read_half, write_half) = stream.into_split();
         let id = self.client_manager.next_client_id();
 
+        let monitor = self.monitor.clone();
         let mut client = Client::new(
             id,
             read_half,
             self.multi_paxos.clone(),
             self.client_manager.clone(),
             self.is_from_client,
+            monitor,
         );
 
         let write_half = Arc::new(tokio::sync::Mutex::new(write_half));
@@ -260,9 +270,9 @@ impl ClientManager {
         drop(clients);
         assert!(prev.is_none());
 
-        tokio::spawn(async move {
+        self.monitor.instrument(tokio::spawn(async move {
             client.start().await;
-        });
+        }));
         info!("client_manager started client {}", id);
     }
 
