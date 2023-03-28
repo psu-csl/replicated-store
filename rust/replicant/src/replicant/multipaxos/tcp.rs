@@ -6,6 +6,7 @@ use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::{Sender, UnboundedReceiver, UnboundedSender};
+use tokio_metrics::TaskMonitor;
 use crate::replicant::multipaxos::msg::MessageType;
 
 #[derive(Serialize, Deserialize)]
@@ -59,7 +60,8 @@ pub struct TcpLink {
 impl TcpLink {
     pub async fn new(
         addr: &str,
-        channels: Arc<tokio::sync::Mutex<HashMap<u64, Sender<String>>>>
+        channels: Arc<tokio::sync::Mutex<HashMap<u64, Sender<String>>>>,
+        monitor: TaskMonitor,
     ) -> Self {
         let stream;
         loop {
@@ -69,13 +71,13 @@ impl TcpLink {
             }
         }
         let (read_half, write_half) = stream.into_split();
-        tokio::spawn(async move {
+        tokio::spawn(monitor.instrument(async move {
             handle_incoming_responses(read_half, channels).await;
-        });
+        }));
         let (request_sender, request_recv) = mpsc::unbounded_channel();
-        tokio::spawn(async move {
+        tokio::spawn(monitor.instrument(async move {
             handle_outgoing_requests(write_half, request_recv).await;
-        });
+        }));
         Self {
             request_sender,
         }

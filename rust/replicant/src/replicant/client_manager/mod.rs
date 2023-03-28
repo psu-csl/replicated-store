@@ -123,7 +123,7 @@ impl ClientInner {
         let cid = self.id;
         let client_manager = self.manager.clone();
         let multi_paxos = self.multi_paxos.clone();
-        self.monitor.instrument(tokio::spawn(async move {
+        tokio::spawn(self.monitor.instrument(async move {
             match request.r#type {
                 t if t == MessageType::PrepareRequest as u8 => {
                     let prepare_request: PrepareRequest =
@@ -270,7 +270,7 @@ impl ClientManager {
         drop(clients);
         assert!(prev.is_none());
 
-        self.monitor.instrument(tokio::spawn(async move {
+        tokio::spawn(self.monitor.instrument(async move {
             client.start().await;
         }));
         info!("client_manager started client {}", id);

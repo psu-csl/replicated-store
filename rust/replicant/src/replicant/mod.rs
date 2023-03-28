@@ -15,6 +15,7 @@ use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::sync::oneshot::{self, Receiver, Sender};
 use tokio::task::JoinHandle;
+use tokio_metrics::TaskMonitor;
 use crate::replicant::kvstore::create_store;
 
 struct ReplicantInner {
@@ -28,15 +29,13 @@ struct ReplicantInner {
 }
 
 impl ReplicantInner {
-    async fn new(config: &json) -> Self {
+    async fn new(config: &json, monitor: TaskMonitor) -> Self {
         let id = config["id"].as_i64().unwrap();
         let peers = config["peers"].as_array().unwrap();
         let ip_port = peers[id as usize].as_str().unwrap().to_string();
         let log = Arc::new(Log::new(create_store(config)));
         let peer_listener = TcpListener::bind(ip_port.clone()).await.unwrap();
-        let monitor = tokio_metrics::TaskMonitor::new();
-        let monitor_clone = monitor.clone();
-        let multi_paxos = Arc::new(MultiPaxos::new(log.clone(), config, monitor_clone).await);
+        let multi_paxos = Arc::new(MultiPaxos::new(log.clone(), config, monitor.clone()).await);
         let num_peers = peers.len() as i64;
         let client_manager =
             ClientManager::new(id, num_peers, multi_paxos.clone(), true, monitor.clone());
@@ -97,6 +96,7 @@ impl ReplicantInner {
 
 pub struct Replicant {
     replicant: Arc<ReplicantInner>,
+    monitor: TaskMonitor,
 }
 
 pub struct ReplicantHandle {
@@ -108,8 +108,19 @@ pub struct ReplicantHandle {
 
 impl Replicant {
     pub async fn new(config: &json) -> Self {
+        let monitor = tokio_metrics::TaskMonitor::new();
+        {
+            let monitor = monitor.clone();
+            tokio::spawn(async move {
+                for interval in monitor.intervals() {
+                    println!("{:?}", interval);
+                    tokio::time::sleep(Duration::from_millis(3000)).await;
+                }
+            });
+        }
         Self {
-            replicant: Arc::new(ReplicantInner::new(config).await),
+            replicant: Arc::new(ReplicantInner::new(config, monitor.clone()).await),
+            monitor
         }
     }
 
@@ -136,9 +147,9 @@ impl Replicant {
         info!("{} starting server task", self.replicant.id);
         let (shutdown_send, shutdown_recv) = oneshot::channel();
         let replicant = self.replicant.clone();
-        let handle = tokio::spawn(async move {
+        let handle = tokio::spawn(self.monitor.instrument(async move {
             replicant.server_task_fn(shutdown_recv).await;
-        });
+        }));
         (handle, shutdown_send)
     }
 
@@ -154,9 +165,9 @@ impl Replicant {
         info!("{} starting paxos server for peer", self.replicant.id);
         let (shutdown_send, shutdown_recv) = oneshot::channel();
         let replicant = self.replicant.clone();
-        let handle = tokio::spawn(async move {
+        let handle = tokio::spawn(self.monitor.instrument(async move {
             replicant.peer_server_task_fn(shutdown_recv).await;
-        });
+        }));
         (handle, shutdown_send)
     }
 
@@ -171,9 +182,9 @@ impl Replicant {
     fn start_executor_task(&self) -> JoinHandle<()> {
         info!("{} starting executor task", self.replicant.id);
         let replicant = self.replicant.clone();
-        tokio::spawn(async move {
+        tokio::spawn(self.monitor.instrument(async move {
             replicant.executor_task_fn().await;
-        })
+        }))
     }
 
     async fn stop_executor_task(&self, handle: JoinHandle<()>) {
