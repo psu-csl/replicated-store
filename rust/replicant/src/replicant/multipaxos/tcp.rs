@@ -66,7 +66,7 @@ impl TcpLink {
         let stream;
         loop {
             match TcpStream::connect(addr).await {
-                Ok(s) => {stream = s; break;},
+                Ok(s) => {stream = s; stream.set_nodelay(true); break;},
                 _ => (),
             }
         }
