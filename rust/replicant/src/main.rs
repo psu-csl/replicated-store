@@ -8,11 +8,6 @@ use std::fs;
 use std::io::BufReader;
 use std::path::PathBuf;
 use tokio::signal;
-use tikv_jemallocator::Jemalloc;
-
-#[cfg(not(target_env = "msvc"))]
-#[global_allocator]
-static GLOBAL: Jemalloc = Jemalloc;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
