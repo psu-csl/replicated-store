@@ -8,6 +8,7 @@ use std::fs;
 use std::io::BufReader;
 use std::path::PathBuf;
 use std::time::Duration;
+use log::error;
 use tokio::signal;
 
 #[derive(Parser, Debug)]
@@ -57,7 +58,16 @@ async fn main() {
         });
     }
 
-
+    let handle = tokio::runtime::Handle::current();
+    {
+        let runtime_monitor = tokio_metrics::RuntimeMonitor::new(&handle);
+        tokio::spawn(async move {
+            for interval in runtime_monitor.intervals() {
+                eprintln!("{:?}", interval);
+                tokio::time::sleep(Duration::from_millis(3000)).await;
+            }
+        });
+    }
 
     let replicant = Replicant::new(&config, monitor).await;
     let shutdown = replicant.start();
