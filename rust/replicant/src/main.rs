@@ -7,6 +7,7 @@ use serde_json::Value as json;
 use std::fs;
 use std::io::BufReader;
 use std::path::PathBuf;
+use std::time::Duration;
 use tokio::signal;
 
 #[derive(Parser, Debug)]
@@ -38,7 +39,27 @@ async fn main() {
         .unwrap()
         .insert(String::from("id"), json!(args.id));
 
-    let replicant = Replicant::new(&config).await;
+    let monitor = tokio_metrics::TaskMonitor::new();
+    {
+        let monitor = monitor.clone();
+        tokio::spawn(async move {
+            for interval in monitor.intervals() {
+                println!("{:?}, mean_poll_duration: {}us, slow_poll_ratio: {}%, mean_slow_poll_duration: {}us, mean_first_poll_delay: {}us, mean_scheduled_duration: {}us, mean_idle_duration: {}us",
+                             interval,
+                             interval.mean_poll_duration().as_micros(),
+                             interval.slow_poll_ratio(),
+                             interval.mean_slow_poll_duration().as_micros(),
+                             interval.mean_first_poll_delay().as_micros(),
+                             interval.mean_scheduled_duration().as_micros(),
+                             interval.mean_idle_duration().as_micros());
+                tokio::time::sleep(Duration::from_millis(3000)).await;
+            }
+        });
+    }
+
+
+
+    let replicant = Replicant::new(&config, monitor).await;
     let shutdown = replicant.start();
     signal::ctrl_c().await.unwrap();
     replicant.stop(shutdown).await;

@@ -107,17 +107,7 @@ pub struct ReplicantHandle {
 }
 
 impl Replicant {
-    pub async fn new(config: &json) -> Self {
-        let monitor = tokio_metrics::TaskMonitor::new();
-        {
-            let monitor = monitor.clone();
-            tokio::spawn(async move {
-                for interval in monitor.intervals() {
-                    println!("{:?}", interval);
-                    tokio::time::sleep(Duration::from_millis(3000)).await;
-                }
-            });
-        }
+    pub async fn new(config: &json, monitor: TaskMonitor) -> Self {
         Self {
             replicant: Arc::new(ReplicantInner::new(config, monitor.clone()).await),
             monitor
