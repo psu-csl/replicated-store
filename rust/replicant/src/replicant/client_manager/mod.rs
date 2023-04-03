@@ -242,6 +242,7 @@ impl ClientManager {
     }
 
     pub fn start(&self, stream: TcpStream) {
+        stream.set_nodelay(true);
         let (read_half, write_half) = stream.into_split();
         let id = self.client_manager.next_client_id();
 
