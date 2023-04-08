@@ -3,6 +3,7 @@ use crate::replicant::multipaxos::MultiPaxos;
 use crate::replicant::multipaxos::ResultType;
 use parking_lot::Mutex;
 use std::collections::HashMap;
+use std::os::unix::io::{AsRawFd, FromRawFd, RawFd};
 use std::str;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
@@ -242,6 +243,9 @@ impl ClientManager {
     }
 
     pub fn start(&self, stream: TcpStream) {
+        let raw_fd: RawFd = stream.as_raw_fd();
+        let socket = unsafe {socket2::Socket::from_raw_fd(raw_fd)};
+        socket.set_quickack(true);
         let (read_half, write_half) = stream.into_split();
         let id = self.client_manager.next_client_id();
 
