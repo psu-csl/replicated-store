@@ -41,6 +41,7 @@ void Replicant::StartServer() {
   tcp::endpoint endpoint(tcp::v4(), port);
   acceptor_.open(endpoint.protocol());
   acceptor_.set_option(tcp::acceptor::reuse_address(true));
+  acceptor_.set_option(tcp::no_delay(true));
   acceptor_.bind(endpoint);
   acceptor_.listen(5);
   DLOG(INFO) << id_ << " starting server at port " << port;
