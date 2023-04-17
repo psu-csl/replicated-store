@@ -1,0 +1,79 @@
+- Client_Manager
+  # a client manager manages all tcp connections. when a client manager receives
+  # a new connection, it will create a client instance and assigns a global
+  # unique id for the client. it also adds the client to a hashmap until the
+  # connection is over. this is because we normally do not write back the result
+  # synchronously. instead, we need to wait for the result from a separate
+  # executor thread. that's why we require a uniqle client id and the hashmap,
+  # so that we can locate the corresponding socket based on the result, and
+  # reply the client.
+
+  - members
+    
+    - next_id_: int64; id of the next incoming client.
+      
+    - num_peers_: int64; the number of peers
+      
+    - multi_paxos_: Multipaxos; non-owning pointer to Multipaxos instance.
+      
+    - mu_: mutex; multiple threads may access the client hashmap
+      concurrently, |mu_| protects the hashmap |clients_|
+
+    - clients_: map<int64, client*>; a map stores active clients along with its
+      global unique id
+
+  - methods
+
+    - constructor(id: int64, num_peers: int64, multi_paxos: *Multipaxos)
+      next_id_ = id
+      num_peers_ = num_peers
+      clients = new(hashmap)
+      multi_paxos_ = multi_paxos
+
+    - next_client_id() -> int64
+      # records the current value of |next_id_| and returns it. it also
+      # increments |next_id_| by |num_peers_|. since the |next_id_| is
+      # initilized to the replicant's id, which is unique, and the increment
+      # delta is fixed, it guarantees that the client id is always unique.
+      id = next_id_
+      next_id_ += num_peers_
+      return id
+            
+    - start(socket: socket)
+      # receives a new tcp connection. it wraps it up as a client instance, 
+      # assigns a unique id, and makes the client start listeniing.
+      id = next_client_id()
+      client = new(Client(id_, socket, multi_paxos_, this))
+      mu_.lock()
+      ok = clients_.insert({id, client})
+      assert ok
+      mu_.unlock()
+      client.start()
+
+    - get(id: int64) -> Client
+      # retrieve a client from |clients_|. this method is followed by write 
+      # operations to this client.
+      mu_.lock() # release on returns
+      if clients_[id] == empty:
+        return nullptr
+      return clients_[id]
+      
+    - stop(id: int64)
+      # stops a client given the |id| argument and deletes it
+      # from |clients_|. this method is called when a connection is disconnected
+      # normally or abnormally.
+      mu_.lock()
+      assert clients_[id] != empty
+      clients_[id].stop()
+      del clients_[id]
+      mu_.unlock()
+
+    - stop_all()
+      # stops all clients and empty the hashmap |clients_|. this method is only
+      # called in the end.
+      mu_.lock()
+      for client in clients_ {
+        client.stop()
+      }
+      clients_.clear()
+      mu_.unlock()

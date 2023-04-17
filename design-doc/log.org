@@ -28,6 +28,11 @@
   # (i3) there is no executed instance after last_executed.
   # (i4) there are no instances at indices < global_last_executed
 
+  # our log compaction mechanism trims all instances with indices < 
+  # global_last_executed. it also leaves a gap. when a new peer with a blank 
+  # disk is introduced, we need an extra way, such as snapshots, to make the new
+  # peer recover.
+
   - types/protobufs:
 
     - protobuf Command: a key-value command. Fields of a Command are
@@ -90,8 +95,8 @@
       # case (2): |log| has a committed/executed instance at |instance.index|,
       # in which case insert should be a no-op, and the command in |log| should
       # match the command in |instance|.
-      if log_[i].state_ == (committed or executed)
-       assert(log[i].command_ == instance.command_) << "case2"
+      if log_[i].state_ == (committed or executed):
+        assert(log[i].command_ == instance.command_) << "case2"
         return false
 
       # case (3): |log| has an in-progress instance at |instance.index|, in
@@ -100,14 +105,14 @@
       # if |instance.ballot| > |log[i].ballot| insert replaces the instance
       # in |log| with |instance|.
 
-      if instance.ballot > log[i].ballot
+      if instance.ballot > log[i].ballot:
         log[i] = instance
         return false
 
       # if |instance.ballot| == |log[i].ballot| it must be the case that
       # |instance.command| == |log[i].command| and insert is a no-op.
 
-      if instance.ballot_ == log[i].ballot
+      if instance.ballot_ == log[i].ballot:
         assert(log[i].command_ == instance.command_) << "case3"
 
       # if |instance.ballot| < |log[i].ballot| insert ignores the instance
@@ -128,11 +133,7 @@
     - last_executed(void) -> int
       acquire mu_ and release on exit
       return last_executed_
-
-    - log(void) -> map from int to instance
-      acquire mu_ and release on exit
-      return log_
-
+    
     - global_last_executed(void) -> int
       acquire mu_ and release on exit
       return global_last_executed_
@@ -160,11 +161,11 @@
 
       mu_.lock()
       i = instance.index_
-      if i <= global_last_executed_
+      if i <= global_last_executed_:
         mu_.unlock()
         return
 
-      if insert(&log_, instance)
+      if insert(&log_, instance):
         last_index_ = max(last_index_, i)
         cv_committable_.notify_all()
 
@@ -172,17 +173,7 @@
       # sets the state of the instance at index to committed and possibly wakes
       # up the executor thread if the log is executable.
 
-      # commit is called exclusively by the leader, after it sends out accept
-      # to all peers, including itself, and receiving ok responses from the
-      # quorum. the accept handler in every peer inserts an instance into the
-      # log and then responds with an ok if successful. most of the time, the
-      # leader will immediately receive an ok from its own rpc handler before
-      # receiving ok from the remote peers; therefore, by the time it calls
-      # commit, it is likely to have an instance at the index_, and calling
-      # commit is fine. in the rare cases when the leader receives ok
-      # responses from remote peers before itself, we wait on the condition
-      # variable that will eventually be signalled by append called from
-      # accept_handler.
+      # we can only commit instances that exists in the log.
       mu.lock()
       while log_[index] == empty
         cv_commitable_.wait()
@@ -211,12 +202,12 @@
     - execute() -> optional(client-id, result)
       # As described above, this method acts as a consume method of a
       # producer/consumer queue. Therefore, it sleeps until it is woken up by
-      # someone calling commit (i.e. produce method of the queue). Once woken
-      # up, it executes one instance, sets the state of the instance to
-      # executed, increments last_executed_, and returns the result and the id
-      # of the client that originated the command.
-      mu_.lock()
-      while running_ and not is_executable()
+      # someone calling commit or commit_until (i.e. produce method of the
+      # queue). Once woken up, it executes one instance, sets the state of the
+      # instance to executed, increments last_executed_, and returns the result
+      # and the id of the client that originated the command.
+      mu_.lock() release on return
+      while running_ and !is_executable()
         cv_executable_.wait()
 
       if !running_:
@@ -224,6 +215,7 @@
 
       instance = &log_[last_executed_+1]
       result = kv_store_.execute(instance.cmd)
+      log_[index_].state = executed
       ++last_executed_
       return (instance.client-id_, result)
 
@@ -290,17 +282,19 @@
       # instances in [global_last_executed_+1, leader_global_last_executed] from
       # the log_.
 
+      mu_.lock()
       while global_last_executed_ < leader_global_last_executed
         ++global_last_executed_
         # case (1): the following assertion follows from the invariants (i1) and (i2)
         assert(log_[global_last_executed_].state == executed)
         del log_[global_last_executed_]
+      mu_.unlock()
 
     - instances() -> Instance[]
       # return all instances in the log for a response to a prepare message;
       # since global_last_executed_ is the tail of the log and last_index_ is
       # the head of the log, we return all instances in-between.
-      mu_.lock()
+      mu_.lock() release on return
       instances = Instance[]
       for i = global_last_executed_ + 1; i <= last_index_; ++i
         if log_[i] != empty
@@ -318,6 +312,11 @@
     # this method is used only in unit tests
     - at(index: int) -> pointer to instance
       return a constant pointer to the instance
+
+    - get_log() -> map<int, Instance>
+      # this method is called only  when the peer needs to acquire all instances
+      # during the prepare phase.
+      return log_ 
 
   - unit tests
 

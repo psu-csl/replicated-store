@@ -1,69 +1,83 @@
 - Replicant
+  # a MultiPaxos-based distributed in-memory key-value store. it is the highest
+  # level module and manages all sub-modules, including the MultiPaxos module,
+  # the KVStore module, and the Log module.
 
   - members
-    - kv_: KVStore
-    - c_: Consensus
+    - id_: int64; idetifier of this replicant. all the id of its sub-modules
+      must be the same as this one.
+      
     - log_: Log
-    - tp_: Threadpool
-    - l_: socket
-    - map_: map from client_id(int) to socket object
-    - client_id_: id of the next client that will connect
-    - id_: id of the peers
-    - num_peers_: number of peers
+      
+    - multi_paxos_: pointer to Multipaxos instance.
+
+    - ip_port_: string; the port number of the tcp server oriented for clients
+      
+    - acceptor_: tcp acceptor
+      
+    - client_manager_: ClientManger; manages all tcp connections;
+
+    - executor_thread_: thread; run the function executor_thread() until
+      shutdown() is called.
 
   - methods
 
-    - constructor(cfg: config)
-      kv_ = new(KVStore)
-      c_ = new(Consensus(cfg))
-      log_ = new(Log())
+    - constructor(config: config)
       id_ = config["id"]
-      client_id_ = id_
-      num_peers_ = confg["num_peers"]
+      log_ = new(Log(new(create_store(config))))
+      multi_paxos_ = new(Multipaxos(&log_, config))
+      ip_port = config["peers"][id_]
+      client_manager_ = new(ClientManager(id_, config["peers"].size(), 
+                                          &multi_paxos_))
+    
+    - start()
+      # starts |multi_paxos_| long running threads, the executor thread, and the
+      # tcp server for clients.
+      multi_paxos_.start()
+      start_executor_thread()
+      start_server()
 
-    - next_client_id(void) -> int
-      id = client_id_
-      client_id_ += num_peers_
-      return id
+    - stop()
+      # shuts down all running threads and the tcp server.
+      stop_server()
+      stop_executor_thread()
+      multi_paxos_stop()
 
-    - start(void)
-      thread(executor).start()
+    - start_server()
+      # starts the tcp sever for clients.
+      pos = ip_port_.find(":") + 1
+      assert(pos is not empty)
+      port = ip_port_.substr(pos) + 1
+      create_tcp_server()
+
+    - stop_server()
+      # stops the tcp server
+      acceptor_.close()
+      client_manager_.stop_all()
+
+    - start_executor_thread()
+      # starts running the executro thread
+      executor_thread_ = new thread(&exector_thread)
+
+    - stop_executor_thread()
+      # stops the executro thread
+      log_.stop()
+      executor_thread_.join()
+
+    - executor_thread()
       for (;;) {
-        socket = accept(l)
-        client-id = next_client_id()
-        map_[client-id] = socket
-        thread(handle_client, client-id).start()
-      }
-
-    - handle_client(client-id: int)
-      it = map_[client-id]
-      for (;;) {
-        cmd = read_command(it->socket)
-        if (cmd)
-          tp_.post(replicate, cmd, client-id)
-        else
-          break
-      }
-      close(it->socket)
-      del it
-
-    - replicate(cmd: command, client-id: int)
-      r = c.replicate(cmd, client-id)
-      if r.type_ != ok
-        it = map_[client-id]
-        send(it->socket, r)
-        close(it->socket)
-        del it
-
-    - executor(void)
-      for (;;) {
-        client-id, result = log_.execute(kv)
+        id, result = log_.execute(kv)
         # respond to the client with the result of the command execution. this
         # will respond to the client only if the client originally sent the
         # request to this peer when it was a leader. this constraint is
         # implicitly enforced by having each peer assign a unique id to each
         # client.
-        it = map_[client-id]
-        if it != null
-          send(it->socket, result)
+        client = client_manager_.get(id)
+	if client != null
+          client.write(result.value_)
       }
+
+    - accept_client()
+      # accepts new tcp connections from clients
+      socket = accept_from_acceptor
+      client_manager_.start(socket)

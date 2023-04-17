@@ -1,0 +1,85 @@
+- Client
+  # a client wraps up a tcp connection. it is responsible for reading requrest
+  # from the socket; parsing the request; calling the replicate method; sending
+  # back results. the life cycle of the client depends on the connection
+  # duration.
+
+  - members
+    
+    - id_: int64; id of the client.
+      
+    - socket_: tcp socket.
+      
+    - request_: streambuf; request string.
+      
+    - response_: streambuf; response string.
+      
+    - multi_paxos_: Multipaxos; non-owning pointer to Multipaxos instance.
+      
+    - manager_: ClientManager; non-owning pointer to ClientManager iinstance.
+
+  - methods
+
+    - constructor(id: int64, socket: socket, multi_paxos: *Multipaxos,
+                  manager: *ClientManager)
+      id_ = id
+      socket_ = socket
+      multi_paxos_ = multi_paxos
+      manager_ = manager
+
+    - parse(request *streambuf) -> optional<command>
+      # converts a string buffer into a command instance. the message format
+      # should be "type key value\n"
+      line = request.getline()
+      (command_type, key, value) = line.split_by_spaces()
+      command c
+      c.set_key(key)
+
+      if command_type == "get":
+        c.set_type(get)
+      else if command_type == "del:
+        c.set_type(del)
+      else if command_type == "put":
+        c.set_type(put)
+        c.set_value(value)
+      else:
+        return nullopt
+      return c
+      
+    - start()
+      # starts to receive requests and returns immediately
+      read() # async functions or create a thread
+
+    - stop()
+      # closes the socket and returns
+      socket_.close # async functions or create a thread
+
+    - read()
+      # reads a message from the socket; parses the message and extract the
+      # command, and if successful, calls the replicate method; otherwise,
+      # replies with bad command. if the command is replicated successfully,
+      # this function simply waits for the next message without responsing.
+      loop {
+        request_ = read_line_from_socket
+        if !ec:
+          command = parse(&request_)
+          if commmand:
+             r = multi_paxos_.replicate(command, id_)
+             if r.type_ == ok:
+                # waits for the next reads
+             if r.type_ == retry:
+               write("retry")
+             else:
+               assert(r.type_ == someone_else_leader)
+               write("leader is ...")
+           else:
+             write("bad command")
+         else:
+           manager_.stop(id_)
+
+    - write()
+      # sends back result via the socket
+      response_.append("\n")
+      socket_.write(response_)
+      if !ec:
+        manager_.stop(id_)
