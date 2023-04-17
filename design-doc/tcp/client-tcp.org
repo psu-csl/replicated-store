@@ -1,0 +1,132 @@
+- Client
+  # a client wraps up a tcp connection, which could be a client connection or a
+  # peer tcp connection for internal communication. it is responsible for
+  # reading requrest from the socket; parsing the request; calling the replicate
+  # method; sending back results. the life cycle of the client depends on the
+  # connection duration.
+
+  - members
+    
+    - id_: int64; id of the client.
+      
+    - socket_: tcp socket.
+      
+    - request_: streambuf; request string.
+      
+    - response_: streambuf; response string.
+      
+    - multi_paxos_: multi_paxos_; non-owning pointer to multi_paxos_ instance.
+      
+    - manager_: ClientManager; non-owning pointer to ClientManager iinstance.
+
+    - is_from_client_: bool; indicate whether the client handles requests from
+      clients or other peers.
+
+    - writer_lock_: mutex; there could concurrent requests from the same peer. we
+      can handle those requests concurrently, but we need a lock to protect the
+      socket.
+
+  - non-member functions
+
+    - parse(request *streambuf) -> optional<command>
+      # converts a string buffer into a command instance. the message format
+      # should be "type key value\n"
+      line = request.getline()
+      (command_type, key, value) = line.split_by_spaces()
+      command c
+      set_key(key)
+
+      if command_type == "get":
+        set_type(get)
+      else if command_type == "del:
+        set_type(del)
+      else if command_type == "put":
+        set_type(put)
+        set_value(value)
+      else:
+        return nullopt
+      return c
+
+  - methods
+
+    - constructor(id: int64, socket: socket, multi_paxos: *multi_paxos_,
+                  manager: *ClientManager, is_from_client: bool)
+      id_ = id
+      socket_ = socket
+      multi_paxos_ = multi_paxos
+      manager_ = manager
+      is_from_client_ = is_from_client
+      
+    - start()
+      # starts to receive requests and passes requests to a handler
+      for {
+        request = read_line_from_socket
+        handle_request(request)
+      }
+      manager_.stop(id_)
+
+    - stop()
+      # closes the socket and returns
+      socket_.close # async functions or create a thread
+
+    - handle_request(request string)
+      if is_from_client_:
+        handle_client_request(request)
+      else:
+        handle_peer_request(request)
+
+    - handle_client_request(line: string)
+      # handles request from clients; parses |line| argument and extract the
+      # command, and if successful, calls the replicate method; otherwise,
+      # replies with bad command. if the command is replicated successfully,
+      # this function simply waits for the next message without responsing.
+      command = parse(&request_) 
+        if commmand:
+          result = multi_paxos_.replicate(command, id_)
+          if result.type_ == ok:
+            return
+          if r.type_ == retry:
+            write("retry")
+          else:
+            assert(r.type_ == someone_else_leader)
+            write("leader is ...")
+         else:
+           write("bad command")
+
+    - handle_peer_request(line string)
+      # handles requests from other peers. inner communication uses json, so we
+      # convert |line| into structs
+      request = json.unmarshal(line)
+      # invalid json format
+      if !request:
+        return
+
+      # |msg_| field stores the actual request. it is warpped by a general
+      # Message struct
+      msg = request.msg_
+      new thread(
+        # there could be three types of requests
+        switch (request.Type):
+        case PREPAREREQUEST:
+          prepare_request = json.Unmarshal(msg)
+          prepare_response := multi_paxos_.prepare(prepare_request)
+          tcp_message = json.Marshal(prepare_response)
+          write(tcp_message)
+        case ACCEPTREQUEST:
+          accept_request = json.Unmarshal(msg)
+          accept_response := multi_paxos_.accept(accept_request)
+          tcp_message = json.Marshal(accept_response)
+          write(tcp_message)
+        case COMMITREQUEST:
+          commit_request = json.Unmarshal(msg)
+          commit_response := multi_paxos_.commit(commit_request)
+          tcp_message = json.Marshal(commit_response)
+          write(tcp_message)
+        }
+
+    - write()
+      # sends back result via the socket
+      response_.append("\n")
+      socket_.write(response_)
+      if !ec:
+        manager_.stop(id_)

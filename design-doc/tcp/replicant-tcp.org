@@ -1,0 +1,98 @@
+- Replicant
+  # a MultiPaxos-based distributed in-memory key-value store. it is the highest
+  # level module and manages all sub-modules, including the MultiPaxos module,
+  # the KVStore module, and the Log module.
+
+  - members
+    - id_: int64; idetifier of this replicant. all the id of its sub-modules
+      must be the same as this one.
+      
+    - log_: Log
+      
+    - multi_paxos_: pointer to Multipaxos instance.
+
+    - ip_port_: string; the port number of the tcp server oriented for clients
+      
+    - acceptor_: tcp acceptor
+      
+    - client_manager_: ClientManger; manages all tcp connections from actual
+      clients.
+
+    - peer_manager_: ClientManger; manages all tcp connections from other peers.
+
+    - peer_listener_: tcp server specifically for peer communication.
+      
+    - executor_thread_: thread; run the function executor_thread() until
+      shutdown() is called.
+
+  - methods
+
+    - constructor(config: config)
+      id_ = config["id"]
+      log_ = new(Log(new(create_store(config))))
+      multi_paxos_ = new(Multipaxos(&log_, config))
+      ip_port = config["peers"][id_]
+      client_manager_ = new(ClientManager(id_, config["peers"].size(), 
+                                          &multi_paxos_), true)
+      peer_manager_ = new(ClientManager(id_, config["peers"].size(), 
+                                          &multi_paxos_), false)
+      # the place of this part may vary, as different langauge has different
+      # conditions.
+      start tcp server for peer communication
+
+     - executor_task()
+      for (;;) {
+        id, result = log_.execute(kv)
+        # respond to the client with the result of the command execution. this
+        # will respond to the client only if the client originally sent the
+        # request to this peer when it was a leader. this constraint is
+        # implicitly enforced by having each peer assign a unique id to each
+        # client.
+        client = client_manager_.get(id)
+	if client != null
+          client.write(result.value_)
+      }
+
+    - server_task()
+      # accepts new tcp connections from clients
+      socket = accept_from_acceptor
+      client_manager_.start(socket)
+
+    - peer_server_task()
+      # accepts new tcp connections from clients
+      socket = accept_from_peer_listener
+      peer_manager_.start(socket)
+    
+    - start()
+      # starts |multi_paxos_| long running threads, the executor thread, and the
+      # tcp server for clients.
+      multi_paxos_.start()
+      start_executor_thread()
+      start_server()
+
+    - stop()
+      # shuts down all running threads and the tcp server.
+      stop_server()
+      stop_executor_thread()
+      multi_paxos_stop()
+
+    - start_server()
+      # starts the tcp sever for clients.
+      pos = ip_port_.find(":") + 1
+      assert(pos is not empty)
+      port = ip_port_.substr(pos) + 1
+      create_tcp_server()
+
+    - stop_server()
+      # stops the tcp server
+      acceptor_.close()
+      client_manager_.stop_all()
+
+    - start_executor_thread()
+      # starts running the executro thread
+      executor_thread_ = new thread(&exector_thread)
+
+    - stop_executor_thread()
+      # stops the executro thread
+      log_.stop()
+      executor_thread_.join()
