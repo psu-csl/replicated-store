@@ -127,9 +127,13 @@ func (p *Multipaxos) PrepareThread() {
 			if p.receivedCommit() {
 				continue
 			}
+			start_us := time.Now().UnixMicro()
+			logger.Errorf("%v %v starts leader election\n", start_us, p.id)
 			nextBallot := p.NextBallot()
 			maxLastIndex, log := p.RunPreparePhase(nextBallot)
 			if log != nil {
+				end_us := time.Now().UnixMicro()
+				logger.Errorf("%v %v becomes leaders. Used %v\n", end_us, p.id, end_us - start_us)
 				p.BecomeLeader(nextBallot, maxLastIndex)
 				p.Replay(nextBallot, log)
 				break

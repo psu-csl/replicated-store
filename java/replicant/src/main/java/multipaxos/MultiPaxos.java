@@ -286,9 +286,14 @@ public class MultiPaxos extends multipaxos.MultiPaxosRPCGrpc.MultiPaxosRPCImplBa
         if (receivedCommit()) {
           continue;
         }
+	var start = System.nanoTime();
+        logger.error(id + " starts leader election");
         var nextBallot = nextBallot();
         var r = runPreparePhase(nextBallot);
         if (r != null) {
+	  var end = System.nanoTime();
+          var duration = (end - start) / 1000;
+          logger.error(id + " becomes leader. used " + duration + " us");
           var maxLastIndex = r.getKey();
           var log = r.getValue();
           becomeLeader(nextBallot, maxLastIndex);

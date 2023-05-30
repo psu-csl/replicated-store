@@ -146,9 +146,14 @@ void MultiPaxos::PrepareThread() {
       SleepForRandomInterval();
       if (ReceivedCommit())
         continue;
+      auto start = std::chrono::steady_clock::now();
+      std::cout << id_ << " starts leader election\n";
       auto next_ballot = NextBallot();
       auto r = RunPreparePhase(next_ballot);
       if (r) {
+	auto end = std::chrono::steady_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+        std::cout << id_ << " becomes leader. used " << duration.count() << " us\n";
         auto [max_last_index, log] = *r;
         BecomeLeader(next_ballot, max_last_index);
         Replay(next_ballot, log);

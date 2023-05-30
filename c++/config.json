@@ -1,9 +1,7 @@
 {
-    "threadpool_size": 8,
-    "commit_interval": 3000,
-    "peers": ["172.31.15.162:10000",
-              "172.31.2.20:11000",
-              "172.31.9.125:12000"],
-    "store": "rocksdb",
+    "threadpool_size": 64,
+    "commit_interval": 300,
+    "peers": ["172.31.11.139:10000"],
+    "store": "mem",
     "db_path": "/tmp/testdb"
 }

@@ -5,10 +5,12 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 
 use log::info;
+use log::error;
 use parking_lot::Mutex;
 use rand::distributions::{Distribution, Uniform};
 use serde_json::json;
 use serde_json::Value as json;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::{mpsc, Notify};
 use tokio::task::JoinHandle;
 use tokio::time::{Duration, sleep};
@@ -174,10 +176,15 @@ impl MultiPaxosInner {
                 if self.received_commit() {
                     continue;
                 }
+                let start = SystemTime::now();
+                error!("{} starts leader election", self.id);
                 let next_ballot = self.next_ballot();
                 if let Some((last_index, log)) =
                     self.run_prepare_phase(next_ballot).await
                 {
+                    let end = SystemTime::now();
+                    let duration = end.duration_since(start);
+                    error!("{} becomes leader. uses {:?}", self.id, duration);
                     self.become_leader(next_ballot, last_index);
                     self.replay(next_ballot, log).await;
                     break;
