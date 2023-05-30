@@ -93,6 +93,7 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
     auto new_leader_id = ExtractLeaderId(new_ballot);
     if (new_leader_id != id_ &&
         (old_leader_id == id_ || old_leader_id == kMaxNumPeers)) {
+      std::cout << id_ << " becomes a follower\n";
       DLOG(INFO) << id_ << " became a follower: ballot: " << ballot_ << " -> "
                  << new_ballot;
       cv_follower_.notify_one();
