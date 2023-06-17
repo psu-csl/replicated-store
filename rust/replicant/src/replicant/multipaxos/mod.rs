@@ -176,15 +176,14 @@ impl MultiPaxosInner {
                 if self.received_commit() {
                     continue;
                 }
-                let start = SystemTime::now();
-                error!("{} starts leader election", self.id);
+                let start = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+                error!("{} {} starts leader election", start.as_millis(), self.id);
                 let next_ballot = self.next_ballot();
                 if let Some((last_index, log)) =
                     self.run_prepare_phase(next_ballot).await
                 {
-                    let end = SystemTime::now();
-                    let duration = end.duration_since(start);
-                    error!("{} becomes leader. uses {:?}", self.id, duration);
+                    let end = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+                    error!("{:?} {} becomes leader.", end.as_millis(), self.id);
                     self.become_leader(next_ballot, last_index);
                     self.replay(next_ballot, log).await;
                     break;
@@ -1328,7 +1327,6 @@ mod tests {
 
         let gle = peer0.inner.run_commit_phase(ballot, gle).await;
         assert_eq!(2, gle);
-        println!("here");
 
         peer2.inner.log.execute().await;
 
