@@ -206,6 +206,9 @@ MultiPaxos::RunPreparePhase(int64_t ballot) {
     }
     asio::post(thread_pool_, [this, state, &peer, request] {
       ClientContext context;
+      auto deadline = std::chrono::system_clock::now() +
+        std::chrono::milliseconds(250);
+      context.set_deadline(deadline);
       PrepareResponse response;
       Status s = peer.stub_->Prepare(&context, std::move(request), &response);
       DLOG(INFO) << id_ << " sent prepare request to " << peer.id_;
@@ -322,9 +325,14 @@ int64_t MultiPaxos::RunCommitPhase(int64_t ballot,
     }
     asio::post(thread_pool_, [this, state, &peer, request] {
       ClientContext context;
+      auto deadline = std::chrono::system_clock::now() +
+        std::chrono::milliseconds(250);
+      context.set_deadline(deadline);
       CommitResponse response;
       Status s = peer.stub_->Commit(&context, std::move(request), &response);
-      DLOG(INFO) << id_ << " sent commit to " << peer.id_;
+      auto t = std::chrono::system_clock::now().time_since_epoch();
+      auto t_us = std::chrono::duration_cast<std::chrono::milliseconds>(t).count();
+      std::cout << t_us << id_ << " sent commit to " << peer.id_ << " " << s.ok() << "\n";
       {
         std::scoped_lock lock(state->mu_);
         ++state->num_rpcs_;
