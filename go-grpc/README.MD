@@ -18,8 +18,12 @@ CGO_LDFLAGS="-L/path/to/rocksdb -lrocksdb -lstdc++ -lm -lz -lsnappy -llz4 -lzstd
 go build -o bin/replicant main/main.go
 ```
 or if prerequisites are in linker paths \
-`go build -o bin/replicant main/main.go`
+```
+go build -o bin/replicant main/main.go
+```
 
 ## Run
 ./bin/replicant -id <u>ID</u> -c <u>PATH-TO-CONFIG</u> \
-```./bin/replicant -id 0 -c ../c++/config.json```
+```
+./bin/replicant -id 0 -c ../c++/config.json
+```
