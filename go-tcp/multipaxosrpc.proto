@@ -1,0 +1,76 @@
+syntax = "proto3";
+
+option go_package = "github.com/psu-csl/replicated-store/go/multipaxos/comm";
+
+package multipaxosrpc;
+
+service MultiPaxosRPC {
+  rpc Accept (AcceptRequest) returns (AcceptResponse) {}
+  rpc Prepare (PrepareRequest) returns (PrepareResponse) {}
+  rpc Commit (CommitRequest) returns (CommitResponse) {}
+}
+
+message AcceptRequest {
+  Instance instance = 1;
+  int64 sender = 2;
+}
+
+message AcceptResponse {
+  ResponseType type = 1;
+  int64 ballot = 2;
+}
+
+message PrepareRequest {
+  int64 ballot = 1;
+  int64 sender = 2;
+}
+
+message PrepareResponse {
+  ResponseType type = 1;
+  int64 ballot = 2;
+  repeated Instance logs =3;
+}
+
+message CommitRequest {
+  int64 ballot = 1;
+  int64 last_executed = 2;
+  int64 global_last_executed = 3;
+  int64 sender = 4;
+}
+
+message CommitResponse {
+  ResponseType type = 1;
+  int64 ballot = 2;
+  int64 last_executed = 3;
+}
+
+enum ResponseType {
+  OK = 0;
+  REJECT = 1;
+}
+
+enum CommandType {
+  GET = 0;
+  PUT = 1;
+  DEL = 2;
+}
+
+enum InstanceState {
+  INPROGRESS = 0;
+  COMMITTED = 1;
+  EXECUTED = 2;
+}
+
+message Command {
+  CommandType type = 1;
+  string key = 2;
+  string value = 3;
+}
+
+message Instance {
+  int64 ballot = 1;
+  int64 index = 2;
+  int64 clientId = 3;
+  InstanceState state = 4;
+  Command command = 5;
+}
