@@ -41,6 +41,7 @@ MultiPaxos::MultiPaxos(Log* log, json const& config)
       port_(config["peers"][id_]),
       num_peers_(config["peers"].size()),
       thread_pool_(config["threadpool_size"]),
+      election_threshold_(1000),
       rpc_server_running_(false),
       prepare_thread_running_(false),
       commit_thread_running_(false) {
