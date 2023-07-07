@@ -45,6 +45,7 @@ MultiPaxos::MultiPaxos(Log* log, json const& config)
       prepare_thread_running_(false),
       commit_thread_running_(false) {
   int64_t id = 0;
+  last_elected_time_ = std::chrono::steady_clock::now();
   for (std::string const peer : config["peers"])
     rpc_peers_.emplace_back(id++,
                             MultiPaxosRPC::NewStub(grpc::CreateChannel(

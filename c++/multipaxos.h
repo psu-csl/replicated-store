@@ -113,6 +113,7 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
       num_elections_++;
     else
       num_elections_ = 1;
+    last_elected_time_ = now;
   }
 
   void SleepForCommitInterval() const {
