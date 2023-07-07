@@ -83,6 +83,7 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
     log_->SetLastIndex(new_last_index);
     ballot_ = new_ballot;
     cv_leader_.notify_one();
+    CountElection();
   }
 
   void BecomeFollower(int64_t new_ballot) {
@@ -96,9 +97,22 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
       std::cout << id_ << " becomes a follower\n";
       DLOG(INFO) << id_ << " became a follower: ballot: " << ballot_ << " -> "
                  << new_ballot;
+      if (num_elections_ > 3) {
+	std::cout << "elections churning\n";
+        commit_interval_ *= 2;
+      }
       cv_follower_.notify_one();
     }
     ballot_ = new_ballot;
+  }
+
+  void CountElection() {
+    auto now = std::chrono::steady_clock::now();
+    auto elapse = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_elected_time_).count();
+    if (elapse < election_threshold_)
+      num_elections_++;
+    else
+      num_elections_ = 1;
   }
 
   void SleepForCommitInterval() const {
@@ -181,6 +195,10 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
 
   std::atomic<bool> commit_thread_running_;
   std::thread commit_thread_;
+  
+  std::chrono::time_point<std::chrono::steady_clock> last_elected_time_;
+  int num_elections_;
+  int election_threshold_;
 };
 
 struct prepare_state_t {
