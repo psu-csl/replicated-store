@@ -2,6 +2,7 @@ package log
 
 import (
 	"encoding/binary"
+	"errors"
 	"github.com/golang/protobuf/proto"
 	"github.com/psu-csl/replicated-store/go/kvstore"
 	pb "github.com/psu-csl/replicated-store/go/multipaxos/comm"
@@ -284,9 +285,13 @@ func (l *Log) GetLog() map[int64]*pb.Instance {
 	return logMap
 }
 
-func (l *Log) MakeSnapshot() {
+func (l *Log) MakeSnapshot() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+
+	if !l.running {
+		return errors.New("not running")
+	}
 
 	snapshot := Snapshot{
 		LastIncludedIndex: l.lastExecuted,
@@ -295,17 +300,18 @@ func (l *Log) MakeSnapshot() {
 	for key, value := range l.log {
 		snapshot.log[key] = value
 	}
+	logger.Infof("snapshot data: %v\n", snapshot)
 
 	file, err := os.Create("snapshot-new.dat")
 	defer file.Close()
 	if err != nil {
 		logger.Errorf("Couldn't create the file")
-		return
+		return nil
 	}
 	err = binary.Write(file, binary.LittleEndian, snapshot)
 	if err != nil {
 		logger.Errorf("Couldn't write to snapshot")
-		return
+		return nil
 	}
 
 	l.lastSnapshotIndex = l.lastExecuted
@@ -317,4 +323,5 @@ func (l *Log) MakeSnapshot() {
 		}
 	}
 	os.Rename("snapshot-new.dat", "snapshot.dat")
+	return nil
 }

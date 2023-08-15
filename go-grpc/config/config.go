@@ -7,11 +7,12 @@ import (
 )
 
 type Config struct {
-	Id             int64
-	Peers          []string `json:"peers"`
-	CommitInterval int64    `json:"commit_interval"`
-	Store          string   `json:"store"`
-	DbPath         string   `json:"db_path"`
+	Id               int64
+	Peers            []string `json:"peers"`
+	CommitInterval   int64    `json:"commit_interval"`
+	Store            string   `json:"store"`
+	DbPath           string   `json:"db_path"`
+	SnapshotInterval int64    `json:"snapshot_interval"`
 }
 
 func DefaultConfig(id int64, n int) Config {

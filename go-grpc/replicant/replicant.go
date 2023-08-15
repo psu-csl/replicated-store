@@ -6,24 +6,28 @@ import (
 	consensusLog "github.com/psu-csl/replicated-store/go/log"
 	"github.com/psu-csl/replicated-store/go/multipaxos"
 	logger "github.com/sirupsen/logrus"
+	"math/rand"
 	"net"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type Replicant struct {
-	id            int64
-	log           *consensusLog.Log
-	multipaxos    *multipaxos.Multipaxos
-	ipPort        string
-	acceptor      net.Listener
-	clientManager *ClientManager
+	id               int64
+	log              *consensusLog.Log
+	multipaxos       *multipaxos.Multipaxos
+	ipPort           string
+	acceptor         net.Listener
+	clientManager    *ClientManager
+	snapshotInterval int64
 }
 
 func NewReplicant(config config.Config) *Replicant {
 	r := &Replicant{
-		id:       config.Id,
-		ipPort:   config.Peers[config.Id],
+		id:               config.Id,
+		ipPort:           config.Peers[config.Id],
+		snapshotInterval: config.SnapshotInterval,
 	}
 	r.log = consensusLog.NewLog(kvstore.CreateStore(config))
 	r.multipaxos = multipaxos.NewMultipaxos(r.log, config)
@@ -35,12 +39,18 @@ func (r *Replicant) Start() {
 	r.multipaxos.Start()
 	r.StartExecutorThread()
 	r.StartServer()
+	if r.snapshotInterval != -1 {
+		r.StartSnapshotThread()
+	}
 }
 
 func (r *Replicant) Stop() {
 	r.StopServer()
 	r.StopExecutorThread()
 	r.multipaxos.Stop()
+	if r.snapshotInterval != -1 {
+		r.StopSnapshotThread()
+	}
 }
 
 func (r *Replicant) StartServer() {
@@ -55,7 +65,7 @@ func (r *Replicant) StartServer() {
 	}
 	port += 1
 
-	acceptor, err := net.Listen("tcp", ":" + strconv.Itoa(port))
+	acceptor, err := net.Listen("tcp", ":"+strconv.Itoa(port))
 	if err != nil {
 		logger.Fatalln(err)
 	}
@@ -79,6 +89,15 @@ func (r *Replicant) StopExecutorThread() {
 	r.log.Stop()
 }
 
+func (r *Replicant) StartSnapshotThread() {
+	logger.Infof("%v starting snapshot thread\n", r.id)
+	go r.snapshotThread()
+}
+
+func (r *Replicant) StopSnapshotThread() {
+	logger.Infof("%v stopping snapshot thread\n", r.id)
+}
+
 func (r *Replicant) executorThread() {
 	for {
 		id, result := r.log.Execute()
@@ -89,6 +108,17 @@ func (r *Replicant) executorThread() {
 		if client != nil {
 			client.Write(result.Value)
 		}
+	}
+}
+
+func (r *Replicant) snapshotThread() {
+	for {
+		err := r.log.MakeSnapshot()
+		if err != nil {
+			break
+		}
+		sleepTime := r.snapshotInterval + rand.Int63n(r.snapshotInterval/2)
+		time.Sleep(time.Duration(sleepTime) * time.Millisecond)
 	}
 }
 
