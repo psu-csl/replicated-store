@@ -1,10 +1,12 @@
 package log
 
 import (
+	"encoding/binary"
 	"github.com/golang/protobuf/proto"
 	"github.com/psu-csl/replicated-store/go/kvstore"
 	pb "github.com/psu-csl/replicated-store/go/multipaxos/comm"
 	logger "github.com/sirupsen/logrus"
+	"os"
 	"sync"
 )
 
@@ -29,6 +31,11 @@ func IsEqualInstance(a, b *pb.Instance) bool {
 	return a.GetBallot() == b.GetBallot() && a.GetIndex() == b.GetIndex() &&
 		a.GetClientId() == b.GetClientId() && a.GetState() == b.GetState() &&
 		IsEqualCommand(a.GetCommand(), b.GetCommand())
+}
+
+type Snapshot struct {
+	LastIncludedIndex int64
+	log               map[int64]*pb.Instance
 }
 
 func Insert(log map[int64]*pb.Instance, instance *pb.Instance) bool {
@@ -65,6 +72,7 @@ type Log struct {
 	lastIndex          int64
 	lastExecuted       int64
 	globalLastExecuted int64
+	lastSnapshotIndex  int64
 	mu                 sync.Mutex
 	cvExecutable       *sync.Cond
 	cvCommittable      *sync.Cond
@@ -78,6 +86,7 @@ func NewLog(s kvstore.KVStore) *Log {
 		lastIndex:          0,
 		lastExecuted:       0,
 		globalLastExecuted: 0,
+		lastSnapshotIndex:  0,
 		mu:                 sync.Mutex{},
 	}
 	l.cvExecutable = sync.NewCond(&l.mu)
@@ -273,4 +282,39 @@ func (l *Log) GetLog() map[int64]*pb.Instance {
 		logMap[index] = proto.Clone(instance).(*pb.Instance)
 	}
 	return logMap
+}
+
+func (l *Log) MakeSnapshot() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	snapshot := Snapshot{
+		LastIncludedIndex: l.lastExecuted,
+		log:               make(map[int64]*pb.Instance),
+	}
+	for key, value := range l.log {
+		snapshot.log[key] = value
+	}
+
+	file, err := os.Create("snapshot-new.dat")
+	defer file.Close()
+	if err != nil {
+		logger.Errorf("Couldn't create the file")
+		return
+	}
+	err = binary.Write(file, binary.LittleEndian, snapshot)
+	if err != nil {
+		logger.Errorf("Couldn't write to snapshot")
+		return
+	}
+
+	l.lastSnapshotIndex = l.lastExecuted
+	for l.lastSnapshotIndex < l.lastExecuted {
+		l.lastSnapshotIndex += 1
+		instance, ok := l.log[l.lastSnapshotIndex]
+		if ok || !IsExecuted(instance) {
+			delete(l.log, l.lastSnapshotIndex)
+		}
+	}
+	os.Rename("snapshot-new.dat", "snapshot.dat")
 }
