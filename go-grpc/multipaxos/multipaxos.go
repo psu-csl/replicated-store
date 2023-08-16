@@ -607,3 +607,19 @@ func (p *Multipaxos) Commit(ctx context.Context,
 	}
 	return response, nil
 }
+
+func (p *Multipaxos) InstallSnapshot(ctx context.Context,
+	request *pb.SnapshotRequest) (*pb.SnapshotResponse, error) {
+	logger.Infof("%v <--snapshot-- %v\", p.id, request.GetSender()")
+	response := &pb.SnapshotResponse{}
+	if request.GetBallot() >= p.Ballot() {
+		p.log.ResumeSnapshot(request.LastIncludedIndex, request.Data)
+		response.Type = pb.ResponseType_OK
+		if request.GetBallot() > p.Ballot() {
+			p.BecomeFollower(request.GetBallot())
+		}
+	} else {
+		response.Type = pb.ResponseType_REJECT
+	}
+	return response, nil
+}
