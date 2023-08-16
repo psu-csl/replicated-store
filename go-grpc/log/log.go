@@ -1,6 +1,7 @@
 package log
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"github.com/golang/protobuf/proto"
@@ -314,7 +315,6 @@ func (l *Log) MakeSnapshot() (*Snapshot, error) {
 		return nil, err
 	}
 
-	l.lastSnapshotIndex = l.lastExecuted
 	for l.lastSnapshotIndex < l.lastExecuted {
 		l.lastSnapshotIndex += 1
 		instance, ok := l.log[l.lastSnapshotIndex]
@@ -324,4 +324,36 @@ func (l *Log) MakeSnapshot() (*Snapshot, error) {
 	}
 	os.Rename("snapshot-new.dat", "snapshot.dat")
 	return &snapshot, nil
+}
+
+func (l *Log) ResumeSnapshot(lastIncludedIndex int64, data []byte) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	if l.lastExecuted >= lastIncludedIndex {
+		return
+	}
+
+	buffer := bytes.NewBuffer(data)
+	snapshotLog := make(map[int64]*pb.Instance)
+	err := binary.Read(buffer, binary.LittleEndian, snapshotLog)
+	if err != nil {
+		logger.Error(err)
+	}
+
+	for index, instance := range snapshotLog {
+		l.log[index] = instance
+	}
+	l.lastExecuted = lastIncludedIndex
+	for l.lastSnapshotIndex < l.lastExecuted {
+		l.lastSnapshotIndex += 1
+		instance, ok := l.log[l.lastSnapshotIndex]
+		if ok || !IsExecuted(instance) {
+			delete(l.log, l.lastSnapshotIndex)
+		}
+	}
+	if l.lastIndex < lastIncludedIndex {
+		l.lastIndex = lastIncludedIndex
+	}
+	os.Remove("snapshot.dat")
 }
