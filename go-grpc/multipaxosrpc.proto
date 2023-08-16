@@ -8,6 +8,7 @@ service MultiPaxosRPC {
   rpc Accept (AcceptRequest) returns (AcceptResponse) {}
   rpc Prepare (PrepareRequest) returns (PrepareResponse) {}
   rpc Commit (CommitRequest) returns (CommitResponse) {}
+  rpc InstallSnapshot (SnapshotRequest) returns (SnapshotResponse) {}
 }
 
 message AcceptRequest {
@@ -42,6 +43,17 @@ message CommitResponse {
   ResponseType type = 1;
   int64 ballot = 2;
   int64 last_executed = 3;
+}
+
+message SnapshotRequest {
+  int64 ballot = 1;
+  int64 lastIncludedIndex = 2;
+  bytes data = 3;
+  int64 sender = 4;
+}
+
+message SnapshotResponse {
+  ResponseType type = 1;
 }
 
 enum ResponseType {
