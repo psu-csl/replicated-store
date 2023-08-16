@@ -16,14 +16,15 @@ import (
 )
 
 type Multipaxos struct {
-	ballot         int64
-	log            *Log.Log
-	id             int64
-	commitReceived int32
-	commitInterval int64
-	port           string
-	rpcPeers       []*RpcPeer
-	mu             sync.Mutex
+	ballot           int64
+	log              *Log.Log
+	id               int64
+	commitReceived   int32
+	commitInterval   int64
+	port             string
+	rpcPeers         []*RpcPeer
+	mu               sync.Mutex
+	snapshotInterval int64
 
 	cvLeader   *sync.Cond
 	cvFollower *sync.Cond
@@ -32,8 +33,9 @@ type Multipaxos struct {
 	rpcServerRunning   bool
 	rpcServerRunningCv *sync.Cond
 
-	prepareThreadRunning int32
-	commitThreadRunning  int32
+	prepareThreadRunning  int32
+	commitThreadRunning   int32
+	snapshotThreadRunning int32
 
 	pb.UnimplementedMultiPaxosRPCServer
 }
@@ -50,6 +52,7 @@ func NewMultipaxos(log *Log.Log, config config.Config) *Multipaxos {
 		rpcServerRunning:     false,
 		prepareThreadRunning: 0,
 		commitThreadRunning:  0,
+		snapshotInterval:     config.SnapshotInterval,
 		rpcServer:            nil,
 	}
 	multipaxos.rpcServerRunningCv = sync.NewCond(&multipaxos.mu)
@@ -207,6 +210,23 @@ func (p *Multipaxos) StopCommitThread() {
 	p.cvLeader.Signal()
 }
 
+func (p *Multipaxos) StartSnapshotThread() {
+	logger.Infof("%v starting snapshot thread\n", p.id)
+	if p.snapshotInterval == 1 {
+		panic("snapshotThreadRunning is true")
+	}
+	atomic.StoreInt32(&p.snapshotThreadRunning, 1)
+	go p.snapshotThread()
+}
+
+func (p *Multipaxos) StopSnapshotThread() {
+	logger.Infof("%v stopping snapshot thread\n", p.id)
+	if p.snapshotInterval == 0 {
+		panic("snapshotThreadRunning is false")
+	}
+	atomic.StoreInt32(&p.snapshotThreadRunning, 0)
+}
+
 func (p *Multipaxos) Replicate(command *pb.Command, clientId int64) Result {
 	ballot := p.Ballot()
 	if IsLeader(ballot, p.id) {
@@ -260,6 +280,17 @@ func (p *Multipaxos) CommitThread() {
 			gle = p.RunCommitPhase(ballot, gle)
 			p.sleepForCommitInterval()
 		}
+	}
+}
+
+func (p *Multipaxos) snapshotThread() {
+	for atomic.LoadInt32(&p.snapshotThreadRunning) == 1 {
+		err := p.log.MakeSnapshot()
+		if err != nil {
+			break
+		}
+		sleepTime := p.snapshotInterval + rand.Int63n(p.snapshotInterval/4)
+		time.Sleep(time.Duration(sleepTime) * time.Millisecond)
 	}
 }
 
