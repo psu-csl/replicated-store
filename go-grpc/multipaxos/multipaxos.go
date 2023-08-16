@@ -285,7 +285,7 @@ func (p *Multipaxos) CommitThread() {
 
 func (p *Multipaxos) snapshotThread() {
 	for atomic.LoadInt32(&p.snapshotThreadRunning) == 1 {
-		err := p.log.MakeSnapshot()
+		_, err := p.log.MakeSnapshot()
 		if err != nil {
 			break
 		}

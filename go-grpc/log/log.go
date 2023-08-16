@@ -285,20 +285,20 @@ func (l *Log) GetLog() map[int64]*pb.Instance {
 	return logMap
 }
 
-func (l *Log) MakeSnapshot() error {
+func (l *Log) MakeSnapshot() (*Snapshot, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
 	if !l.running {
-		return errors.New("not running")
+		return nil, errors.New("not running")
 	}
 
 	snapshot := Snapshot{
 		LastIncludedIndex: l.lastExecuted,
 		log:               make(map[int64]*pb.Instance),
 	}
-	for key, value := range l.log {
-		snapshot.log[key] = value
+	for index, instance := range l.log {
+		snapshot.log[index] = proto.Clone(instance).(*pb.Instance)
 	}
 	logger.Infof("snapshot data: %v\n", snapshot)
 
@@ -306,12 +306,12 @@ func (l *Log) MakeSnapshot() error {
 	defer file.Close()
 	if err != nil {
 		logger.Errorf("Couldn't create the file")
-		return nil
+		return nil, err
 	}
 	err = binary.Write(file, binary.LittleEndian, snapshot)
 	if err != nil {
 		logger.Errorf("Couldn't write to snapshot")
-		return nil
+		return nil, err
 	}
 
 	l.lastSnapshotIndex = l.lastExecuted
@@ -323,5 +323,5 @@ func (l *Log) MakeSnapshot() error {
 		}
 	}
 	os.Rename("snapshot-new.dat", "snapshot.dat")
-	return nil
+	return &snapshot, nil
 }
