@@ -489,8 +489,10 @@ func (p *Multipaxos) RunCommitPhase(ballot int64, globalLastExecuted int64) int6
 
 	state.NumRpcs++
 	state.NumOks++
-	state.MinLastExecuted = p.log.LastExecuted()
-	p.log.TrimUntil(globalLastExecuted)
+	if p.snapshotInterval == -1 {
+		state.MinLastExecuted = p.log.LastExecuted()
+		p.log.TrimUntil(globalLastExecuted)
+	}
 
 	for _, peer := range p.rpcPeers {
 		if peer.Id == p.id {
@@ -532,7 +534,7 @@ func (p *Multipaxos) RunCommitPhase(ballot int64, globalLastExecuted int64) int6
 	p.mu.Lock()
 	copy(p.lastExecutedList, state.LastExcutedList)
 	p.mu.Unlock()
-	if state.NumOks == len(p.rpcPeers) {
+	if state.NumOks == len(p.rpcPeers) && p.snapshotInterval == -1 {
 		return state.MinLastExecuted
 	}
 	return globalLastExecuted
@@ -595,8 +597,10 @@ func (p *Multipaxos) Commit(ctx context.Context,
 	if request.GetBallot() >= p.Ballot() {
 		atomic.StoreInt32(&p.commitReceived, 1)
 		p.log.CommitUntil(request.GetLastExecuted(), request.GetBallot())
-		p.log.TrimUntil(request.GetGlobalLastExecuted())
-		response.LastExecuted = p.log.LastExecuted()
+		if p.snapshotInterval == -1 {
+			p.log.TrimUntil(request.GetGlobalLastExecuted())
+			response.LastExecuted = p.log.LastExecuted()
+		}
 		response.Type = pb.ResponseType_OK
 		if request.GetBallot() > p.Ballot() {
 			p.BecomeFollower(request.GetBallot())
