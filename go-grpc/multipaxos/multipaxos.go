@@ -1,7 +1,9 @@
 package multipaxos
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
 	"github.com/psu-csl/replicated-store/go/config"
 	Log "github.com/psu-csl/replicated-store/go/log"
 	pb "github.com/psu-csl/replicated-store/go/multipaxos/comm"
@@ -25,6 +27,8 @@ type Multipaxos struct {
 	rpcPeers         []*RpcPeer
 	mu               sync.Mutex
 	snapshotInterval int64
+	lastExecutedList []int64
+	gapForSnapshot   int64
 
 	cvLeader   *sync.Cond
 	cvFollower *sync.Cond
@@ -53,6 +57,8 @@ func NewMultipaxos(log *Log.Log, config config.Config) *Multipaxos {
 		prepareThreadRunning: 0,
 		commitThreadRunning:  0,
 		snapshotInterval:     config.SnapshotInterval,
+		lastExecutedList:     make([]int64, len(config.Peers)),
+		gapForSnapshot:       200,
 		rpcServer:            nil,
 	}
 	multipaxos.rpcServerRunningCv = sync.NewCond(&multipaxos.mu)
@@ -285,9 +291,52 @@ func (p *Multipaxos) CommitThread() {
 
 func (p *Multipaxos) snapshotThread() {
 	for atomic.LoadInt32(&p.snapshotThreadRunning) == 1 {
-		_, err := p.log.MakeSnapshot()
+		snapshot, err := p.log.MakeSnapshot()
 		if err != nil {
 			break
+		}
+		if IsLeader(p.Ballot(), p.id) {
+			lastExecutedList := make([]int64, len(p.rpcPeers))
+			p.mu.Lock()
+			copy(lastExecutedList, p.lastExecutedList)
+			p.mu.Unlock()
+
+			follwerList := make([]int64, len(p.rpcPeers)-1, 0)
+			for id, lastExecuted := range lastExecutedList {
+				if int64(id) == p.id {
+					continue
+				}
+				if lastExecuted < p.log.LastExecuted()-p.gapForSnapshot {
+					follwerList = append(follwerList, int64(id))
+				}
+			}
+
+			state := NewSnapshotState()
+			buffer := bytes.Buffer{}
+			binary.Write(&buffer, binary.LittleEndian, snapshot.Log)
+			request := pb.SnapshotRequest{
+				Ballot:            p.Ballot(),
+				LastIncludedIndex: snapshot.LastIncludedIndex,
+				Data:              buffer.Bytes(),
+				Sender:            p.id,
+			}
+			for _, id := range follwerList {
+				peer := p.rpcPeers[id]
+				go func(peer *RpcPeer) {
+					ctx := context.Background()
+					_, _ = peer.Stub.InstallSnapshot(ctx, &request)
+					logger.Infof("%v sent install snapshot request to %v",
+						p.id, peer.Id)
+					state.Mu.Lock()
+					defer state.Mu.Unlock()
+					state.NumRpcs += 1
+				}(peer)
+			}
+			state.Mu.Lock()
+			for state.NumRpcs < len(follwerList) {
+				state.Cv.Wait()
+			}
+			state.Mu.Unlock()
 		}
 		sleepTime := p.snapshotInterval + rand.Int63n(p.snapshotInterval/4)
 		time.Sleep(time.Duration(sleepTime) * time.Millisecond)
@@ -429,7 +478,7 @@ func (p *Multipaxos) RunAcceptPhase(ballot int64, index int64,
 }
 
 func (p *Multipaxos) RunCommitPhase(ballot int64, globalLastExecuted int64) int64 {
-	state := NewCommitState(p.log.LastExecuted())
+	state := NewCommitState(p.log.LastExecuted(), p.lastExecutedList)
 
 	request := pb.CommitRequest{
 		Ballot:             ballot,
@@ -463,6 +512,10 @@ func (p *Multipaxos) RunCommitPhase(ballot int64, globalLastExecuted int64) int6
 					if response.GetLastExecuted() < state.MinLastExecuted {
 						state.MinLastExecuted = response.GetLastExecuted()
 					}
+					id := peer.Id
+					if response.GetLastExecuted() > state.LastExcutedList[id] {
+						state.LastExcutedList[id] = response.GetLastExecuted()
+					}
 				} else {
 					p.BecomeFollower(response.GetBallot())
 				}
@@ -476,6 +529,9 @@ func (p *Multipaxos) RunCommitPhase(ballot int64, globalLastExecuted int64) int6
 	for IsLeader(p.Ballot(), p.id) && state.NumRpcs != len(p.rpcPeers) {
 		state.Cv.Wait()
 	}
+	p.mu.Lock()
+	copy(p.lastExecutedList, state.LastExcutedList)
+	p.mu.Unlock()
 	if state.NumOks == len(p.rpcPeers) {
 		return state.MinLastExecuted
 	}

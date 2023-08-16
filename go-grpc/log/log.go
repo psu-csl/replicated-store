@@ -36,7 +36,7 @@ func IsEqualInstance(a, b *pb.Instance) bool {
 
 type Snapshot struct {
 	LastIncludedIndex int64
-	log               map[int64]*pb.Instance
+	Log               map[int64]*pb.Instance
 }
 
 func Insert(log map[int64]*pb.Instance, instance *pb.Instance) bool {
@@ -295,10 +295,10 @@ func (l *Log) MakeSnapshot() (*Snapshot, error) {
 
 	snapshot := Snapshot{
 		LastIncludedIndex: l.lastExecuted,
-		log:               make(map[int64]*pb.Instance),
+		Log:               make(map[int64]*pb.Instance),
 	}
 	for index, instance := range l.log {
-		snapshot.log[index] = proto.Clone(instance).(*pb.Instance)
+		snapshot.Log[index] = proto.Clone(instance).(*pb.Instance)
 	}
 	logger.Infof("snapshot data: %v\n", snapshot)
 

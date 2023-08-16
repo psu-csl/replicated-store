@@ -89,16 +89,30 @@ type CommitState struct {
 	NumRpcs         int
 	NumOks          int
 	MinLastExecuted int64
+	LastExcutedList []int64
 	Mu              sync.Mutex
 	Cv              *sync.Cond
 }
 
-func NewCommitState(minLastExecuted int64) *CommitState {
+func NewCommitState(minLastExecuted int64, lastExecutedList []int64) *CommitState {
 	commitState := &CommitState{
 		NumRpcs:         0,
 		NumOks:          0,
 		MinLastExecuted: minLastExecuted,
+		LastExcutedList: lastExecutedList,
 	}
 	commitState.Cv = sync.NewCond(&commitState.Mu)
 	return commitState
+}
+
+type SnapshotState struct {
+	NumRpcs int
+	Mu      sync.Mutex
+	Cv      *sync.Cond
+}
+
+func NewSnapshotState() *SnapshotState {
+	snapshotState := &SnapshotState{NumRpcs: 0}
+	snapshotState.Cv = sync.NewCond(&snapshotState.Mu)
+	return snapshotState
 }
