@@ -298,6 +298,8 @@ func (p *Multipaxos) CommitThread() {
 
 func (p *Multipaxos) snapshotThread() {
 	for atomic.LoadInt32(&p.snapshotThreadRunning) == 1 {
+		sleepTime := p.snapshotInterval + rand.Int63n(p.snapshotInterval/4)
+		time.Sleep(time.Duration(sleepTime) * time.Millisecond)
 		snapshot, err := p.log.MakeSnapshot()
 		if err != nil {
 			break
@@ -350,8 +352,6 @@ func (p *Multipaxos) snapshotThread() {
 			}
 			state.Mu.Unlock()
 		}
-		sleepTime := p.snapshotInterval + rand.Int63n(p.snapshotInterval/4)
-		time.Sleep(time.Duration(sleepTime) * time.Millisecond)
 	}
 }
 
