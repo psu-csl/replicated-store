@@ -1,8 +1,7 @@
 package log
 
 import (
-	"bytes"
-	"encoding/binary"
+	"encoding/gob"
 	"errors"
 	"github.com/golang/protobuf/proto"
 	"github.com/psu-csl/replicated-store/go/kvstore"
@@ -311,7 +310,7 @@ func (l *Log) MakeSnapshot() (*Snapshot, error) {
 		logger.Errorf("Couldn't create the file")
 		return nil, err
 	}
-	err = binary.Write(file, binary.LittleEndian, snapshot)
+	err = gob.NewEncoder(file).Encode(snapshot)
 	if err != nil {
 		logger.Errorf("Couldn't write to snapshot")
 		return nil, err
@@ -325,6 +324,7 @@ func (l *Log) MakeSnapshot() (*Snapshot, error) {
 		}
 	}
 	os.Rename("snapshot-new.dat", "snapshot.dat")
+	logger.Info("completes snapshot")
 	return &snapshot, nil
 }
 
@@ -336,16 +336,7 @@ func (l *Log) ResumeSnapshot(lastIncludedIndex int64, data []byte) {
 		return
 	}
 
-	buffer := bytes.NewBuffer(data)
-	snapshotLog := make(map[int64]*pb.Instance)
-	err := binary.Read(buffer, binary.LittleEndian, snapshotLog)
-	if err != nil {
-		logger.Error(err)
-	}
-
-	for index, instance := range snapshotLog {
-		l.log[index] = instance
-	}
+	l.kvStore.RestoreSnapshot(data)
 	l.lastExecuted = lastIncludedIndex
 	for l.lastSnapshotIndex < l.lastExecuted {
 		l.lastSnapshotIndex += 1
