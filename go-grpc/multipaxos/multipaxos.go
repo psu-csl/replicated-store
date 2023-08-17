@@ -141,12 +141,19 @@ func (p *Multipaxos) Start() {
 	p.StartPrepareThread()
 	p.StartCommitThread()
 	p.StartRPCServer()
+	if p.snapshotInterval != -1 {
+		p.StartSnapshotThread()
+	}
+
 }
 
 func (p *Multipaxos) Stop() {
 	p.StopRPCServer()
 	p.StopPrepareThread()
 	p.StopCommitThread()
+	if p.snapshotInterval != -1 {
+		p.StopSnapshotThread()
+	}
 }
 
 func (p *Multipaxos) StartRPCServer() {
