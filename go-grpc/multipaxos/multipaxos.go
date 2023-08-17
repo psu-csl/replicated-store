@@ -3,7 +3,7 @@ package multipaxos
 import (
 	"bytes"
 	"context"
-	"encoding/binary"
+	"encoding/gob"
 	"github.com/psu-csl/replicated-store/go/config"
 	Log "github.com/psu-csl/replicated-store/go/log"
 	pb "github.com/psu-csl/replicated-store/go/multipaxos/comm"
@@ -58,7 +58,7 @@ func NewMultipaxos(log *Log.Log, config config.Config) *Multipaxos {
 		commitThreadRunning:  0,
 		snapshotInterval:     config.SnapshotInterval,
 		lastExecutedList:     make([]int64, len(config.Peers)),
-		gapForSnapshot:       200,
+		gapForSnapshot:       20000,
 		rpcServer:            nil,
 	}
 	multipaxos.rpcServerRunningCv = sync.NewCond(&multipaxos.mu)
@@ -308,39 +308,44 @@ func (p *Multipaxos) snapshotThread() {
 			copy(lastExecutedList, p.lastExecutedList)
 			p.mu.Unlock()
 
-			follwerList := make([]int64, len(p.rpcPeers)-1, 0)
+			followerList := make([]int64, 0, len(p.rpcPeers)-1)
 			for id, lastExecuted := range lastExecutedList {
 				if int64(id) == p.id {
 					continue
 				}
 				if lastExecuted < p.log.LastExecuted()-p.gapForSnapshot {
-					follwerList = append(follwerList, int64(id))
+					followerList = append(followerList, int64(id))
 				}
 			}
 
 			state := NewSnapshotState()
-			buffer := bytes.Buffer{}
-			binary.Write(&buffer, binary.LittleEndian, snapshot.Log)
+			buffer := &bytes.Buffer{}
+			gob.NewEncoder(buffer).Encode(snapshot.Log)
 			request := pb.SnapshotRequest{
 				Ballot:            p.Ballot(),
 				LastIncludedIndex: snapshot.LastIncludedIndex,
 				Data:              buffer.Bytes(),
 				Sender:            p.id,
 			}
-			for _, id := range follwerList {
+			logger.Info(followerList)
+			for _, id := range followerList {
 				peer := p.rpcPeers[id]
 				go func(peer *RpcPeer) {
 					ctx := context.Background()
-					_, _ = peer.Stub.InstallSnapshot(ctx, &request)
+					_, err := peer.Stub.InstallSnapshot(ctx, &request)
+					if err != nil {
+						logger.Error(err)
+					}
 					logger.Infof("%v sent install snapshot request to %v",
 						p.id, peer.Id)
 					state.Mu.Lock()
 					defer state.Mu.Unlock()
 					state.NumRpcs += 1
+					state.Cv.Signal()
 				}(peer)
 			}
 			state.Mu.Lock()
-			for state.NumRpcs < len(follwerList) {
+			for state.NumRpcs < len(followerList) {
 				state.Cv.Wait()
 			}
 			state.Mu.Unlock()
@@ -621,7 +626,7 @@ func (p *Multipaxos) Commit(ctx context.Context,
 
 func (p *Multipaxos) InstallSnapshot(ctx context.Context,
 	request *pb.SnapshotRequest) (*pb.SnapshotResponse, error) {
-	logger.Infof("%v <--snapshot-- %v\", p.id, request.GetSender()")
+	logger.Infof("%v <--snapshot-- %v\n", p.id, request.GetSender())
 	response := &pb.SnapshotResponse{}
 	if request.GetBallot() >= p.Ballot() {
 		p.log.ResumeSnapshot(request.LastIncludedIndex, request.Data)
