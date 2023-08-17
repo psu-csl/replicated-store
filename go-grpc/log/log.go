@@ -37,7 +37,7 @@ func IsEqualInstance(a, b *pb.Instance) bool {
 
 type Snapshot struct {
 	LastIncludedIndex int64
-	Log               map[int64]*pb.Instance
+	Log               []byte
 }
 
 func Insert(log map[int64]*pb.Instance, instance *pb.Instance) bool {
@@ -294,14 +294,16 @@ func (l *Log) MakeSnapshot() (*Snapshot, error) {
 		return nil, errors.New("not running")
 	}
 
+	storeData, err := l.kvStore.MakeSnapshot()
+	if err != nil {
+		logger.Error(err)
+		return nil, err
+	}
 	snapshot := Snapshot{
 		LastIncludedIndex: l.lastExecuted,
-		Log:               make(map[int64]*pb.Instance),
+		Log:               storeData,
 	}
-	for index, instance := range l.log {
-		snapshot.Log[index] = proto.Clone(instance).(*pb.Instance)
-	}
-	logger.Infof("snapshot data: %v\n", snapshot)
+	logger.Infof("snapshot last index: %v\n", snapshot.LastIncludedIndex)
 
 	file, err := os.Create("snapshot-new.dat")
 	defer file.Close()
