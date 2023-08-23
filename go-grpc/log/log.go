@@ -287,14 +287,15 @@ func (l *Log) GetLog() map[int64]*pb.Instance {
 
 func (l *Log) MakeSnapshot() (*Snapshot, error) {
 	l.mu.Lock()
-	defer l.mu.Unlock()
 
 	if !l.running {
+		l.mu.Unlock()
 		return nil, errors.New("not running")
 	}
 
 	storeData, err := l.kvStore.MakeSnapshot()
 	if err != nil {
+		l.mu.Unlock()
 		logger.Error(err)
 		return nil, err
 	}
@@ -302,6 +303,7 @@ func (l *Log) MakeSnapshot() (*Snapshot, error) {
 		LastIncludedIndex: l.lastExecuted,
 		Log:               storeData,
 	}
+	l.mu.Unlock()
 	logger.Infof("snapshot last index: %v\n", snapshot.LastIncludedIndex)
 
 	file, err := os.Create("snapshot-new.dat")
@@ -316,6 +318,7 @@ func (l *Log) MakeSnapshot() (*Snapshot, error) {
 		return nil, err
 	}
 
+	l.mu.Lock()
 	for l.lastSnapshotIndex < l.lastExecuted {
 		l.lastSnapshotIndex += 1
 		instance, ok := l.log[l.lastSnapshotIndex]
@@ -323,6 +326,7 @@ func (l *Log) MakeSnapshot() (*Snapshot, error) {
 			delete(l.log, l.lastSnapshotIndex)
 		}
 	}
+	l.mu.Unlock()
 	os.Rename("snapshot-new.dat", "snapshot.dat")
 	logger.Info("completes snapshot")
 	return &snapshot, nil
