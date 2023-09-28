@@ -339,12 +339,11 @@ public class MultiPaxos {
         return new Result(MultiPaxosResultType.kOk, null);
       }
     }
+    removeChannel(channelId);
     if (!isLeader(this.ballot.get(), id)) {
-      removeChannel(channelId);
       return new Result(MultiPaxosResultType.kSomeoneElseLeader,
           extractLeaderId(ballot()));
     }
-    removeChannel(channelId);
     return new Result(MultiPaxosResultType.kRetry, null);
   }
 
@@ -497,9 +496,7 @@ public class MultiPaxos {
   }
 
   public PrepareResponse prepare(PrepareRequest request) {
-    if (id == 2) {
-      logger.debug(id + " <-- prepare-- " + request.getSender());
-    }
+    logger.debug(id + " <-- prepare-- " + request.getSender());
 
     if (request.getBallot() > ballot.get()) {
       becomeFollower(request.getBallot());

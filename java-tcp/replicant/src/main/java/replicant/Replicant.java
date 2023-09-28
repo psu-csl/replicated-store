@@ -65,12 +65,14 @@ public class Replicant {
     }
 
     public void start() {
+        startPeerServer();
         multiPaxos.start();
         startExecutorThread();
         startServer();
     }
 
     public void stop() {
+        stopPeerServer();
         stopServer();
         stopExecutorThread();
         multiPaxos.stop();
