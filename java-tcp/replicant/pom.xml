@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns="http://maven.apache.org/POM/4.0.0"
+  xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <artifactId>replicant</artifactId>
+
+  <build>
+    <extensions>
+      <extension>
+        <artifactId>os-maven-plugin</artifactId>
+        <groupId>kr.motd.maven</groupId>
+        <version>1.6.2</version>
+      </extension>
+    </extensions>
+    <plugins>
+      <plugin>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <source>17</source>
+          <target>17</target>
+        </configuration>
+        <groupId>org.apache.maven.plugins</groupId>
+      </plugin>
+    </plugins>
+  </build>
+  <dependencies>
+    <dependency>
+      <artifactId>netty-all</artifactId>
+      <groupId>io.netty</groupId>
+      <version>4.1.79.Final</version>
+    </dependency>
+    <dependency>
+      <artifactId>gson</artifactId>
+      <groupId>com.google.code.gson</groupId>
+      <version>2.9.0</version>
+    </dependency>
+    <dependency>
+      <artifactId>grpc-netty-shaded</artifactId>
+      <groupId>io.grpc</groupId>
+      <scope>runtime</scope>
+      <version>1.47.0</version>
+    </dependency>
+    <dependency>
+      <artifactId>grpc-protobuf</artifactId>
+      <groupId>io.grpc</groupId>
+      <version>1.47.0</version>
+    </dependency>
+    <dependency>
+      <artifactId>grpc-stub</artifactId>
+      <groupId>io.grpc</groupId>
+      <version>1.47.0</version>
+    </dependency>
+    <dependency> <!-- necessary for Java 9+ -->
+      <artifactId>annotations-api</artifactId>
+      <groupId>org.apache.tomcat</groupId>
+      <scope>provided</scope>
+      <version>6.0.53</version>
+    </dependency>
+    <dependency>
+      <artifactId>protobuf-java</artifactId>
+      <groupId>com.google.protobuf</groupId>
+      <version>3.21.1</version>
+    </dependency>
+    <dependency>
+      <artifactId>jackson-core</artifactId>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <scope>compile</scope>
+      <version>2.13.3</version>
+    </dependency>
+    <dependency>
+      <artifactId>jackson-xml-databind</artifactId>
+      <groupId>com.fasterxml</groupId>
+      <scope>compile</scope>
+      <version>0.6.2</version>
+    </dependency>
+    <dependency>
+      <artifactId>junit-jupiter-api</artifactId>
+      <groupId>org.junit.jupiter</groupId>
+      <scope>test</scope>
+      <version>5.8.2</version>
+    </dependency>
+    <dependency>
+      <artifactId>logback-classic</artifactId>
+      <groupId>ch.qos.logback</groupId>
+      <version>1.2.11</version>
+    </dependency>
+    <dependency>
+      <groupId>org.rocksdb</groupId>
+      <artifactId>rocksdbjni</artifactId>
+      <version>7.6.0</version>
+    </dependency>
+  </dependencies>
+  <groupId>psu.csl</groupId>
+
+  <modelVersion>4.0.0</modelVersion>
+  <properties>
+    <exec.mainClass>ReplicantMain</exec.mainClass>
+    <maven.compiler.source>1.17</maven.compiler.source>
+    <maven.compiler.target>1.17</maven.compiler.target>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+  </properties>
+  <version>1.0</version>
+
+
+</project>
