@@ -83,6 +83,9 @@ MultiPaxos::RunPreparePhase(int64_t ballot) {
     ++num_oks;
     log = log_->GetLog();
     max_last_index = log_->LastIndex();
+    if (num_oks > num_peers_ / 2) {
+      return std::make_pair(max_last_index, std::move(log));
+    }
   } else {
     return std::nullopt;
   }
