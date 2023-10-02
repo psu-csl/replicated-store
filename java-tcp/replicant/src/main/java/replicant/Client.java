@@ -5,6 +5,7 @@ import io.netty.channel.Channel;
 import java.io.IOException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.locks.ReentrantLock;
 import multipaxos.MultiPaxos;
 import multipaxos.MultiPaxosResultType;
 import multipaxos.network.AcceptRequest;
@@ -24,6 +25,7 @@ public class Client {
   private final MultiPaxos multiPaxos;
   private final boolean isFromClient;
   private final ExecutorService threadPool;
+  private final ReentrantLock writerMu;
 
   public Client(long id, Channel socket, MultiPaxos multiPaxos,
       boolean isFromClient, ExecutorService threadPool) {
@@ -32,6 +34,7 @@ public class Client {
     this.multiPaxos = multiPaxos;
     this.isFromClient = isFromClient;
     this.threadPool = threadPool;
+    this.writerMu = new ReentrantLock();
   }
 
   public static Command parse(String request) {
@@ -126,6 +129,8 @@ public class Client {
   }
 
   public void write(String response) {
+    writerMu.lock();
     socket.writeAndFlush(response + "\n");
+    writerMu.unlock();
   }
 }
