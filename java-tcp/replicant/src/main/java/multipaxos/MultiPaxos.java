@@ -257,7 +257,7 @@ public class MultiPaxos {
     }
 
     while (true) {
-      var response = responseChan.take();
+      var response = responseChan.poll(commitInterval, TimeUnit.MILLISECONDS);
       var prepareResponse = mapper.readValue(response, PrepareResponse.class);
       if (prepareResponse.getType() == OK) {
         numOks++;
@@ -325,7 +325,7 @@ public class MultiPaxos {
     }
     while (true) {
       try {
-        var response = responseChan.take();
+        var response = responseChan.poll(commitInterval, TimeUnit.MILLISECONDS);
         var acceptResponse = mapper.readValue(response, AcceptResponse.class);
         if (acceptResponse.getType() == OK) {
           numOks++;
@@ -378,7 +378,7 @@ public class MultiPaxos {
     }
 
     while (true) {
-      var response = responseChan.take();
+      var response = responseChan.poll(commitInterval, TimeUnit.MILLISECONDS);
       var commitResponse = mapper.readValue(response, CommitResponse.class);
       if (commitResponse.getType() == OK) {
         numOks++;
