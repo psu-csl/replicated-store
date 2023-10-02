@@ -9,33 +9,51 @@ import java.util.concurrent.BlockingDeque;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingDeque;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.ReentrantLock;
 import multipaxos.network.Message.MessageType;
 import org.codehaus.jackson.map.ObjectMapper;
 
 public class TcpLink {
 
+  private final String address;
   private BlockingDeque<String> requestChan;
+  private PrintWriter writer;
+  private BufferedReader reader;
   private ExecutorService incomingThread = Executors.newSingleThreadExecutor();
   private ExecutorService outgoingThread = Executors.newSingleThreadExecutor();
+  private final ReentrantLock mu;
+  private final Condition cv;
+  private AtomicBoolean isConnected;
 
   public TcpLink(String addr, ChannelMap channels) {
-    String[] address = addr.split(":");
-    int port = Integer.parseInt(address[1]);
-    Socket socket = null;
+    this.address = addr;
     requestChan = new LinkedBlockingDeque<>();
-    while (true) {
-      try {
-        socket = new Socket(address[0], port);
-        PrintWriter writer = new PrintWriter(socket.getOutputStream(), true);
-        BufferedReader reader = new BufferedReader(
-            new InputStreamReader(socket.getInputStream()));
-        incomingThread.submit(() -> handleIncomingResponses(reader, channels));
-        outgoingThread.submit(() -> handleOutgoingRequests(writer, requestChan));
-      } catch (IOException e) {
-        continue;
-      }
-      break;
+    this.mu = new ReentrantLock();
+    this.cv = mu.newCondition();
+    isConnected = new AtomicBoolean(false);
+    Connect();
+    incomingThread.submit(() -> handleIncomingResponses(reader, channels));
+    outgoingThread.submit(() -> handleOutgoingRequests(writer, requestChan));
+  }
+
+  private boolean Connect() {
+    try {
+      String[] address = this.address.split(":");
+      int port = Integer.parseInt(address[1]);
+      Socket socket = new Socket(address[0], port);
+      writer = new PrintWriter(socket.getOutputStream(), true);
+      reader = new BufferedReader(
+          new InputStreamReader(socket.getInputStream()));
+      mu.lock();
+      isConnected = new AtomicBoolean(true);
+      cv.signal();
+      mu.unlock();
+    } catch (IOException e) {
+      return false;
     }
+    return true;
   }
 
   public void sendAwaitResponse(MessageType type, long channelId, String msg) {
@@ -58,9 +76,11 @@ public class TcpLink {
         if (request.equals("EOF")) {
           return;
         }
-        request = request + "\n";
-        writer.print(request);
-        writer.flush();
+        if (isConnected.get() || (!isConnected.get() && Connect())) {
+          request = request + "\n";
+          writer.print(request);
+          writer.flush();
+        }
       } catch (InterruptedException e) {
         break;
       }
@@ -72,6 +92,11 @@ public class TcpLink {
     ObjectMapper mapper = new ObjectMapper();
     while (true) {
       try {
+        mu.lock();
+        while(!isConnected.get()) {
+          cv.await();
+        }
+        mu.unlock();
         String line = reader.readLine();
         var response = mapper.readValue(line, Message.class);
         var channel = channels.get(response.getChannelId());
@@ -87,6 +112,10 @@ public class TcpLink {
   }
 
   public void stop() {
+    mu.lock();
+    isConnected = new AtomicBoolean(true);
+    cv.signal();
+    mu.unlock();
     requestChan.add("EOF");
     incomingThread.shutdown();
     outgoingThread.shutdown();
