@@ -7,6 +7,7 @@ import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.util.AttributeKey;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import multipaxos.MultiPaxos;
 import org.slf4j.LoggerFactory;
 
@@ -82,5 +83,14 @@ public class ClientManager extends SimpleChannelInboundHandler<String> {
       if (client != null) {
           client.handleRequest(msg);
       }
+  }
+
+  public void stop() {
+    threadPool.shutdown();
+    try {
+      threadPool.awaitTermination(1000, TimeUnit.MILLISECONDS);
+    } catch (InterruptedException e) {
+      e.printStackTrace();
+    }
   }
 }

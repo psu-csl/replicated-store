@@ -99,25 +99,25 @@ public class Client {
       var tcpResponse = "";
       try {
         switch (finalRequest.getType()) {
-          case PREPAREREQUEST:
+          case PREPAREREQUEST -> {
             var prepareRequest = mapper.readValue(message,
                 PrepareRequest.class);
             var prepareResponse = multiPaxos.prepare(prepareRequest);
             tcpResponse = mapper.writeValueAsString(prepareResponse);
             write(tcpResponse);
-            break;
-          case ACCEPTREQUEST:
+          }
+          case ACCEPTREQUEST -> {
             var acceptRequest = mapper.readValue(message, AcceptRequest.class);
             var acceptResponse = multiPaxos.accept(acceptRequest);
             tcpResponse = mapper.writeValueAsString(acceptResponse);
             write(tcpResponse);
-            break;
-          case COMMITREQUEST:
+          }
+          case COMMITREQUEST -> {
             var commitRequest = mapper.readValue(message, CommitRequest.class);
             var commitResponse = multiPaxos.commit(commitRequest);
             tcpResponse = mapper.writeValueAsString(commitResponse);
             write(tcpResponse);
-            break;
+          }
         }
       } catch (IOException e) {
         e.printStackTrace();

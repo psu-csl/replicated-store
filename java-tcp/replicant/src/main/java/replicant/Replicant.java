@@ -87,6 +87,7 @@ public class Replicant {
     private void stopServer() {
         clientWorkerGroup.shutdownGracefully();
         clientBossGroup.shutdownGracefully();
+        clientManager.stop();
     }
 
     private void startPeerServer() {
@@ -98,6 +99,7 @@ public class Replicant {
     private void stopPeerServer() {
         peerWorkerGroup.shutdownGracefully();
         peerBossGroup.shutdownGracefully();
+        peerClientManager.stop();
     }
 
     private void startExecutorThread() {
