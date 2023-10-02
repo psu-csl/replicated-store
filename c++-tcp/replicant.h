@@ -42,7 +42,7 @@ class Replicant : public std::enable_shared_from_this<Replicant> {
   asio::io_context* io_context_;
   asio::ip::tcp::acceptor acceptor_;
   ClientManager client_manager_;
-  PeerServer peer_server_;
+  std::shared_ptr<PeerServer> peer_server_;
   std::thread executor_thread_;
 };
 

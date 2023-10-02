@@ -13,7 +13,6 @@ void CreateListener(int port, asio::ip::tcp::acceptor& acceptor) {
 void AcceptClient(asio::io_context* io_context, 
                   ClientManager* client_manager, 
                   asio::ip::tcp::acceptor* acceptor) {
-                             DLOG(INFO) << "exit";
   acceptor->async_accept(asio::make_strand(*io_context),
                          [io_context, client_manager, acceptor]
                              (std::error_code ec, tcp::socket socket) {
@@ -48,9 +47,8 @@ void PeerServer::StartServer(MultiPaxos* multi_paxos) {
 void PeerServer::StopServer() {
   auto self(shared_from_this());
   asio::post(acceptor_.get_executor(), [this, self] {
-    if (acceptor_.is_open()) {
+    if (acceptor_.is_open())
       acceptor_.close();
-    }
   });
   peer_manager_->StopAll();
 }

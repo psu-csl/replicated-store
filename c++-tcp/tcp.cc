@@ -52,7 +52,7 @@ void TcpLink::HandleOutgoingRequests(tcp::socket& socket,
   for (;;) {
   	std::string request;
   	request_channel.wait_dequeue(request);
-    if (request == "EOF") 
+    if (request == "EOF")
       break;
   	asio::error_code error;
     if (is_connected_ || (!is_connected_ && Connect())) {
@@ -75,9 +75,8 @@ void TcpLink::HandleIncomingResponses(tcp::socket& socket,
     }
 
   	asio::read_until(socket, response_buf, '\n', error);
-  	if (error) {
+  	if (error)
   		break;
-    }
     std::istream response_stream(&response_buf);
     std::string response_str;
     std::getline(response_stream, response_str);
@@ -99,10 +98,10 @@ void TcpLink::Stop() {
     std::unique_lock lock(mu_);
     is_connected_ = true;
     cv_.notify_one();
+  if (is_connected_)
+    socket_.close();
   }
   request_channel_.enqueue("EOF");
   incoming_thread_.join();
   outgoing_thread_.join();
-  if (is_connected_)
-    socket_.close();
 }

@@ -34,6 +34,7 @@ std::string MakeConfig(int64_t id, int64_t num_peers) {
   auto r = R"({ "id": )" + std::to_string(id) + R"(,
               "threadpool_size": 8,
               "commit_interval": 300,
+              "store": "mem",
               "peers": [)";
 
   for (auto i = 0; i < num_peers; ++i) {

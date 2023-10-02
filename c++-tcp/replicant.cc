@@ -21,18 +21,18 @@ Replicant::Replicant(asio::io_context* io_context, json const& config)
       acceptor_(asio::make_strand(*io_context_)),
       client_manager_(id_, config["peers"].size(), &multi_paxos_,
                       true, config["threadpool_size"]),
-      peer_server_(id_, ip_port_, io_context_,
-                   config["peers"].size(), config["threadpool_size"]) {}
+      peer_server_(std::make_shared<PeerServer>(id_, ip_port_, io_context_,
+                   config["peers"].size(), config["threadpool_size"])) {}
 
 void Replicant::Start() {
-  peer_server_.StartServer(&multi_paxos_);
+  peer_server_.get()->StartServer(&multi_paxos_);
   multi_paxos_.Start();
   StartExecutorThread();
   StartServer();
 }
 
 void Replicant::Stop() {
-  peer_server_.StopServer();
+  peer_server_.get()->StopServer();
   StopServer();
   StopExecutorThread();
   multi_paxos_.Stop();
