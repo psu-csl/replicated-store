@@ -26,12 +26,12 @@ public class Client {
   private final ExecutorService threadPool;
 
   public Client(long id, Channel socket, MultiPaxos multiPaxos,
-      boolean isFromClient, int threadPoolSize) {
+      boolean isFromClient, ExecutorService threadPool) {
     this.id = id;
     this.socket = socket;
     this.multiPaxos = multiPaxos;
     this.isFromClient = isFromClient;
-    threadPool = Executors.newFixedThreadPool(threadPoolSize);
+    this.threadPool = threadPool;
   }
 
   public static Command parse(String request) {

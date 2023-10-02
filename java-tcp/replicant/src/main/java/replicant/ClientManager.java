@@ -5,6 +5,8 @@ import io.netty.channel.ChannelHandler.Sharable;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.util.AttributeKey;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import multipaxos.MultiPaxos;
 import org.slf4j.LoggerFactory;
 
@@ -20,7 +22,7 @@ public class ClientManager extends SimpleChannelInboundHandler<String> {
   private final ReentrantLock mu = new ReentrantLock();
   private final HashMap<Long, Client> clients = new HashMap<>();
   private final boolean isFromClient;
-  private final int threadPoolSize;
+  private final ExecutorService threadPool;
   private static final Logger logger = (Logger) LoggerFactory.getLogger(
       ClientManager.class);
   private final AttributeKey<Long> clientIdAttrKey = AttributeKey.valueOf(
@@ -32,7 +34,7 @@ public class ClientManager extends SimpleChannelInboundHandler<String> {
     this.numPeers = numPeers;
     this.multiPaxos = multiPaxos;
     this.isFromClient = isFromClient;
-    this.threadPoolSize = threadPoolSize;
+    this.threadPool = Executors.newFixedThreadPool(threadPoolSize);
   }
 
   private long nextClientId() {
@@ -48,7 +50,7 @@ public class ClientManager extends SimpleChannelInboundHandler<String> {
     logger.debug("client joined " + ctx);
     ctx.channel().attr(clientIdAttrKey).set(id);
     clients.put(id, new Client(id, ctx.channel(), multiPaxos, isFromClient,
-        threadPoolSize));
+        threadPool));
     mu.unlock();
   }
 
