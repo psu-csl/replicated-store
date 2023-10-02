@@ -1,5 +1,6 @@
 {
-  "commit_interval": 300000,
+  "threadpool_size": 64,
+  "commit_interval": 300,
   "peers": [
     "0.0.0.0:10000",
     "0.0.0.0:11000",
