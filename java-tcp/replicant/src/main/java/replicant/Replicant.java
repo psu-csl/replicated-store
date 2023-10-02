@@ -35,6 +35,7 @@ public class Replicant {
     private final EventLoopGroup clientWorkerGroup = new NioEventLoopGroup();
     private final EventLoopGroup peerBossGroup = new NioEventLoopGroup();
     private final EventLoopGroup peerWorkerGroup = new NioEventLoopGroup();
+    private final ExecutorService peerServerThread = Executors.newSingleThreadExecutor();
     private static final Logger logger = (Logger) LoggerFactory.getLogger(
         Replicant.class);
 
@@ -43,7 +44,6 @@ public class Replicant {
         this.id = config.getId();
         this.log = new Log(KVStore.createStore(config));
         this.ipPort = config.getPeers().get((int) id);
-        startPeerServer();
         this.multiPaxos = new MultiPaxos(log, config);
         int threadPoolSize = config.getThreadPoolSize();
         clientManager = new ClientManager(id, config.getPeers().size(),
@@ -66,6 +66,7 @@ public class Replicant {
     }
 
     public void start() {
+        peerServerThread.submit(this::startPeerServer);
         multiPaxos.start();
         startExecutorThread();
         startServer();
@@ -100,6 +101,7 @@ public class Replicant {
         peerWorkerGroup.shutdownGracefully();
         peerBossGroup.shutdownGracefully();
         peerClientManager.stop();
+        peerServerThread.shutdown();
     }
 
     private void startExecutorThread() {
