@@ -234,6 +234,9 @@ public class MultiPaxos {
       numOks++;
       log = this.log.getLog();
       maxLastIndex = this.log.getLastIndex();
+      if (numOks > numPeers / 2) {
+        return new HashMap.SimpleEntry<>(maxLastIndex, log);
+      }
     } else {
       return null;
     }
