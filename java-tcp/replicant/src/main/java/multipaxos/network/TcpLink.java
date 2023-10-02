@@ -55,6 +55,9 @@ public class TcpLink {
     while (true) {
       try {
         String request = requestChan.take();
+        if (request.equals("EOF")) {
+          return;
+        }
         request = request + "\n";
         writer.print(request);
         writer.flush();
@@ -84,6 +87,7 @@ public class TcpLink {
   }
 
   public void stop() {
+    requestChan.add("EOF");
     incomingThread.shutdown();
     outgoingThread.shutdown();
   }

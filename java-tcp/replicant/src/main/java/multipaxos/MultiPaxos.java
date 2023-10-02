@@ -436,6 +436,10 @@ public class MultiPaxos {
     } catch (InterruptedException e) {
       e.printStackTrace();
     }
+
+    for (var peer : peers) {
+      peer.stub.stop();
+    }
   }
 
   public void startPrepareThread() {
