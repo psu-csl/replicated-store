@@ -42,8 +42,9 @@ public class Replicant {
     public Replicant(Configuration config) {
         this.id = config.getId();
         this.log = new Log(KVStore.createStore(config));
-        this.multiPaxos = new MultiPaxos(log, config);
         this.ipPort = config.getPeers().get((int) id);
+        startPeerServer();
+        this.multiPaxos = new MultiPaxos(log, config);
         int threadPoolSize = config.getThreadPoolSize();
         clientManager = new ClientManager(id, config.getPeers().size(),
             multiPaxos, true, threadPoolSize);
@@ -65,7 +66,6 @@ public class Replicant {
     }
 
     public void start() {
-        startPeerServer();
         multiPaxos.start();
         startExecutorThread();
         startServer();
