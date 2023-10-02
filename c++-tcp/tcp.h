@@ -8,11 +8,13 @@
 #include <thread>
 
 #include "atomicops.h"
+#include "blockingconcurrentqueue.h"
 #include "msg.h"
 #include "readerwriterqueue.h"
 
 using asio::ip::tcp;
 using moodycamel::BlockingReaderWriterQueue;
+using moodycamel::BlockingConcurrentQueue;
 
 struct ChannelMap {
   mutable std::mutex mu_;
@@ -33,7 +35,7 @@ class TcpLink {
   	                     std::string const& msg);
 
   void HandleOutgoingRequests(tcp::socket& socket, 
-  	  BlockingReaderWriterQueue<std::string>& request_channel);
+  	  BlockingConcurrentQueue<std::string>& request_channel);
   void HandleIncomingResponses(tcp::socket& socket, 
                                ChannelMap& channels);
   void Stop(); 
@@ -41,7 +43,7 @@ class TcpLink {
  private:
   std::string address_;
   asio::io_context* io_context_;
-  BlockingReaderWriterQueue<std::string> request_channel_;
+  BlockingConcurrentQueue<std::string> request_channel_;
   tcp::socket socket_;
   std::thread incoming_thread_;
   std::thread outgoing_thread_;

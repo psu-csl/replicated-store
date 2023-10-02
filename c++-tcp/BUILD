@@ -52,7 +52,9 @@ cc_library(
 cc_library(
     name = "multipaxos",
     srcs = ["multipaxos.cc", "tcp.cc"],
-    hdrs = ["multipaxos.h", "json.h", "json_fwd.h", "tcp.h", "atomicops.h", "readerwriterqueue.h"],
+    hdrs = ["multipaxos.h", "json.h", "json_fwd.h", "tcp.h", 
+            "atomicops.h", "readerwriterqueue.h", 
+            "blockingconcurrentqueue.h", "concurrentqueue.h", "lightweightsemaphore.h"],
     deps = [
         ":memkvstore",
         ":rocksdbstore",
@@ -109,7 +111,7 @@ cc_test(
 cc_test(
     name = "multipaxos_test",
     size = "small",
-    srcs = ["multipaxos.cc", "multipaxos_test.cc", "peer_server.h", "peer_server.cc",],
+    srcs = ["multipaxos.cc", "multipaxos_test.cc", "peer_server.h", "peer_server.cc"],
     deps = [
         ":client_manager",
         ":multipaxos",
@@ -121,7 +123,7 @@ cc_test(
 cc_test(
     name = "replicant_test",
     size = "small",
-    srcs = ["replicant.cc", "replicant_test.cc"],
+    srcs = ["replicant.cc", "replicant_test.cc", "peer_server.h", "peer_server.cc"],
     deps = [
         ":client_manager",
         ":replicant",

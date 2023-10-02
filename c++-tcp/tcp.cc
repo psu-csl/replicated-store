@@ -48,7 +48,7 @@ void TcpLink::SendAwaitResponse(MessageType type,
 }
 
 void TcpLink::HandleOutgoingRequests(tcp::socket& socket, 
-  	BlockingReaderWriterQueue<std::string>& request_channel) {
+  	BlockingConcurrentQueue<std::string>& request_channel) {
   for (;;) {
   	std::string request;
   	request_channel.wait_dequeue(request);
