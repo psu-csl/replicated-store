@@ -73,7 +73,7 @@ class MultiPaxosTest {
     if (!isServerOn.get(targetId).get()) {
       return null;
     }
-    PrepareRequest prepareRequest = new PrepareRequest(ballot, targetId);
+    PrepareRequest prepareRequest = new PrepareRequest(ballot, p.getId());
     ObjectMapper mapper = new ObjectMapper();
     var request = mapper.writeValueAsString(prepareRequest);
     var channelId = p.nextChannelId();
@@ -91,7 +91,7 @@ class MultiPaxosTest {
     if (!isServerOn.get(targetId).get()) {
       return null;
     }
-    AcceptRequest acceptRequest = new AcceptRequest(targetId, inst);
+    AcceptRequest acceptRequest = new AcceptRequest(p.getId(), inst);
     ObjectMapper mapper = new ObjectMapper();
     var s = mapper.writeValueAsString(acceptRequest.getInstance());
     var request = mapper.writeValueAsString(acceptRequest);
