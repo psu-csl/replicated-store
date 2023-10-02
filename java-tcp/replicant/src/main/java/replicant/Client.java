@@ -1,5 +1,9 @@
 package replicant;
 
+import static multipaxos.network.Message.MessageType.ACCEPTRESPONSE;
+import static multipaxos.network.Message.MessageType.COMMITRESPONSE;
+import static multipaxos.network.Message.MessageType.PREPARERESPONSE;
+
 import command.Command;
 import io.netty.channel.Channel;
 import java.io.IOException;
@@ -99,32 +103,45 @@ public class Client {
     Message finalRequest = request;
     threadPool.submit(() -> {
       var message = finalRequest.getMsg();
-      var tcpResponse = "";
+      var responseJson = "";
+      Message tcpResponse;
+      var tcpResponseJson = "";
       try {
         switch (finalRequest.getType()) {
           case PREPAREREQUEST -> {
             var prepareRequest = mapper.readValue(message,
                 PrepareRequest.class);
             var prepareResponse = multiPaxos.prepare(prepareRequest);
-            tcpResponse = mapper.writeValueAsString(prepareResponse);
-            write(tcpResponse);
+            responseJson = mapper.writeValueAsString(prepareResponse);
+            tcpResponse = new Message(PREPARERESPONSE,
+                                      finalRequest.getChannelId(),
+                                      responseJson);
+            tcpResponseJson = mapper.writeValueAsString(tcpResponse);
           }
           case ACCEPTREQUEST -> {
             var acceptRequest = mapper.readValue(message, AcceptRequest.class);
             var acceptResponse = multiPaxos.accept(acceptRequest);
-            tcpResponse = mapper.writeValueAsString(acceptResponse);
-            write(tcpResponse);
+            responseJson = mapper.writeValueAsString(acceptResponse);
+            tcpResponse = new Message(ACCEPTRESPONSE,
+                finalRequest.getChannelId(),
+                responseJson);
+            tcpResponseJson = mapper.writeValueAsString(tcpResponse);
           }
           case COMMITREQUEST -> {
             var commitRequest = mapper.readValue(message, CommitRequest.class);
             var commitResponse = multiPaxos.commit(commitRequest);
-            tcpResponse = mapper.writeValueAsString(commitResponse);
-            write(tcpResponse);
+            responseJson = mapper.writeValueAsString(commitResponse);
+            tcpResponse = new Message(COMMITRESPONSE,
+                finalRequest.getChannelId(),
+                responseJson);
+            tcpResponseJson = mapper.writeValueAsString(tcpResponse);
           }
         }
       } catch (IOException e) {
         e.printStackTrace();
+        return;
       }
+      write(tcpResponseJson);
     });
   }
 
