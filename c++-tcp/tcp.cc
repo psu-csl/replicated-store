@@ -47,8 +47,9 @@ void TcpLink::SendAwaitResponse(MessageType type,
   std::string tcp_request = j.dump() + "\n";
   // request_channel_.enqueue(j.dump() + "\n");
   if (is_connected_ || (!is_connected_ && Connect())) {
+    auto self(shared_from_this());
     asio::async_write(socket_, asio::buffer(tcp_request, tcp_request.size()), 
-                      [](std::error_code ec, size_t){
+                      [self](std::error_code ec, size_t){
                         DLOG(ERROR) << "async_write: " << ec.message();
                       });
   }

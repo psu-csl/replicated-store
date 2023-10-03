@@ -24,7 +24,7 @@ static const int64_t kIdBits = 0xff;
 static const int64_t kRoundIncrement = kIdBits + 1;
 static const int64_t kMaxNumPeers = 0xf;
 
-using tcp_link_t = std::unique_ptr<TcpLink>;
+using tcp_link_t = std::shared_ptr<TcpLink>;
 
 struct rpc_peer_t {
   rpc_peer_t(int64_t id, tcp_link_t stub) : id_(id), stub_(std::move(stub)) {}

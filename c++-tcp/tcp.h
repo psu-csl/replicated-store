@@ -22,7 +22,7 @@ struct ChannelMap {
       int64_t, BlockingReaderWriterQueue<std::string>&> map_;
 };
 
-class TcpLink {
+class TcpLink : public std::enable_shared_from_this<TcpLink> {
  public:
   TcpLink(std::string const address, 
   	      ChannelMap& channels, 
