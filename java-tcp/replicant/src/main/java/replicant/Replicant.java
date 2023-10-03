@@ -24,123 +24,128 @@ import java.util.concurrent.Executors;
 
 public class Replicant {
 
-    private final long id;
-    private final Log log;
-    private final MultiPaxos multiPaxos;
-    private final String ipPort;
-    private final ExecutorService executorThread = Executors.newSingleThreadExecutor();
-    private final ClientManager clientManager;
-    private final ClientManager peerClientManager;
-    private final EventLoopGroup clientBossGroup = new NioEventLoopGroup();
-    private final EventLoopGroup clientWorkerGroup = new NioEventLoopGroup();
-    private final EventLoopGroup peerBossGroup = new NioEventLoopGroup();
-    private final EventLoopGroup peerWorkerGroup = new NioEventLoopGroup();
-    private final ExecutorService peerServerThread = Executors.newSingleThreadExecutor();
-    private static final Logger logger = (Logger) LoggerFactory.getLogger(
-        Replicant.class);
+  private final long id;
+  private final Log log;
+  private final MultiPaxos multiPaxos;
+  private final String ipPort;
+  private final ExecutorService executorThread =
+      Executors.newSingleThreadExecutor();
+  private final ClientManager clientManager;
+  private final ClientManager peerClientManager;
+  private final EventLoopGroup clientBossGroup = new NioEventLoopGroup();
+  private final EventLoopGroup clientWorkerGroup = new NioEventLoopGroup();
+  private final EventLoopGroup peerBossGroup = new NioEventLoopGroup();
+  private final EventLoopGroup peerWorkerGroup = new NioEventLoopGroup();
+  private final ExecutorService peerServerThread =
+      Executors.newSingleThreadExecutor();
+  private static final Logger logger = (Logger) LoggerFactory.getLogger(
+      Replicant.class);
 
 
-    public Replicant(Configuration config) {
-        this.id = config.getId();
-        this.log = new Log(KVStore.createStore(config));
-        this.ipPort = config.getPeers().get((int) id);
-        this.multiPaxos = new MultiPaxos(log, config);
-        int threadPoolSize = config.getThreadPoolSize();
-        clientManager = new ClientManager(id, config.getPeers().size(),
-            multiPaxos, true, threadPoolSize);
-        peerClientManager = new ClientManager(id, config.getPeers().size(),
-            multiPaxos, false, threadPoolSize);
+  public Replicant(Configuration config) {
+    this.id = config.getId();
+    this.log = new Log(KVStore.createStore(config));
+    this.ipPort = config.getPeers().get((int) id);
+    this.multiPaxos = new MultiPaxos(log, config);
+    int threadPoolSize = config.getThreadPoolSize();
+    clientManager = new ClientManager(id, config.getPeers().size(),
+        multiPaxos, true, threadPoolSize);
+    peerClientManager = new ClientManager(id, config.getPeers().size(),
+        multiPaxos, false, threadPoolSize);
+  }
+
+  private void executorThread() {
+    while (true) {
+      var r = log.execute();
+      if (r == null) {
+        break;
+      }
+      var id = r.getKey();
+      var result = r.getValue();
+      var client = clientManager.get(id);
+      if (client != null) {
+        client.write(result.getValue());
+      }
     }
+  }
 
-    private void executorThread() {
-        while (true) {
-            var r = log.execute();
-            if (r == null) {
-                break;
-            }
-            var id = r.getKey();
-            var result = r.getValue();
-            var client = clientManager.get(id);
-            if (client != null) client.write(result.getValue());
-        }
-    }
+  public void start() {
+    peerServerThread.submit(this::startPeerServer);
+    multiPaxos.start();
+    startExecutorThread();
+    startServer();
+  }
 
-    public void start() {
-        peerServerThread.submit(this::startPeerServer);
-        multiPaxos.start();
-        startExecutorThread();
-        startServer();
-    }
+  public void stop() {
+    stopPeerServer();
+    stopServer();
+    stopExecutorThread();
+    multiPaxos.stop();
+  }
 
-    public void stop() {
-        stopPeerServer();
-        stopServer();
-        stopExecutorThread();
-        multiPaxos.stop();
-    }
+  private void startServer() {
+    int port = Integer.parseInt(ipPort.substring(ipPort.indexOf(":") + 1)) + 1;
+    startAccept(clientBossGroup, clientWorkerGroup, clientManager, port);
+    logger.debug(id + " starting server at port " + port);
+  }
 
-    private void startServer() {
-        int port = Integer.parseInt(ipPort.substring(ipPort.indexOf(":") + 1)) + 1;
-        startAccept(clientBossGroup, clientWorkerGroup, clientManager, port);
-        logger.debug(id + " starting server at port " + port);
-    }
+  private void stopServer() {
+    clientWorkerGroup.shutdownGracefully();
+    clientBossGroup.shutdownGracefully();
+    clientManager.stop();
+  }
 
-    private void stopServer() {
-        clientWorkerGroup.shutdownGracefully();
-        clientBossGroup.shutdownGracefully();
-        clientManager.stop();
-    }
+  private void startPeerServer() {
+    int port = Integer.parseInt(ipPort.substring(ipPort.indexOf(":") + 1));
+    startAccept(peerBossGroup, peerWorkerGroup, peerClientManager, port);
+    logger.debug(id + " starting peer server at port " + port);
+  }
 
-    private void startPeerServer() {
-        int port = Integer.parseInt(ipPort.substring(ipPort.indexOf(":") + 1));
-        startAccept(peerBossGroup, peerWorkerGroup, peerClientManager, port);
-        logger.debug(id + " starting peer server at port " + port);
-    }
+  private void stopPeerServer() {
+    peerWorkerGroup.shutdownGracefully();
+    peerBossGroup.shutdownGracefully();
+    peerClientManager.stop();
+    peerServerThread.shutdown();
+  }
 
-    private void stopPeerServer() {
-        peerWorkerGroup.shutdownGracefully();
-        peerBossGroup.shutdownGracefully();
-        peerClientManager.stop();
-        peerServerThread.shutdown();
-    }
+  private void startExecutorThread() {
+    logger.debug(id + " starting executor thread");
+    executorThread.submit(this::executorThread);
+  }
 
-    private void startExecutorThread() {
-        logger.debug(id + " starting executor thread");
-        executorThread.submit(this::executorThread);
-    }
+  private void stopExecutorThread() {
+    logger.debug(id + " stopping executor thread");
+    log.stop();
+    executorThread.shutdown();
+  }
 
-    private void stopExecutorThread() {
-        logger.debug(id + " stopping executor thread");
-        log.stop();
-        executorThread.shutdown();
+  private void startAccept(EventLoopGroup bossGroup,
+      EventLoopGroup workerGroup, ClientManager clientManager, int port) {
+    try {
+      ServerBootstrap b = new ServerBootstrap()
+          .option(ChannelOption.TCP_NODELAY, true);
+      b.group(bossGroup, workerGroup).channel(
+              NioServerSocketChannel.class).childHandler(
+              new ChannelInitializer<SocketChannel>() {
+                @Override
+                public void initChannel(SocketChannel ch) {
+                  ch.pipeline().addLast("framer",
+                      new DelimiterBasedFrameDecoder(2048,
+                          Delimiters.lineDelimiter()));
+                  ch.pipeline().addLast("decoder", new StringDecoder());
+                  ch.pipeline().addLast("encoder", new StringEncoder());
+                  ch.pipeline().addLast(clientManager);
+                }
+              }).option(ChannelOption.SO_BACKLOG, 5)
+          .childOption(ChannelOption.SO_KEEPALIVE, true);
+      ChannelFuture f = b.bind(port).sync();
+      f.channel().closeFuture().sync();
+    } catch (InterruptedException e) {
+      logger.error(e.getMessage());
+    } finally {
+      workerGroup.shutdownGracefully();
+      bossGroup.shutdownGracefully();
     }
-
-    private void startAccept(EventLoopGroup bossGroup,
-        EventLoopGroup workerGroup, ClientManager clientManager, int port) {
-        try {
-            ServerBootstrap b = new ServerBootstrap().option(ChannelOption.TCP_NODELAY, true);
-            b.group(bossGroup, workerGroup).channel(
-                    NioServerSocketChannel.class).childHandler(
-                    new ChannelInitializer<SocketChannel>() {
-                        @Override
-                        public void initChannel(SocketChannel ch) {
-                            ch.pipeline().addLast("framer",
-                                new DelimiterBasedFrameDecoder(2048,
-                                    Delimiters.lineDelimiter()));
-                            ch.pipeline().addLast("decoder", new StringDecoder());
-                            ch.pipeline().addLast("encoder", new StringEncoder());
-                            ch.pipeline().addLast(clientManager);
-                        }
-                    }).option(ChannelOption.SO_BACKLOG, 5)
-                .childOption(ChannelOption.SO_KEEPALIVE, true);
-            ChannelFuture f = b.bind(port).sync();
-            f.channel().closeFuture().sync();
-        } catch (InterruptedException e) {
-            logger.error(e.getMessage());
-        } finally {
-            workerGroup.shutdownGracefully();
-            bossGroup.shutdownGracefully();
-        }
-    }
+  }
 
 }
