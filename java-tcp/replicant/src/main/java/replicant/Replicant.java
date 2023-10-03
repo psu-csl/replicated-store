@@ -118,7 +118,7 @@ public class Replicant {
     private void startAccept(EventLoopGroup bossGroup,
         EventLoopGroup workerGroup, ClientManager clientManager, int port) {
         try {
-            ServerBootstrap b = new ServerBootstrap();
+            ServerBootstrap b = new ServerBootstrap().option(ChannelOption.TCP_NODELAY, true);
             b.group(bossGroup, workerGroup).channel(
                     NioServerSocketChannel.class).childHandler(
                     new ChannelInitializer<SocketChannel>() {
