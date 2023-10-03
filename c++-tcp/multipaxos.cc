@@ -27,7 +27,7 @@ MultiPaxos::MultiPaxos(Log* log,
   int64_t id = 0;
   for (std::string const peer : config["peers"]) {
       peers_.emplace_back(id++, 
-          std::make_shared<TcpLink>(peer, channels_, io_context));
+          std::make_shared<TcpLink>(peer, &channels_, io_context));
   }
 }
 

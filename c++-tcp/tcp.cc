@@ -10,14 +10,14 @@ using asio::ip::address;
 using nlohmann::json;
 
 TcpLink::TcpLink(std::string const address,
-  	             ChannelMap& channels,
+  	             ChannelMap* channels,
   	             asio::io_context* io_context)
     : address_(std::move(address)),
       io_context_(io_context),
       socket_(asio::make_strand(*io_context)),
       is_connected_(false) {
   Connect();
-  incoming_thread_ = std::thread([this, &channels]() {
+  incoming_thread_ = std::thread([this, channels]() {
       StartHandleIncomingResponses(channels);});
   // outgoing_thread_ = std::thread([this]() {
   //     HandleOutgoingRequests(socket_, request_channel_);});
@@ -72,7 +72,7 @@ void TcpLink::HandleOutgoingRequests(tcp::socket& socket,
   }
 }
   
-void TcpLink::StartHandleIncomingResponses(ChannelMap& channels) {
+void TcpLink::StartHandleIncomingResponses(ChannelMap* channels) {
   // asio::error_code error;
   // for (;;) {
     while (!is_connected_) {
@@ -80,17 +80,17 @@ void TcpLink::StartHandleIncomingResponses(ChannelMap& channels) {
       cv_.wait(lock);
     }
     auto self(shared_from_this());
-    asio::dispatch(socket_.get_executor(), [this, self, &channels] {
+    asio::dispatch(socket_.get_executor(), [this, self, channels] {
       HandleIncomingResponses(channels);
     });
   // }
 }
 
-void TcpLink::HandleIncomingResponses(ChannelMap& channels) {
+void TcpLink::HandleIncomingResponses(ChannelMap* channels) {
   asio::streambuf response_buf;
   auto self(shared_from_this());
   asio::async_read_until(socket_, response_buf, '\n', 
-      [this, self, &response_buf, &channels] (std::error_code error, size_t) {
+      [this, self, &response_buf, channels] (std::error_code error, size_t) {
         if (error)
           return;
         std::istream response_stream(&response_buf);
@@ -99,9 +99,9 @@ void TcpLink::HandleIncomingResponses(ChannelMap& channels) {
         json response = json::parse(response_str);
         int64_t channel_id = response["channel_id_"];
         {
-          std::unique_lock lock(channels.mu_);
-          auto it = channels.map_.find(channel_id);
-          if (it != channels.map_.end()) {
+          std::unique_lock lock(channels->mu_);
+          auto it = channels->map_.find(channel_id);
+          if (it != channels->map_.end()) {
             std::string msg = response["msg_"];
             it->second.enqueue(msg);
           }
