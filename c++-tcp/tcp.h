@@ -34,6 +34,7 @@ class TcpLink : public std::enable_shared_from_this<TcpLink> {
   	                     int64_t channel_id, 
   	                     std::string const& msg);
 
+  void StartHandleIncomingResponses(ChannelMap& channels);
   void HandleOutgoingRequests(tcp::socket& socket, 
   	  BlockingConcurrentQueue<std::string>& request_channel);
   void HandleIncomingResponses(ChannelMap& channels);
