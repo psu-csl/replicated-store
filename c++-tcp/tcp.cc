@@ -19,11 +19,12 @@ TcpLink::TcpLink(std::string const address,
   Connect();
   incoming_thread_ = std::thread([this, &channels]() {
       HandleIncomingResponses(socket_, channels);});
-  outgoing_thread_ = std::thread([this]() {
-      HandleOutgoingRequests(socket_, request_channel_);});
+  // outgoing_thread_ = std::thread([this]() {
+  //     HandleOutgoingRequests(socket_, request_channel_);});
 }
 
 bool TcpLink::Connect() {
+  std::unique_lock lock(mu_);
   auto pos = address_.find(":") + 1;
   auto ip = address_.substr(0, pos - 1);
   int port = std::stoi(address_.substr(pos));
@@ -31,7 +32,6 @@ bool TcpLink::Connect() {
   std::error_code ec;
   socket_.connect(endpoint, ec);
   if (!ec) {
-    std::unique_lock lock(mu_);
     is_connected_ = true;
     cv_.notify_one();
     return true;
@@ -44,7 +44,14 @@ void TcpLink::SendAwaitResponse(MessageType type,
 	                              std::string const& msg) {
   Message request(type, channel_id, msg);
   json j = request;
-  request_channel_.enqueue(j.dump() + "\n");
+  std::string tcp_request = j.dump() + "\n";
+  // request_channel_.enqueue(j.dump() + "\n");
+  if (is_connected_ || (!is_connected_ && Connect())) {
+    asio::async_write(socket_, asio::buffer(tcp_request, tcp_request.size()), 
+                      [](std::error_code ec, size_t){
+                        DLOG(ERROR) << "async_write: " << ec.message();
+                      });
+  }
 }
 
 void TcpLink::HandleOutgoingRequests(tcp::socket& socket, 
@@ -101,7 +108,7 @@ void TcpLink::Stop() {
   if (is_connected_)
     socket_.close();
   }
-  request_channel_.enqueue("EOF");
+  // request_channel_.enqueue("EOF");
   incoming_thread_.join();
-  outgoing_thread_.join();
+  // outgoing_thread_.join();
 }
