@@ -1,14 +1,26 @@
 package replicant;
 
+import static multipaxos.network.Message.MessageType.ACCEPTRESPONSE;
+import static multipaxos.network.Message.MessageType.COMMITRESPONSE;
+import static multipaxos.network.Message.MessageType.PREPARERESPONSE;
+
 import ch.qos.logback.classic.Logger;
+import command.Command;
 import io.netty.channel.ChannelHandler.Sharable;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.util.AttributeKey;
+import java.io.IOException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import multipaxos.MultiPaxos;
+import multipaxos.MultiPaxosResultType;
+import multipaxos.network.AcceptRequest;
+import multipaxos.network.CommitRequest;
+import multipaxos.network.Message;
+import multipaxos.network.PrepareRequest;
+import org.codehaus.jackson.map.ObjectMapper;
 import org.slf4j.LoggerFactory;
 
 import java.util.HashMap;
@@ -77,12 +89,7 @@ public class ClientManager extends SimpleChannelInboundHandler<String> {
   @Override
   public void channelRead0(ChannelHandlerContext ctx, String msg) {
     var clientId = ctx.channel().attr(clientIdAttrKey).get();
-    mu.lock();
-    var client = clients.get(clientId);
-    mu.unlock();
-      if (client != null) {
-          client.handleRequest(msg);
-      }
+    handleRequest(msg, ctx, clientId);
   }
 
   public void stop() {
@@ -92,5 +99,110 @@ public class ClientManager extends SimpleChannelInboundHandler<String> {
     } catch (InterruptedException e) {
       e.printStackTrace();
     }
+  }
+
+  public static Command parse(String request) {
+    if (request == null) {
+      return null;
+    }
+    String[] tokens = request.split(" ");
+    String command = tokens[0];
+    String key = tokens[1];
+    Command res = new Command();
+    res.setKey(key);
+    if ("get".equals(command)) {
+      res.setCommandType(Command.CommandType.Get);
+    } else if ("del".equals(command)) {
+      res.setCommandType(Command.CommandType.Del);
+    } else if ("put".equals(command)) {
+      res.setCommandType(Command.CommandType.Put);
+      String value = tokens[2];
+      if (value == null) {
+        return null;
+      }
+      res.setValue(value);
+    } else {
+      return null;
+    }
+    return res;
+  }
+
+  public void handleRequest(String msg, ChannelHandlerContext ctx, long id) {
+    if (isFromClient) {
+      handleClientRequest(msg, ctx, id);
+    } else {
+      handlePeerRequest(msg, ctx);
+    }
+  }
+
+  public void handleClientRequest(String msg, ChannelHandlerContext ctx,
+      long id) {
+    var command = parse(msg);
+    if (command != null) {
+      var r = multiPaxos.replicate(command, id);
+      if (r.type == MultiPaxosResultType.kOk) {
+        ctx.channel().flush();
+      } else if (r.type == MultiPaxosResultType.kRetry) {
+        ctx.channel().writeAndFlush("retry\n");
+      } else {
+        assert r.type == MultiPaxosResultType.kSomeoneElseLeader;
+        ctx.channel().writeAndFlush("leader is ...\n");
+      }
+    } else {
+      ctx.channel().writeAndFlush("bad command\n");
+    }
+  }
+
+  public void handlePeerRequest(String msg, ChannelHandlerContext ctx) {
+    ObjectMapper mapper = new ObjectMapper();
+    Message request = null;
+    try {
+      request = mapper.readValue(msg, Message.class);
+    } catch (IOException e) {
+      e.printStackTrace();
+    }
+    Message finalRequest = request;
+    threadPool.submit(() -> {
+      var message = finalRequest.getMsg();
+      var responseJson = "";
+      Message tcpResponse;
+      var tcpResponseJson = "";
+      try {
+        switch (finalRequest.getType()) {
+          case PREPAREREQUEST -> {
+            var prepareRequest = mapper.readValue(message,
+                PrepareRequest.class);
+            var prepareResponse = multiPaxos.prepare(prepareRequest);
+            responseJson = mapper.writeValueAsString(prepareResponse);
+            tcpResponse = new Message(PREPARERESPONSE,
+                finalRequest.getChannelId(),
+                responseJson);
+            tcpResponseJson = mapper.writeValueAsString(tcpResponse);
+          }
+          case ACCEPTREQUEST -> {
+            var acceptRequest = mapper.readValue(message, AcceptRequest.class);
+            var acceptResponse = multiPaxos.accept(acceptRequest);
+            responseJson = mapper.writeValueAsString(acceptResponse);
+            tcpResponse = new Message(ACCEPTRESPONSE,
+                finalRequest.getChannelId(),
+                responseJson);
+            tcpResponseJson = mapper.writeValueAsString(tcpResponse);
+          }
+          case COMMITREQUEST -> {
+            var commitRequest = mapper.readValue(message, CommitRequest.class);
+            var commitResponse = multiPaxos.commit(commitRequest);
+            responseJson = mapper.writeValueAsString(commitResponse);
+            tcpResponse = new Message(COMMITRESPONSE,
+                finalRequest.getChannelId(),
+                responseJson);
+            tcpResponseJson = mapper.writeValueAsString(tcpResponse);
+          }
+        }
+      } catch (IOException e) {
+        e.printStackTrace();
+        return;
+      }
+      ctx.channel().writeAndFlush(tcpResponseJson + "\n");
+    });
   }
 }

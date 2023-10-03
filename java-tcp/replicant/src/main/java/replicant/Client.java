@@ -28,8 +28,6 @@ public class Client {
   private final Channel socket;
   private final MultiPaxos multiPaxos;
   private final boolean isFromClient;
-  private final ExecutorService threadPool;
-  private final ReentrantLock writerMu;
 
   public Client(long id, Channel socket, MultiPaxos multiPaxos,
       boolean isFromClient, ExecutorService threadPool) {
@@ -37,8 +35,6 @@ public class Client {
     this.socket = socket;
     this.multiPaxos = multiPaxos;
     this.isFromClient = isFromClient;
-    this.threadPool = threadPool;
-    this.writerMu = new ReentrantLock();
   }
 
   public static Command parse(String request) {
@@ -92,62 +88,9 @@ public class Client {
     }
   }
 
-  public void handlePeerRequest(String msg) {
-    ObjectMapper mapper = new ObjectMapper();
-    Message request = null;
-    try {
-      request = mapper.readValue(msg, Message.class);
-    } catch (IOException e) {
-      e.printStackTrace();
-    }
-    Message finalRequest = request;
-    threadPool.submit(() -> {
-      var message = finalRequest.getMsg();
-      var responseJson = "";
-      Message tcpResponse;
-      var tcpResponseJson = "";
-      try {
-        switch (finalRequest.getType()) {
-          case PREPAREREQUEST -> {
-            var prepareRequest = mapper.readValue(message,
-                PrepareRequest.class);
-            var prepareResponse = multiPaxos.prepare(prepareRequest);
-            responseJson = mapper.writeValueAsString(prepareResponse);
-            tcpResponse = new Message(PREPARERESPONSE,
-                                      finalRequest.getChannelId(),
-                                      responseJson);
-            tcpResponseJson = mapper.writeValueAsString(tcpResponse);
-          }
-          case ACCEPTREQUEST -> {
-            var acceptRequest = mapper.readValue(message, AcceptRequest.class);
-            var acceptResponse = multiPaxos.accept(acceptRequest);
-            responseJson = mapper.writeValueAsString(acceptResponse);
-            tcpResponse = new Message(ACCEPTRESPONSE,
-                finalRequest.getChannelId(),
-                responseJson);
-            tcpResponseJson = mapper.writeValueAsString(tcpResponse);
-          }
-          case COMMITREQUEST -> {
-            var commitRequest = mapper.readValue(message, CommitRequest.class);
-            var commitResponse = multiPaxos.commit(commitRequest);
-            responseJson = mapper.writeValueAsString(commitResponse);
-            tcpResponse = new Message(COMMITRESPONSE,
-                finalRequest.getChannelId(),
-                responseJson);
-            tcpResponseJson = mapper.writeValueAsString(tcpResponse);
-          }
-        }
-      } catch (IOException e) {
-        e.printStackTrace();
-        return;
-      }
-      write(tcpResponseJson);
-    });
-  }
+  public void handlePeerRequest(String msg) {}
 
   public void write(String response) {
-    writerMu.lock();
     socket.writeAndFlush(response + "\n");
-    writerMu.unlock();
   }
 }
