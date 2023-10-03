@@ -50,7 +50,6 @@ class TcpLink : public std::enable_shared_from_this<TcpLink> {
   std::mutex mu_;
   std::condition_variable cv_;
   std::atomic<bool> is_connected_;
-  ChannelMap channels_;
 };
 
 #endif

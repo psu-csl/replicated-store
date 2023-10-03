@@ -99,9 +99,9 @@ void TcpLink::HandleIncomingResponses(ChannelMap& channels) {
         json response = json::parse(response_str);
         int64_t channel_id = response["channel_id_"];
         {
-          std::unique_lock lock(channels_.mu_);
-          auto it = channels_.map_.find(channel_id);
-          if (it != channels_.map_.end()) {
+          std::unique_lock lock(channels.mu_);
+          auto it = channels.map_.find(channel_id);
+          if (it != channels.map_.end()) {
             std::string msg = response["msg_"];
             it->second.enqueue(msg);
           }
