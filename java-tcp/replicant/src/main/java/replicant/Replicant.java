@@ -49,7 +49,7 @@ public class Replicant {
     this.multiPaxos = new MultiPaxos(log, config);
     int threadPoolSize = config.getThreadPoolSize();
     clientManager = new ClientManager(id, config.getPeers().size(),
-        multiPaxos, true, threadPoolSize);
+        multiPaxos, true, 1);
     peerClientManager = new ClientManager(id, config.getPeers().size(),
         multiPaxos, false, threadPoolSize);
   }
