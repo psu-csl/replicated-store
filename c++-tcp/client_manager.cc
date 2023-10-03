@@ -7,7 +7,7 @@ void ClientManager::Start(tcp::socket socket) {
   auto id = NextClientId();
   auto client =
     std::make_shared<Client>(id, std::move(socket), multi_paxos_, this,
-                             is_from_client_, thread_pool_);
+                             is_from_client_);
   {
     std::scoped_lock lock(mu_);
     auto [it, ok] = clients_.insert({id, client});
@@ -41,5 +41,5 @@ void ClientManager::StopAll() {
     client->Stop();
   }
   clients_.clear();
-  thread_pool_.join();
+  //thread_pool_.join();
 }

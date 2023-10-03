@@ -18,8 +18,8 @@ class ClientManager {
              : next_id_(id), 
                num_peers_(num_peers), 
                multi_paxos_(multi_paxos), 
-               is_from_client_(is_from_client),
-               thread_pool_(thread_pool_size) {}
+               is_from_client_(is_from_client) {}
+               //thread_pool_(thread_pool_size) {}
   ClientManager(ClientManager const&) = delete;
   ClientManager& operator=(ClientManager const&) = delete;
   ClientManager(ClientManager const&&) = delete;
@@ -44,7 +44,7 @@ class ClientManager {
   std::mutex mu_;
   std::unordered_map<int64_t, client_ptr> clients_;
   bool is_from_client_;
-  asio::thread_pool thread_pool_;
+  //asio::thread_pool thread_pool_;
 };
 
 #endif

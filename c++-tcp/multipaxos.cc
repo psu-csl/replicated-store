@@ -170,7 +170,7 @@ Result MultiPaxos::RunAcceptPhase(int64_t ballot,
 
   while (true) {
     std::string response;
-    channel.wait_dequeue_timed(response, std::chrono::milliseconds(500));
+    channel.wait_dequeue_timed(response, std::chrono::milliseconds(3000));
     if (response.size() == 0) {
       break;
     }
@@ -220,7 +220,7 @@ int64_t MultiPaxos::RunCommitPhase(int64_t ballot,
 
   while (true) {
     std::string response;
-    channel.wait_dequeue_timed(response, std::chrono::milliseconds(500));
+    channel.wait_dequeue_timed(response, std::chrono::milliseconds(commit_interval_));
     if (response.size() == 0) {
       break;
     }

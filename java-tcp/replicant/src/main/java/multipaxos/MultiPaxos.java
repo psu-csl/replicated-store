@@ -327,7 +327,7 @@ public class MultiPaxos {
     }
     while (true) {
       try {
-        var response = responseChan.poll(commitInterval, TimeUnit.MILLISECONDS);
+        var response = responseChan.take();
         if (response == null)
           break;
         var acceptResponse = mapper.readValue(response, AcceptResponse.class);

@@ -85,10 +85,10 @@ void Client::HandleClientRequest() {
 }
 
 void Client::HandlePeerRequest() {
-  std::string line;
-  std::getline(std::istream(&request_), line);
-  json tcp_request = json::parse(line);
-  asio::post(thread_pool_, [this, tcp_request] {
+  std::string line1;
+  std::getline(std::istream(&request_), line1);
+  json tcp_request = json::parse(line1);
+  //asio::post(thread_pool_, [this, tcp_request] {
     std::string line = tcp_request["msg_"];
     json request = json::parse(line);
     switch((int) tcp_request["type_"]) {
@@ -117,7 +117,7 @@ void Client::HandlePeerRequest() {
       break;
     }
     } 
-  });
+  //});
 }
 
 void Client::Write(std::string const& response) {
@@ -125,7 +125,7 @@ void Client::Write(std::string const& response) {
   response_stream << response << '\n';
 
   auto self(shared_from_this());
-  std::unique_lock lock(writer_mu_);
+  //std::unique_lock lock(writer_mu_);
   asio::async_write(socket_, response_,
                     [this, self, response](std::error_code ec, size_t) {
                       if (ec) {
