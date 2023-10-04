@@ -30,7 +30,7 @@ public class Client {
   private final boolean isFromClient;
 
   public Client(long id, Channel socket, MultiPaxos multiPaxos,
-      boolean isFromClient, ExecutorService threadPool) {
+      boolean isFromClient) {
     this.id = id;
     this.socket = socket;
     this.multiPaxos = multiPaxos;

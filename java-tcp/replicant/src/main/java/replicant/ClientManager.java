@@ -47,7 +47,11 @@ public class ClientManager extends SimpleChannelInboundHandler<String> {
     this.numPeers = numPeers;
     this.multiPaxos = multiPaxos;
     this.isFromClient = isFromClient;
-    this.threadPool = Executors.newFixedThreadPool(threadPoolSize);
+    if (isFromClient) {
+      this.threadPool = null;
+    } else {
+      this.threadPool = Executors.newFixedThreadPool(threadPoolSize);
+    }
   }
 
   private long nextClientId() {
@@ -62,8 +66,7 @@ public class ClientManager extends SimpleChannelInboundHandler<String> {
     var id = nextClientId();
     logger.debug("client joined " + ctx);
     ctx.channel().attr(clientIdAttrKey).set(id);
-    clients.put(id, new Client(id, ctx.channel(), multiPaxos, isFromClient,
-        threadPool));
+    clients.put(id, new Client(id, ctx.channel(), multiPaxos, isFromClient));
     mu.unlock();
   }
 
