@@ -17,8 +17,12 @@ TcpLink::TcpLink(std::string const address,
       socket_(asio::make_strand(*io_context)),
       is_connected_(false) {
   Connect();
-  incoming_thread_ = std::thread([this, &channels]() {
-      StartHandleIncomingResponses(channels);});
+  auto self(shared_from_this());
+  asio::dispatch(socket_.get_executor(), [this, self, &channels] {
+    HandleIncomingResponses(channels);
+  });
+  // incoming_thread_ = std::thread([this, &channels]() {
+  //     HandleIncomingResponses(socket_, channels);});
   // outgoing_thread_ = std::thread([this]() {
   //     HandleOutgoingRequests(socket_, request_channel_);});
 }
@@ -48,7 +52,7 @@ void TcpLink::SendAwaitResponse(MessageType type,
   // request_channel_.enqueue(j.dump() + "\n");
   if (is_connected_ || (!is_connected_ && Connect())) {
     auto self(shared_from_this());
-    asio::async_write(socket_, asio::buffer(tcp_request, tcp_request.size()),
+    asio::async_write(socket_, asio::buffer(tcp_request, tcp_request.size()), 
                       [self](std::error_code ec, size_t){
                         DLOG(ERROR) << "async_write: " << ec.message();
                       });
@@ -72,42 +76,36 @@ void TcpLink::HandleOutgoingRequests(tcp::socket& socket,
   }
 }
   
-void TcpLink::StartHandleIncomingResponses(ChannelMap& channels) {
+void TcpLink::HandleIncomingResponses(ChannelMap& channels) {
   // asio::error_code error;
   // for (;;) {
     while (!is_connected_) {
       std::unique_lock lock(mu_);
       cv_.wait(lock);
     }
-    auto self(shared_from_this());
-    asio::dispatch(socket_.get_executor(), [this, self, &channels] {
-      HandleIncomingResponses(channels);
-    });
-  // }
-}
 
-void TcpLink::HandleIncomingResponses(ChannelMap& channels) {
-  asio::streambuf response_buf;
-  auto self(shared_from_this());
-  asio::async_read_until(socket_, response_buf, '\n', 
-      [this, self, &response_buf, &channels] (std::error_code error, size_t) {
-        if (error)
-          return;
-        std::istream response_stream(&response_buf);
-        std::string response_str;
-        std::getline(response_stream, response_str);
-        json response = json::parse(response_str);
-        int64_t channel_id = response["channel_id_"];
-        {
-          std::unique_lock lock(channels_.mu_);
-          auto it = channels_.map_.find(channel_id);
-          if (it != channels_.map_.end()) {
-            std::string msg = response["msg_"];
-            it->second.enqueue(msg);
+    asio::streambuf response_buf;
+    auto self(shared_from_this());
+  	asio::async_read_until(socket_, response_buf, '\n', 
+        [this, self, &response_buf, &channels] (std::error_code error, size_t) {
+          if (error)
+            return;
+          std::istream response_stream(&response_buf);
+          std::string response_str;
+          std::getline(response_stream, response_str);
+          json response = json::parse(response_str);
+          int64_t channel_id = response["channel_id_"];
+          {
+            std::unique_lock lock(channels_.mu_);
+            auto it = channels_.map_.find(channel_id);
+            if (it != channels_.map_.end()) {
+              std::string msg = response["msg_"];
+              it->second.enqueue(msg);
+            }
           }
-        }
-        HandleIncomingResponses(channels);
-      });
+          HandleIncomingResponses(channels);
+        });
+  // }
 }
 
 void TcpLink::Stop() {
@@ -119,6 +117,6 @@ void TcpLink::Stop() {
     socket_.close();
   }
   // request_channel_.enqueue("EOF");
-  incoming_thread_.join();
+  // incoming_thread_.join();
   // outgoing_thread_.join();
 }
