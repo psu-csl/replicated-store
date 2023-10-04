@@ -59,7 +59,7 @@ public class MultiPaxos {
   private final int numPeers;
   private final List<Peer> peers;
   private final AtomicLong nextChannelId;
-  private final ChannelMap channels;
+//  private final ChannelMap channels;
   private final ReentrantLock mu;
   private final ExecutorService threadPool;
 
@@ -80,7 +80,7 @@ public class MultiPaxos {
     this.commitInterval = config.getCommitInterval();
     this.numPeers = config.getPeers().size();
     this.nextChannelId = new AtomicLong(0);
-    this.channels = new ChannelMap();
+//    this.channels = new ChannelMap();
 
     threadPool = Executors.newFixedThreadPool(config.getThreadPoolSize());
     prepareThreadRunning = new AtomicBoolean(false);
@@ -95,7 +95,7 @@ public class MultiPaxos {
     peers = new ArrayList<>();
     long peerId = 0;
     for (var address : config.getPeers()) {
-      peers.add(new Peer(peerId++, new TcpLink(address, channels)));
+      peers.add(new Peer(peerId++, new TcpLink(address)));
     }
   }
 
@@ -244,13 +244,13 @@ public class MultiPaxos {
     ObjectMapper mapper = new ObjectMapper();
     var request = mapper.writeValueAsString(new PrepareRequest(ballot, id));
     var channelId = nextChannelId.addAndGet(1);
-    var responseChan = addChannel(channelId);
+    var responseChan = new LinkedBlockingDeque<String>(numPeers - 1);
 
     for (var peer : peers) {
       if (peer.id != this.id) {
         threadPool.submit(() -> {
           peer.stub.sendAwaitResponse(MessageType.PREPAREREQUEST, channelId,
-              request);
+              request, responseChan);
           logger.debug(id + " sent prepare request to " + peer.id);
         });
       }
@@ -274,11 +274,11 @@ public class MultiPaxos {
         break;
       }
       if (numOks > numPeers / 2) {
-        removeChannel(channelId);
+//        removeChannel(channelId);
         return new HashMap.SimpleEntry<>(maxLastIndex, log);
       }
     }
-    removeChannel(channelId);
+//    removeChannel(channelId);
     return null;
   }
 
@@ -314,13 +314,13 @@ public class MultiPaxos {
       return new Result(MultiPaxosResultType.kRetry, null);
     }
     var channelId = nextChannelId.addAndGet(1);
-    var responseChan = addChannel(channelId);
+    var responseChan = new LinkedBlockingDeque<String>(numPeers - 1);
 
     for (var peer : peers) {
       if (peer.id != this.id) {
         threadPool.submit(() -> {
           peer.stub.sendAwaitResponse(MessageType.ACCEPTREQUEST, channelId,
-              request);
+              request, responseChan);
           logger.debug(id + " sent accept request to " + peer.id);
         });
       }
@@ -342,11 +342,11 @@ public class MultiPaxos {
       }
       if (numOks > numPeers / 2) {
         log.commit(index);
-        removeChannel(channelId);
+//        removeChannel(channelId);
         return new Result(MultiPaxosResultType.kOk, null);
       }
     }
-    removeChannel(channelId);
+//    removeChannel(channelId);
     if (!isLeader(this.ballot.get(), id)) {
       return new Result(MultiPaxosResultType.kSomeoneElseLeader,
           extractLeaderId(ballot()));
@@ -369,13 +369,13 @@ public class MultiPaxos {
     var request = mapper.writeValueAsString(
         new CommitRequest(ballot, minLastExecuted, globalLastExecuted, id));
     var channelId = nextChannelId.addAndGet(1);
-    var responseChan = addChannel(channelId);
+    var responseChan = new LinkedBlockingDeque<String>(numPeers - 1);
 
     for (var peer : peers) {
       if (peer.id != this.id) {
         threadPool.submit(() -> {
           peer.stub.sendAwaitResponse(MessageType.COMMITREQUEST, channelId,
-              request);
+              request, responseChan);
           logger.debug(id + " sent commit to " + peer.id);
         });
       }
@@ -396,11 +396,11 @@ public class MultiPaxos {
         break;
       }
       if (numOks == numPeers) {
-        removeChannel(channelId);
+//        removeChannel(channelId);
         return minLastExecuted;
       }
     }
-    removeChannel(channelId);
+//    removeChannel(channelId);
     return globalLastExecuted;
   }
 
@@ -420,15 +420,15 @@ public class MultiPaxos {
     }
   }
 
-  public BlockingQueue<String> addChannel(long channelId) {
-    BlockingQueue<String> channel = new LinkedBlockingDeque<>(numPeers - 1);
-    channels.put(channelId, channel);
-    return channel;
-  }
-
-  public void removeChannel(long channelId) {
-    channels.delete(channelId);
-  }
+//  public BlockingQueue<String> addChannel(long channelId) {
+//    BlockingQueue<String> channel = new LinkedBlockingDeque<>(numPeers - 1);
+//    channels.put(channelId, channel);
+//    return channel;
+//  }
+//
+//  public void removeChannel(long channelId) {
+//    channels.delete(channelId);
+//  }
 
   public void start() {
     startPrepareThread();

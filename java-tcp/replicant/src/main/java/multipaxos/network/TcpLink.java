@@ -6,6 +6,7 @@ import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.Socket;
 import java.util.concurrent.BlockingDeque;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingDeque;
@@ -26,16 +27,18 @@ public class TcpLink {
   private final ReentrantLock mu;
   private final Condition cv;
   private AtomicBoolean isConnected;
+  private final ChannelMap channels;
 
-  public TcpLink(String addr, ChannelMap channels) {
+  public TcpLink(String addr) {
     this.address = addr;
     requestChan = new LinkedBlockingDeque<>();
     this.mu = new ReentrantLock();
     this.cv = mu.newCondition();
     isConnected = new AtomicBoolean(false);
+    channels = new ChannelMap();
     Connect();
-    incomingThread.submit(() -> handleIncomingResponses(reader, channels));
-    outgoingThread.submit(() -> handleOutgoingRequests(writer, requestChan));
+    incomingThread.submit(() -> handleIncomingResponses());
+    outgoingThread.submit(() -> handleOutgoingRequests());
   }
 
   private boolean Connect() {
@@ -56,7 +59,9 @@ public class TcpLink {
     return true;
   }
 
-  public void sendAwaitResponse(MessageType type, long channelId, String msg) {
+  public void sendAwaitResponse(MessageType type, long channelId, String msg,
+      BlockingQueue<String> channel) {
+    channels.put(channelId, channel);
     ObjectMapper mapper = new ObjectMapper();
     Message request = new Message(type, channelId, msg);
     String requestString;
@@ -68,8 +73,7 @@ public class TcpLink {
     }
   }
 
-  public void handleOutgoingRequests(PrintWriter writer,
-      BlockingDeque<String> requestChan) {
+  public void handleOutgoingRequests() {
     while (true) {
       try {
         String request = requestChan.take();
@@ -87,8 +91,7 @@ public class TcpLink {
     }
   }
 
-  public void handleIncomingResponses(BufferedReader reader,
-      ChannelMap channels) {
+  public void handleIncomingResponses() {
     ObjectMapper mapper = new ObjectMapper();
     while (true) {
       try {

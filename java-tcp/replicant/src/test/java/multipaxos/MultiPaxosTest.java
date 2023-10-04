@@ -11,6 +11,7 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.atomic.AtomicBoolean;
 import kvstore.MemKVStore;
 import log.Instance;
@@ -60,9 +61,9 @@ class MultiPaxosTest {
     ObjectMapper mapper = new ObjectMapper();
     var request = mapper.writeValueAsString(commitRequest);
     var channelId = p.nextChannelId();
-    var responseChan = p.addChannel(channelId);
+    var responseChan = new LinkedBlockingDeque<String>();
     p.getPeers().get(targetId).stub.sendAwaitResponse(
-        MessageType.COMMITREQUEST, channelId, request);
+        MessageType.COMMITREQUEST, channelId, request, responseChan);
     var response = responseChan.take();
     var commitResponse = mapper.readValue(response, CommitResponse.class);
     return commitResponse;
@@ -77,9 +78,9 @@ class MultiPaxosTest {
     ObjectMapper mapper = new ObjectMapper();
     var request = mapper.writeValueAsString(prepareRequest);
     var channelId = p.nextChannelId();
-    var responseChan = p.addChannel(channelId);
+    var responseChan = new LinkedBlockingDeque<String>();;
     p.getPeers().get(targetId).stub.sendAwaitResponse(
-        MessageType.PREPAREREQUEST, channelId, request);
+        MessageType.PREPAREREQUEST, channelId, request, responseChan);
     var response = responseChan.take();
     var prepareResponse = mapper.readValue(response, PrepareResponse.class);
     return prepareResponse;
@@ -96,9 +97,9 @@ class MultiPaxosTest {
     var s = mapper.writeValueAsString(acceptRequest.getInstance());
     var request = mapper.writeValueAsString(acceptRequest);
     var channelId = p.nextChannelId();
-    var responseChan = p.addChannel(channelId);
+    var responseChan = new LinkedBlockingDeque<String>();;
     p.getPeers().get(targetId).stub.sendAwaitResponse(
-        MessageType.ACCEPTREQUEST, channelId, request);
+        MessageType.ACCEPTREQUEST, channelId, request, responseChan);
     var response = responseChan.take();
     var acceptResponse = mapper.readValue(response, AcceptResponse.class);
     return acceptResponse;

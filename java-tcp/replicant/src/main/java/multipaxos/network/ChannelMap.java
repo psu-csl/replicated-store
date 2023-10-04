@@ -12,6 +12,7 @@ public class ChannelMap {
   public BlockingQueue<String> get(Long channelId) {
     mu.lock();
     BlockingQueue<String> channel = channels.get(channelId);
+    channels.remove(channelId);
     mu.unlock();
     return channel;
   }
