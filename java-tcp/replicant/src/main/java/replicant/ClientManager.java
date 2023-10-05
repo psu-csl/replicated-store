@@ -62,8 +62,7 @@ public class ClientManager extends SimpleChannelInboundHandler<String> {
     var id = nextClientId();
     logger.debug("client joined " + ctx);
     ctx.channel().attr(clientIdAttrKey).set(id);
-    clients.put(id, new Client(id, ctx.channel(), multiPaxos, isFromClient,
-        threadPool));
+    clients.put(id, new Client(id, ctx.channel(), multiPaxos, isFromClient));
     mu.unlock();
   }
 
