@@ -40,7 +40,7 @@ bool TcpLink::Connect() {
 
 void TcpLink::SendAwaitResponse(MessageType type, 
 	                              int64_t channel_id, 
-                                BlockingConcurrentQueue<std::string>& channel,
+                                BlockingConcurrentQueue<std::string>* channel,
 	                              std::string const& msg) {
   {
     std::unique_lock lock(channels.mu_);
@@ -99,7 +99,7 @@ void TcpLink::HandleIncomingResponses(tcp::socket& socket,
   	  auto it = channels.map_.find(channel_id);
   	  if (it != channels.map_.end()) {
         std::string msg = response["msg_"];
-  	  	it->second.enqueue(msg);
+  	  	it->second->enqueue(msg);
         channels.map_.erase(it);
   	  }
   	}

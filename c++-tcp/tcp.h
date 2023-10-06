@@ -19,7 +19,7 @@ using moodycamel::BlockingConcurrentQueue;
 struct ChannelMap {
   mutable std::mutex mu_;
   std::unordered_map<
-      int64_t, BlockingConcurrentQueue<std::string>&> map_;
+      int64_t, BlockingConcurrentQueue<std::string>*> map_;
 };
 
 class TcpLink : public std::enable_shared_from_this<TcpLink> {
@@ -31,7 +31,7 @@ class TcpLink : public std::enable_shared_from_this<TcpLink> {
 
   void SendAwaitResponse(MessageType type,
                          int64_t channel_id,
-                         BlockingConcurrentQueue<std::string>& channel,
+                         BlockingConcurrentQueue<std::string>* channel,
                          std::string const& msg);
 
   void HandleOutgoingRequests(tcp::socket& socket, 

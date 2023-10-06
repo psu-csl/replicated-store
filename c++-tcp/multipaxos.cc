@@ -93,11 +93,11 @@ MultiPaxos::RunPreparePhase(int64_t ballot) {
   PrepareRequest prepare_request(ballot, id_);
   json request = prepare_request;
   int64_t channel_id = NextChannelId();
-  BlockingConcurrentQueue<std::string> channel(num_peers_ - 1);
+  BlockingConcurrentQueue<std::string>* channel = new BlockingConcurrentQueue<std::string>(num_peers_ - 1);
 
   for (auto& peer : peers_) {
     if (peer.id_ != id_) {
-      asio::post(thread_pool_, [this, &peer, request, channel_id, &channel] {
+      asio::post(thread_pool_, [this, &peer, request, channel_id, channel] {
         peer.stub_->SendAwaitResponse(PREPAREREQUEST, channel_id, channel,
                                       request.dump());
         DLOG(INFO) << id_ << " sent prepare request to " << peer.id_;
@@ -107,7 +107,7 @@ MultiPaxos::RunPreparePhase(int64_t ballot) {
 
   while (true) {
     std::string response;
-    channel.wait_dequeue_timed(response, std::chrono::milliseconds(500));
+    channel->wait_dequeue_timed(response, std::chrono::milliseconds(500));
     if (response.size() == 0) {
       break;
     }
@@ -156,11 +156,11 @@ Result MultiPaxos::RunAcceptPhase(int64_t ballot,
   AcceptRequest accept_request(instance, id_);
   json request = accept_request;
   int64_t channel_id = NextChannelId();
-  BlockingConcurrentQueue<std::string> channel(num_peers_ - 1);
+  BlockingConcurrentQueue<std::string>* channel = new BlockingConcurrentQueue<std::string>(num_peers_ - 1);
 
   for (auto& peer : peers_) {
     if (peer.id_ != id_) {
-      asio::post(thread_pool_, [this, &peer, request, channel_id, &channel] {
+      asio::post(thread_pool_, [this, &peer, request, channel_id, channel] {
         peer.stub_->SendAwaitResponse(ACCEPTREQUEST, channel_id, channel,
                                       request.dump());
         DLOG(INFO) << id_ << " sent accept request to " << peer.id_;
@@ -170,7 +170,7 @@ Result MultiPaxos::RunAcceptPhase(int64_t ballot,
 
   while (true) {
     std::string response;
-    channel.wait_dequeue_timed(response, std::chrono::milliseconds(3000));
+    channel->wait_dequeue(response);
     if (response.size() == 0) {
       break;
     }
@@ -206,11 +206,11 @@ int64_t MultiPaxos::RunCommitPhase(int64_t ballot,
   CommitRequest commit_request(ballot, min_last_executed, global_last_executed, id_);
   json request = commit_request;
   int64_t channel_id = NextChannelId();
-  BlockingConcurrentQueue<std::string> channel(num_peers_ - 1);
+  BlockingConcurrentQueue<std::string>* channel = new BlockingConcurrentQueue<std::string>(num_peers_ - 1);
 
   for (auto& peer : peers_) {
     if (peer.id_ != id_) {
-      asio::post(thread_pool_, [this, &peer, request, channel_id, &channel] {
+      asio::post(thread_pool_, [this, &peer, request, channel_id, channel] {
         peer.stub_->SendAwaitResponse(COMMITREQUEST, channel_id, channel,
                                       request.dump());
         DLOG(INFO) << id_ << " sent commit to " << peer.id_;
@@ -220,7 +220,7 @@ int64_t MultiPaxos::RunCommitPhase(int64_t ballot,
 
   while (true) {
     std::string response;
-    channel.wait_dequeue_timed(response, std::chrono::milliseconds(commit_interval_));
+    channel->wait_dequeue_timed(response, std::chrono::milliseconds(commit_interval_));
     if (response.size() == 0) {
       break;
     }
