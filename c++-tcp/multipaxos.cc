@@ -27,7 +27,7 @@ MultiPaxos::MultiPaxos(Log* log,
   int64_t id = 0;
   for (std::string const peer : config["peers"]) {
       peers_.emplace_back(id++, 
-          std::make_shared<TcpLink>(peer, channels_, io_context));
+          std::make_shared<TcpLink>(peer, io_context));
   }
 }
 
@@ -93,12 +93,12 @@ MultiPaxos::RunPreparePhase(int64_t ballot) {
   PrepareRequest prepare_request(ballot, id_);
   json request = prepare_request;
   int64_t channel_id = NextChannelId();
-  auto channel = AddChannel(channel_id);
+  BlockingConcurrentQueue<std::string> channel(num_peers_ - 1);
 
   for (auto& peer : peers_) {
     if (peer.id_ != id_) {
-      asio::post(thread_pool_, [this, &peer, request, channel_id] {
-        peer.stub_->SendAwaitResponse(PREPAREREQUEST, channel_id, 
+      asio::post(thread_pool_, [this, &peer, request, channel_id, &channel] {
+        peer.stub_->SendAwaitResponse(PREPAREREQUEST, channel_id, channel,
                                       request.dump());
         DLOG(INFO) << id_ << " sent prepare request to " << peer.id_;
       });
@@ -125,11 +125,11 @@ MultiPaxos::RunPreparePhase(int64_t ballot) {
       break;
     }
     if (num_oks > num_peers_ / 2) {
-      RemoveChannel(channel_id);
+      // RemoveChannel(channel_id);
       return std::make_pair(max_last_index, std::move(log));
     }
   }
-  RemoveChannel(channel_id);
+  // RemoveChannel(channel_id);
   return std::nullopt;
 }
 
@@ -156,12 +156,12 @@ Result MultiPaxos::RunAcceptPhase(int64_t ballot,
   AcceptRequest accept_request(instance, id_);
   json request = accept_request;
   int64_t channel_id = NextChannelId();
-  auto channel = AddChannel(channel_id);
+  BlockingConcurrentQueue<std::string> channel(num_peers_ - 1);
 
   for (auto& peer : peers_) {
     if (peer.id_ != id_) {
-      asio::post(thread_pool_, [this, &peer, request, channel_id] {
-        peer.stub_->SendAwaitResponse(ACCEPTREQUEST, channel_id, 
+      asio::post(thread_pool_, [this, &peer, request, channel_id, &channel] {
+        peer.stub_->SendAwaitResponse(ACCEPTREQUEST, channel_id, channel,
                                       request.dump());
         DLOG(INFO) << id_ << " sent accept request to " << peer.id_;
       });
@@ -183,11 +183,11 @@ Result MultiPaxos::RunAcceptPhase(int64_t ballot,
     }
     if (num_oks > num_peers_ / 2) {
       log_->Commit(index);
-      RemoveChannel(channel_id);
+      // RemoveChannel(channel_id);
       return Result{ResultType::kOk, std::nullopt};
     }
   }
-  RemoveChannel(channel_id);
+  // RemoveChannel(channel_id);
   if (!IsLeader(ballot_, id_))
     return Result{ResultType::kSomeoneElseLeader, ExtractLeaderId(ballot_)};
   return Result{ResultType::kRetry, std::nullopt};
@@ -206,12 +206,12 @@ int64_t MultiPaxos::RunCommitPhase(int64_t ballot,
   CommitRequest commit_request(ballot, min_last_executed, global_last_executed, id_);
   json request = commit_request;
   int64_t channel_id = NextChannelId();
-  auto channel = AddChannel(channel_id);
+  BlockingConcurrentQueue<std::string> channel(num_peers_ - 1);
 
   for (auto& peer : peers_) {
     if (peer.id_ != id_) {
-      asio::post(thread_pool_, [this, &peer, request, channel_id] {
-        peer.stub_->SendAwaitResponse(COMMITREQUEST, channel_id, 
+      asio::post(thread_pool_, [this, &peer, request, channel_id, &channel] {
+        peer.stub_->SendAwaitResponse(COMMITREQUEST, channel_id, channel,
                                       request.dump());
         DLOG(INFO) << id_ << " sent commit to " << peer.id_;
       });
@@ -234,11 +234,11 @@ int64_t MultiPaxos::RunCommitPhase(int64_t ballot,
       break;
     }
     if (num_oks == num_peers_) {
-      RemoveChannel(channel_id);
+      // RemoveChannel(channel_id);
       return min_last_executed;
     }
   }
-  RemoveChannel(channel_id);
+  // RemoveChannel(channel_id);
   return global_last_executed;
 }
 
@@ -256,21 +256,21 @@ void MultiPaxos::Replay(
   }
 }
 
-BlockingReaderWriterQueue<std::string> 
-    MultiPaxos::AddChannel(int64_t channel_id) {
-  BlockingReaderWriterQueue<std::string> response_chan(num_peers_ - 1);
-  std::unique_lock lock(channels_.mu_);
-  auto [it, ok] = channels_.map_.insert({channel_id, response_chan});
-  CHECK(ok);
-  return response_chan;
-}
+// BlockingReaderWriterQueue<std::string> 
+//     MultiPaxos::AddChannel(int64_t channel_id) {
+//   BlockingReaderWriterQueue<std::string> response_chan(num_peers_ - 1);
+//   std::unique_lock lock(channels_.mu_);
+//   auto [it, ok] = channels_.map_.insert({channel_id, response_chan});
+//   CHECK(ok);
+//   return response_chan;
+// }
 
-void MultiPaxos::RemoveChannel(int64_t channel_id) {
-  std::unique_lock lock(channels_.mu_);
-  auto it = channels_.map_.find(channel_id);
-  CHECK(it != channels_.map_.end());
-  channels_.map_.erase(it);
-}
+// void MultiPaxos::RemoveChannel(int64_t channel_id) {
+//   std::unique_lock lock(channels_.mu_);
+//   auto it = channels_.map_.find(channel_id);
+//   CHECK(it != channels_.map_.end());
+//   channels_.map_.erase(it);
+// }
 
 int64_t MultiPaxos::NextChannelId() {
   return ++next_channel_id_;

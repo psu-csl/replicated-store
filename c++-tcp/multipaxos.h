@@ -162,7 +162,7 @@ class MultiPaxos {
   size_t num_peers_;
   std::vector<rpc_peer_t> peers_;
   std::atomic<int64_t> next_channel_id_;
-  ChannelMap channels_;
+  // ChannelMap channels_;
   mutable std::mutex mu_;
   asio::thread_pool thread_pool_;
 

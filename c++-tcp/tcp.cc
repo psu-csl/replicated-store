@@ -10,14 +10,13 @@ using asio::ip::address;
 using nlohmann::json;
 
 TcpLink::TcpLink(std::string const address,
-  	             ChannelMap& channels,
   	             asio::io_context* io_context)
     : address_(std::move(address)),
       io_context_(io_context),
       socket_(asio::make_strand(*io_context)),
       is_connected_(false) {
   Connect();
-  incoming_thread_ = std::thread([this, &channels]() {
+  incoming_thread_ = std::thread([this]() {
       HandleIncomingResponses(socket_, channels);});
   // outgoing_thread_ = std::thread([this]() {
   //     HandleOutgoingRequests(socket_, request_channel_);});
@@ -41,7 +40,12 @@ bool TcpLink::Connect() {
 
 void TcpLink::SendAwaitResponse(MessageType type, 
 	                              int64_t channel_id, 
+                                BlockingConcurrentQueue<std::string>& channel,
 	                              std::string const& msg) {
+  {
+    std::unique_lock lock(channels.mu_);
+    channels.map_.insert({channel_id, channel});
+  }
   Message request(type, channel_id, msg);
   json j = request;
   std::string tcp_request = j.dump() + "\n";
@@ -96,6 +100,7 @@ void TcpLink::HandleIncomingResponses(tcp::socket& socket,
   	  if (it != channels.map_.end()) {
         std::string msg = response["msg_"];
   	  	it->second.enqueue(msg);
+        channels.map_.erase(it);
   	  }
   	}
   }
