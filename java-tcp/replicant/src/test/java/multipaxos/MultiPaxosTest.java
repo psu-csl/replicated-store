@@ -97,7 +97,7 @@ class MultiPaxosTest {
     var s = mapper.writeValueAsString(acceptRequest.getInstance());
     var request = mapper.writeValueAsString(acceptRequest);
     var channelId = p.nextChannelId();
-    var responseChan = new LinkedBlockingDeque<String>();;
+    var responseChan = new LinkedBlockingDeque<String>();
     p.getPeers().get(targetId).stub.sendAwaitResponse(
         MessageType.ACCEPTREQUEST, channelId, request, responseChan);
     var response = responseChan.take();
