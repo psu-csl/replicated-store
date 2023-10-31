@@ -66,7 +66,7 @@ void Client::Read() {
               Write("retry");
             } else {
               CHECK(r.type_ == ResultType::kSomeoneElseLeader);
-              Write("leader is ...");
+              Write("leader is " + std::to_string(*r.leader_));
             }
           } else {
             Write("bad command");
