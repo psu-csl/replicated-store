@@ -6,6 +6,7 @@ import (
 	"github.com/psu-csl/replicated-store/go/multipaxos"
 	pb "github.com/psu-csl/replicated-store/go/multipaxos/network"
 	"net"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -97,7 +98,7 @@ func (c *Client) handleClientRequest(line string) {
 			if result.Type != multipaxos.SomeElseLeader {
 				panic("Result is not someone_else_leader")
 			}
-			c.Write("leader is ...")
+			c.Write("leader is " + strconv.FormatInt(result.Leader, 10))
 		}
 	} else {
 		c.Write("bad command")
