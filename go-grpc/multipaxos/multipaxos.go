@@ -286,7 +286,8 @@ func (p *Multipaxos) RunPreparePhase(ballot int64) (int64,
 			continue
 		}
 		go func(peer *RpcPeer) {
-			ctx := context.Background()
+			ctx, cancel := context.WithTimeout(context.Background(),
+				time.Duration(p.commitInterval)*time.Millisecond)
 			response, err := peer.Stub.Prepare(ctx, &request)
 			logger.Infof("%v sent prepare request to %v", p.id, peer.Id)
 
@@ -307,8 +308,12 @@ func (p *Multipaxos) RunPreparePhase(ballot int64) (int64,
 				} else {
 					p.BecomeFollower(response.GetBallot())
 				}
+			} else {
+				logger.Infof("%v send prepare request to %v, errors: %v",
+					p.id, peer.Id, err.Error())
 			}
 			state.Cv.Signal()
+			cancel()
 		}(peer)
 	}
 
@@ -417,7 +422,8 @@ func (p *Multipaxos) RunCommitPhase(ballot int64, globalLastExecuted int64) int6
 			continue
 		}
 		go func(peer *RpcPeer) {
-			ctx := context.Background()
+			ctx, cancel := context.WithTimeout(context.Background(),
+				time.Duration(p.commitInterval)*time.Millisecond)
 
 			response, err := peer.Stub.Commit(ctx, &request)
 			logger.Infof("%v sent commit request to %v", p.id, peer.Id)
@@ -435,8 +441,12 @@ func (p *Multipaxos) RunCommitPhase(ballot int64, globalLastExecuted int64) int6
 				} else {
 					p.BecomeFollower(response.GetBallot())
 				}
+			} else {
+				logger.Infof("%v send prepare request to %v, errors: %v",
+					p.id, peer.Id, err.Error())
 			}
 			state.Cv.Signal()
+			cancel()
 		}(peer)
 	}
 
