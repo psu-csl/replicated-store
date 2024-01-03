@@ -11,3 +11,7 @@ bin
 *.data
 *.svg
 *.txt
+.DS_Store
+.idea
+CMakeFiles
+
