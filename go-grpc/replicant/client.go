@@ -84,7 +84,7 @@ func (c *Client) Read() {
 				if result.Type != multipaxos.SomeElseLeader {
 					panic("Result is not someone_else_leader")
 				}
-				c.Write("leader is ...")
+				c.Write("leader is " + strconv.FormatInt(result.Leader, 10))
 			}
 		} else {
 			c.Write("bad command")
