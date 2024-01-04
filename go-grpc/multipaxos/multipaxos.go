@@ -530,3 +530,12 @@ func (p *Multipaxos) Commit(ctx context.Context,
 	}
 	return response, nil
 }
+
+func (p *Multipaxos) MonitorThread() {
+	for {
+		logger.Errorf("log len: %v, last_index: %v, last_executed: %v, gle: %v",
+			p.log.GetLogLen(), p.log.LastIndex(), p.log.LastExecuted(),
+			p.log.GlobalLastExecuted())
+		time.Sleep(5 * time.Second)
+	}
+}

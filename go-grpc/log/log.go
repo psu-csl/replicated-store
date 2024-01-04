@@ -274,3 +274,10 @@ func (l *Log) GetLog() map[int64]*pb.Instance {
 	}
 	return logMap
 }
+
+func (l *Log) GetLogLen() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	return len(l.log)
+}
