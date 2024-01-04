@@ -352,10 +352,7 @@ func (p *Multipaxos) RunAcceptPhase(ballot int64, index int64,
 		}
 		state.NumRpcs++
 		state.NumOks++
-		if p.log.Append(&instance) {
-			atomic.CompareAndSwapInt32(&p.commitReceived, 1, 0)
-			p.cvLeader.Signal()
-		}
+		p.log.Append(&instance)
 	} else {
 		return Result{SomeElseLeader, ExtractLeaderId(p.Ballot())}
 	}
@@ -502,9 +499,7 @@ func (p *Multipaxos) Accept(ctx context.Context,
 	logger.Infof("%v <--accept-- %v", p.id, request.GetSender())
 	response := &pb.AcceptResponse{}
 	if request.GetInstance().GetBallot() >= p.Ballot() {
-		if p.log.Append(request.GetInstance()) {
-			atomic.CompareAndSwapInt32(&p.commitReceived, 1, 0)
-		}
+		p.log.Append(request.GetInstance())
 		response.Type = pb.ResponseType_OK
 		if request.GetInstance().GetBallot() > p.Ballot() {
 			p.BecomeFollower(request.GetInstance().GetBallot())
