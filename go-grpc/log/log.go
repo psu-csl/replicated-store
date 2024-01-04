@@ -65,7 +65,6 @@ type Log struct {
 	lastIndex          int64
 	lastExecuted       int64
 	globalLastExecuted int64
-	largestIndex       int64
 	mu                 sync.Mutex
 	cvExecutable       *sync.Cond
 	cvCommittable      *sync.Cond
@@ -79,7 +78,6 @@ func NewLog(s kvstore.KVStore) *Log {
 		lastIndex:          0,
 		lastExecuted:       0,
 		globalLastExecuted: 0,
-		largestIndex:       0,
 		mu:                 sync.Mutex{},
 	}
 	l.cvExecutable = sync.NewCond(&l.mu)
@@ -147,7 +145,7 @@ func (l *Log) Append(instance *pb.Instance) bool {
 	i := instance.GetIndex()
 
 	isGap := false
-	if l.largestIndex-l.globalLastExecuted != int64(len(l.log)) {
+	if l.lastIndex-l.globalLastExecuted != int64(len(l.log)) {
 		isGap = true
 	}
 
@@ -158,9 +156,6 @@ func (l *Log) Append(instance *pb.Instance) bool {
 	if Insert(l.log, instance) {
 		if i > l.lastIndex {
 			l.lastIndex = i
-		}
-		if i > l.largestIndex {
-			l.largestIndex = i
 		}
 		l.cvCommittable.Broadcast()
 	}
