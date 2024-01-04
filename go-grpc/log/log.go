@@ -138,13 +138,19 @@ func (l *Log) IsExecutable() bool {
 	return false
 }
 
-func (l *Log) Append(instance *pb.Instance) {
+func (l *Log) Append(instance *pb.Instance) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
 	i := instance.GetIndex()
+
+	isGap := false
+	if l.lastIndex-l.globalLastExecuted != int64(len(l.log)) {
+		isGap = true
+	}
+
 	if i <= l.globalLastExecuted {
-		return
+		return isGap
 	}
 
 	if Insert(l.log, instance) {
@@ -153,6 +159,7 @@ func (l *Log) Append(instance *pb.Instance) {
 		}
 		l.cvCommittable.Broadcast()
 	}
+	return isGap
 }
 
 func (l *Log) Commit(index int64) {
