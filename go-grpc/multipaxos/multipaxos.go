@@ -29,6 +29,11 @@ type Multipaxos struct {
 	rpcPeers       RpcPeerList
 	mu             sync.Mutex
 
+	initCommitInterval int64
+	lastElectedTime    time.Time
+	numElections       int
+	electionThreshold  int64
+
 	cvLeader   *sync.Cond
 	cvFollower *sync.Cond
 
@@ -54,6 +59,10 @@ func NewMultipaxos(log *Log.Log, config config.Config, join bool) *Multipaxos {
 		rpcPeers: RpcPeerList{
 			List: make([]*RpcPeer, len(config.Peers)),
 		},
+		initCommitInterval:   config.CommitInterval,
+		lastElectedTime:      time.Now(),
+		numElections:         0,
+		electionThreshold:    config.ElectionLimit,
 		rpcServerRunning:     false,
 		prepareThreadRunning: 0,
 		commitThreadRunning:  0,
@@ -68,9 +77,6 @@ func NewMultipaxos(log *Log.Log, config config.Config, join bool) *Multipaxos {
 	var opts []grpc.DialOption
 	opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	for id, addr := range config.Peers {
-		//if int64(id) == config.Id {
-		//	continue
-		//}
 		conn, err := grpc.Dial(addr, opts...)
 		if err != nil {
 			panic("dial error")
@@ -106,6 +112,7 @@ func (p *Multipaxos) BecomeLeader(newBallot int64, newLastIndex int64) {
 	p.log.SetLastIndex(newLastIndex)
 	atomic.StoreInt64(&p.ballot, newBallot)
 	p.cvLeader.Signal()
+	p.countElection()
 }
 
 func (p *Multipaxos) BecomeFollower(newBallot int64) {
@@ -120,6 +127,9 @@ func (p *Multipaxos) BecomeFollower(newBallot int64) {
 	if newLeaderId != p.id && (oldLeaderId == p.id || oldLeaderId == MaxNumPeers) {
 		logger.Infof("%v became a follower: ballot: %v -> %v\n", p.id,
 			p.Ballot(), newBallot)
+		if p.numElections > 5 {
+			p.commitInterval *= 2
+		}
 		p.cvFollower.Signal()
 	}
 	atomic.StoreInt64(&p.ballot, newBallot)
@@ -148,6 +158,7 @@ func (p *Multipaxos) Start() {
 	p.StartPrepareThread()
 	p.StartCommitThread()
 	p.StartRPCServer()
+	go p.MonitorThread()
 }
 
 func (p *Multipaxos) Stop() {
@@ -565,7 +576,7 @@ func (p *Multipaxos) Prepare(ctx context.Context,
 
 func (p *Multipaxos) Accept(ctx context.Context,
 	request *pb.AcceptRequest) (*pb.AcceptResponse, error) {
-	//logger.Infof("%v <--accept-- %v", p.id, request.GetSender())
+	logger.Infof("%v <--accept-- %v", p.id, request.GetSender())
 	response := &pb.AcceptResponse{}
 	if request.GetInstance().GetBallot() >= p.Ballot() {
 		p.log.Append(request.GetInstance())
@@ -601,9 +612,30 @@ func (p *Multipaxos) Commit(ctx context.Context,
 	return response, nil
 }
 
+func (p *Multipaxos) countElection() {
+	elapse := time.Since(p.lastElectedTime)
+	if elapse.Milliseconds() < p.electionThreshold {
+		p.numElections += 1
+	} else {
+		p.numElections = 1
+		if p.commitInterval > p.initCommitInterval {
+			p.commitInterval = p.initCommitInterval
+		}
+	}
+}
+
+func (p *Multipaxos) MonitorThread() {
+	for {
+		length, lastIndex, lastExecuted, gle, indice := p.log.GetLogStatus()
+		logger.Errorf("log len: %v, last_index: %v, last_executed: %v, "+
+			"gle: %v, indice: %v", length, lastIndex, lastExecuted, gle, indice)
+		time.Sleep(5 * time.Second)
+	}
+}
+
 func (p *Multipaxos) ResumeSnapshot(stream pb.MultiPaxosRPC_ResumeSnapshotServer) error {
-	logger.Infof("%v <--snapshot--\n", p.id)
-	buffer := &bytes.Buffer{}
+		logger.Infof("%v <--snapshot--\n", p.id)
+		buffer := &bytes.Buffer{}
 	for {
 		snapshotChunk, err := stream.Recv()
 		if err == io.EOF {

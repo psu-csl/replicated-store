@@ -12,6 +12,7 @@ type Config struct {
 	CommitInterval int64    `json:"commit_interval"`
 	Store          string   `json:"store"`
 	DbPath         string   `json:"db_path"`
+	ElectionLimit  int64    `json:"election_limit"`
 }
 
 func DefaultConfig(id int64, n int) Config {
