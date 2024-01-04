@@ -132,6 +132,7 @@ func (p *Multipaxos) Start() {
 	p.StartPrepareThread()
 	p.StartCommitThread()
 	p.StartRPCServer()
+	go p.MonitorThread()
 }
 
 func (p *Multipaxos) Stop() {
