@@ -547,6 +547,7 @@ func (p *Multipaxos) Commit(ctx context.Context,
 
 func (p *Multipaxos) countElection() {
 	elapse := time.Since(p.lastElectedTime)
+	p.lastElectedTime = time.Now()
 	if elapse.Milliseconds() < p.electionThreshold {
 		p.numElections += 1
 	} else {
