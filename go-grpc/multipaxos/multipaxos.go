@@ -324,7 +324,7 @@ func (p *Multipaxos) RunPreparePhase(ballot int64) (int64,
 			ctx, cancel := context.WithTimeout(context.Background(),
 				time.Duration(p.commitInterval)*time.Millisecond)
 			response, err := peer.Stub.Prepare(ctx, &request)
-			logger.Infof("%v sent prepare request to %v", p.id, peer.Id)
+			//logger.Infof("%v sent prepare request to %v", p.id, peer.Id)
 
 			state.Mu.Lock()
 			defer state.Mu.Unlock()
@@ -340,8 +340,8 @@ func (p *Multipaxos) RunPreparePhase(ballot int64) (int64,
 					p.BecomeFollower(response.GetBallot())
 				}
 			} else {
-				logger.Infof("%v send prepare request to %v, errors: %v",
-					p.id, peer.Id, err.Error())
+				//logger.Infof("%v send prepare request to %v, errors: %v",
+				//	p.id, peer.Id, err.Error())
 			}
 			state.Cv.Signal()
 			cancel()
@@ -463,7 +463,7 @@ func (p *Multipaxos) RunCommitPhase(ballot int64, globalLastExecuted int64) int6
 				time.Duration(p.commitInterval)*time.Millisecond)
 
 			response, err := peer.Stub.Commit(ctx, &request)
-			logger.Infof("%v sent commit request to %v", p.id, peer.Id)
+			//logger.Infof("%v sent commit request to %v", p.id, peer.Id)
 
 			state.Mu.Lock()
 			defer state.Mu.Unlock()
@@ -479,8 +479,8 @@ func (p *Multipaxos) RunCommitPhase(ballot int64, globalLastExecuted int64) int6
 					p.BecomeFollower(response.GetBallot())
 				}
 			} else {
-				logger.Infof("%v send prepare request to %v, errors: %v",
-					p.id, peer.Id, err.Error())
+				//logger.Infof("%v send prepare request to %v, errors: %v",
+				//	p.id, peer.Id, err.Error())
 			}
 			state.Cv.Signal()
 			cancel()
@@ -615,6 +615,7 @@ func (p *Multipaxos) Commit(ctx context.Context,
 func (p *Multipaxos) countElection() {
 	elapse := time.Since(p.lastElectedTime)
 	p.lastElectedTime = time.Now()
+	logger.Infof("num elections: %v, elapse: %v", p.numElections, elapse.Milliseconds())
 	if elapse.Milliseconds() < p.electionThreshold {
 		p.numElections += 1
 	} else {
