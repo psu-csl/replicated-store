@@ -18,13 +18,13 @@ import (
 const NumPeers = 3
 
 var (
-	configs = make([]config.Config, NumPeers)
-	logs    = make([]*log.Log, NumPeers)
-	peers   = make([]*Multipaxos, NumPeers)
-	stores  = make([]*kvstore.MemKVStore, NumPeers)
+	configs       = make([]config.Config, NumPeers)
+	logs          = make([]*log.Log, NumPeers)
+	peers         = make([]*Multipaxos, NumPeers)
+	stores        = make([]*kvstore.MemKVStore, NumPeers)
 	peerListeners = make([]net.Listener, NumPeers)
 	serverOn      = make([]bool, NumPeers)
-	isSetup = false
+	isSetup       = false
 )
 
 func setup() {
@@ -253,8 +253,8 @@ func TestCommitCommitsAndTrims(t *testing.T) {
 	assert.True(t, log.IsCommitted(logs[0].At(index2)))
 	assert.True(t, log.IsInProgress(logs[0].At(index3)))
 
-	logs[0].Execute()
-	logs[0].Execute()
+	logs[0].ReadInstance()
+	logs[0].ReadInstance()
 
 	r2 := sendCommit(peers[1], 0, ballot, index2, index2)
 	assert.EqualValues(t, tcp.Ok, r2.Type)
@@ -293,8 +293,8 @@ func TestPrepareRespondsWithCorrectInstances(t *testing.T) {
 	r2 := sendCommit(peers[1], 0, ballot, index2, 0)
 	assert.EqualValues(t, tcp.Ok, r2.Type)
 
-	logs[0].Execute()
-	logs[0].Execute()
+	logs[0].ReadInstance()
+	logs[0].ReadInstance()
 
 	ballot = peers[0].NextBallot()
 	r3 := sendPrepare(peers[1], 0, ballot)
@@ -537,7 +537,7 @@ func TestRunCommitPhase(t *testing.T) {
 			instance := util.MakeInstanceWithState(ballot, index,
 				tcp.Committed)
 			log.Append(instance)
-			log.Execute()
+			log.ReadInstance()
 		}
 	}
 
@@ -551,7 +551,7 @@ func TestRunCommitPhase(t *testing.T) {
 	gle = peers[0].RunCommitPhase(ballot, gle)
 	assert.EqualValues(t, 2, gle)
 
-	logs[2].Execute()
+	logs[2].ReadInstance()
 
 	gle = peers[0].RunCommitPhase(ballot, gle)
 	assert.EqualValues(t, numInstances, gle)
@@ -683,7 +683,7 @@ func startServer(id int64, peer *Multipaxos) {
 	}
 }
 
-func handlePeerRequest(multipaxos *Multipaxos,writer *bufio.Writer, line string) {
+func handlePeerRequest(multipaxos *Multipaxos, writer *bufio.Writer, line string) {
 	var request tcp.Message
 	err := json.Unmarshal([]byte(line), &request)
 	if err != nil {
@@ -736,8 +736,8 @@ func handlePeerRequest(multipaxos *Multipaxos,writer *bufio.Writer, line string)
 			writer.Flush()
 		case tcp.COMMITREQUEST:
 			commitResponse := tcp.CommitResponse{
-				Type:         tcp.Reject,
-				Ballot:       0,
+				Type:   tcp.Reject,
+				Ballot: 0,
 			}
 			if serverOn[multipaxos.id] {
 				var commitRequest tcp.CommitRequest

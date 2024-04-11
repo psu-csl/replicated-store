@@ -176,7 +176,7 @@ func (l *Log) Commit(index int64) {
 	}
 }
 
-func (l *Log) Execute() (int64, *kvstore.KVResult) {
+func (l *Log) ReadInstance() *tcp.Instance {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -185,16 +185,20 @@ func (l *Log) Execute() (int64, *kvstore.KVResult) {
 	}
 
 	if !l.running {
-		return -1, nil
+		return nil
 	}
 
 	instance, ok := l.log[l.lastExecuted+1]
 	if !ok {
 		logger.Panicf("Instance at Index %v empty\n", l.lastExecuted+1)
 	}
-	result := kvstore.Execute(instance.Command, l.kvStore)
 	instance.State = tcp.Executed
 	l.lastExecuted += 1
+	return instance
+}
+
+func (l *Log) Execute(instance *tcp.Instance) (int64, *kvstore.KVResult) {
+	result := kvstore.Execute(instance.Command, l.kvStore)
 	return instance.ClientId, &result
 }
 

@@ -10,9 +10,11 @@ const (
 type CommandType int32
 
 const (
-	Get CommandType = 0
-	Put CommandType = 1
-	Del CommandType = 2
+	Get     CommandType = 0
+	Put     CommandType = 1
+	Del     CommandType = 2
+	AddNode CommandType = 3
+	DelNode CommandType = 4
 )
 
 type InstanceState int32

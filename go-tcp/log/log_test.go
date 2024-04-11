@@ -224,7 +224,7 @@ func TestAppendCommitExecute(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func(wg *sync.WaitGroup) {
-		log.Execute()
+		log.ReadInstance()
 		wg.Done()
 	}(&wg)
 
@@ -244,9 +244,9 @@ func TestAppendCommitExecuteOutOfOrder(t *testing.T) {
 
 	wg.Add(1)
 	go func() {
-		log.Execute()
-		log.Execute()
-		log.Execute()
+		log.ReadInstance()
+		log.ReadInstance()
+		log.ReadInstance()
 		wg.Done()
 	}()
 
@@ -362,9 +362,9 @@ func TestAppendCommitUntilExecute(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
-		log.Execute()
-		log.Execute()
-		log.Execute()
+		log.ReadInstance()
+		log.ReadInstance()
+		log.ReadInstance()
 		wg.Done()
 	}()
 
@@ -392,9 +392,9 @@ func TestAppendCommitUntilExecuteTrimUntil(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
-		log.Execute()
-		log.Execute()
-		log.Execute()
+		log.ReadInstance()
+		log.ReadInstance()
+		log.ReadInstance()
 		wg.Done()
 	}()
 
@@ -426,8 +426,8 @@ func TestAppendAtTrimmedIndex(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
-		log.Execute()
-		log.Execute()
+		log.ReadInstance()
+		log.ReadInstance()
 		wg.Done()
 	}()
 
@@ -461,8 +461,8 @@ func TestInstances(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
-		log.Execute()
-		log.Execute()
+		log.ReadInstance()
+		log.ReadInstance()
 		wg.Done()
 	}()
 
@@ -502,7 +502,8 @@ func TestCallingStopUnblocksExecutor(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
-		_, result := log.Execute()
+		instance := log.ReadInstance()
+		_, result := log.Execute(instance)
 		assert.Nil(t, result)
 		wg.Done()
 	}()

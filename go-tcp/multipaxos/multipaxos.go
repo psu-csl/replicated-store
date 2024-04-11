@@ -7,6 +7,7 @@ import (
 	tcp "github.com/psu-csl/replicated-store/go/multipaxos/network"
 	logger "github.com/sirupsen/logrus"
 	"math/rand"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -19,7 +20,7 @@ type Multipaxos struct {
 	commitReceived int32
 	commitInterval int64
 	port           string
-	peers          []*Peer
+	peers          PeerList
 	nextChannelId  uint64
 	channels       *tcp.ChannelMap
 	mu             sync.Mutex
@@ -39,7 +40,7 @@ func NewMultipaxos(log *Log.Log, config config.Config) *Multipaxos {
 		commitReceived:       0,
 		commitInterval:       config.CommitInterval,
 		port:                 config.Peers[config.Id],
-		peers:                make([]*Peer, len(config.Peers)),
+		peers:                PeerList{list: make([]*Peer, len(config.Peers))},
 		nextChannelId:        0,
 		prepareThreadRunning: 0,
 		commitThreadRunning:  0,
@@ -52,7 +53,7 @@ func NewMultipaxos(log *Log.Log, config config.Config) *Multipaxos {
 	rand.Seed(multipaxos.id)
 
 	for id, addr := range config.Peers {
-		multipaxos.peers[id] = &Peer{
+		multipaxos.peers.list[id] = &Peer{
 			Id:   int64(id),
 			Stub: MakePeer(addr, multipaxos.channels),
 		}
@@ -160,7 +161,9 @@ func (p *Multipaxos) CommitThread() {
 
 func (p *Multipaxos) RunPreparePhase(ballot int64) (int64,
 	map[int64]*tcp.Instance) {
-	numPeers := len(p.peers)
+	p.peers.RLock()
+	numPeers := len(p.peers.list)
+	p.peers.RUnlock()
 	numOks := 0
 	log := make(map[int64]*tcp.Instance)
 	maxLastIndex := int64(0)
@@ -181,7 +184,8 @@ func (p *Multipaxos) RunPreparePhase(ballot int64) (int64,
 		Ballot: ballot,
 	})
 	channelId, responseChan := p.addChannel(numPeers)
-	for _, peer := range p.peers {
+	p.peers.RLock()
+	for _, peer := range p.peers.list {
 		if peer.Id != p.id {
 			go func(peer *Peer) {
 				peer.Stub.SendAwaitResponse(tcp.PREPAREREQUEST,
@@ -190,6 +194,7 @@ func (p *Multipaxos) RunPreparePhase(ballot int64) (int64,
 			}(peer)
 		}
 	}
+	p.peers.RUnlock()
 
 	for {
 		response := <-responseChan
@@ -220,7 +225,9 @@ func (p *Multipaxos) RunPreparePhase(ballot int64) (int64,
 func (p *Multipaxos) RunAcceptPhase(ballot int64, index int64,
 	command *tcp.Command, clientId int64) Result {
 
-	numPeers := len(p.peers)
+	p.peers.RLock()
+	numPeers := len(p.peers.list)
+	p.peers.RUnlock()
 	numOks := 0
 
 	if ballot == p.Ballot() {
@@ -254,7 +261,8 @@ func (p *Multipaxos) RunAcceptPhase(ballot int64, index int64,
 		Instance: &instance,
 	})
 	channelId, responseChan := p.addChannel(numPeers)
-	for _, peer := range p.peers {
+	p.peers.RLock()
+	for _, peer := range p.peers.list {
 		if peer.Id != p.id {
 			go func(peer *Peer) {
 				peer.Stub.SendAwaitResponse(tcp.ACCEPTREQUEST,
@@ -263,6 +271,7 @@ func (p *Multipaxos) RunAcceptPhase(ballot int64, index int64,
 			}(peer)
 		}
 	}
+	p.peers.RUnlock()
 
 	for {
 		response := <-responseChan
@@ -290,7 +299,9 @@ func (p *Multipaxos) RunAcceptPhase(ballot int64, index int64,
 }
 
 func (p *Multipaxos) RunCommitPhase(ballot int64, globalLastExecuted int64) int64 {
-	numPeers := len(p.peers)
+	p.peers.RLock()
+	numPeers := len(p.peers.list)
+	p.peers.RUnlock()
 	numOks := 0
 	minLastExecuted := p.log.LastExecuted()
 
@@ -307,7 +318,8 @@ func (p *Multipaxos) RunCommitPhase(ballot int64, globalLastExecuted int64) int6
 		Sender:             p.id,
 	})
 	channelId, responseChan := p.addChannel(numPeers)
-	for _, peer := range p.peers {
+	p.peers.RLock()
+	for _, peer := range p.peers.list {
 		if peer.Id != p.id {
 			go func(peer *Peer) {
 				peer.Stub.SendAwaitResponse(tcp.COMMITREQUEST,
@@ -316,6 +328,7 @@ func (p *Multipaxos) RunCommitPhase(ballot int64, globalLastExecuted int64) int6
 			}(peer)
 		}
 	}
+	p.peers.RUnlock()
 
 	for {
 		response := <-responseChan
@@ -351,6 +364,30 @@ func (p *Multipaxos) Replay(ballot int64, log map[int64]*tcp.Instance) {
 		}
 		if r.Type == SomeElseLeader {
 			return
+		}
+	}
+}
+
+func (p *Multipaxos) Reconfigure(cmd *tcp.Command) {
+	peerId, err := strconv.Atoi(cmd.Key)
+	if err != nil {
+		return
+	}
+
+	p.peers.Lock()
+	defer p.peers.Unlock()
+	if cmd.Type == tcp.AddNode {
+		peer := &Peer{
+			Id:   int64(peerId),
+			Stub: MakePeer(cmd.Value, p.channels),
+		}
+		p.peers.list = append(p.peers.list, peer)
+		// send snapshot
+	} else if cmd.Type == tcp.DelNode {
+		for i, peer := range p.peers.list {
+			if peer.Id == int64(peerId) {
+				p.peers.list = append(p.peers.list[:i], p.peers.list[i+1:]...)
+			}
 		}
 	}
 }

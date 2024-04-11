@@ -2,6 +2,7 @@ package multipaxos
 
 import (
 	pb "github.com/psu-csl/replicated-store/go/multipaxos/network"
+	"sync"
 )
 
 const (
@@ -17,6 +18,11 @@ type Peer struct {
 
 func MakePeer(addr string, channels *pb.ChannelMap) *pb.TcpLink {
 	return pb.NewTcpLink(addr, channels)
+}
+
+type PeerList struct {
+	sync.RWMutex
+	list []*Peer
 }
 
 type ResultType int

@@ -5,6 +5,7 @@ import (
 	"github.com/psu-csl/replicated-store/go/kvstore"
 	consensusLog "github.com/psu-csl/replicated-store/go/log"
 	"github.com/psu-csl/replicated-store/go/multipaxos"
+	tcp "github.com/psu-csl/replicated-store/go/multipaxos/network"
 	logger "github.com/sirupsen/logrus"
 	"net"
 	"strconv"
@@ -38,13 +39,19 @@ func NewReplicant(config config.Config) *Replicant {
 
 func (r *Replicant) executorTask() {
 	for {
-		id, result := r.log.Execute()
-		if result == nil {
+		instance := r.log.ReadInstance()
+		if instance == nil {
 			break
 		}
-		client := r.clientManager.Get(id)
-		if client != nil {
-			client.Write(result.Value)
+		if instance.Command.Type == tcp.AddNode || instance.Command.
+			Type == tcp.DelNode {
+			r.multipaxos.Reconfigure(instance.Command)
+		} else {
+			id, result := r.log.Execute(instance)
+			client := r.clientManager.Get(id)
+			if client != nil {
+				client.Write(result.Value)
+			}
 		}
 	}
 }
