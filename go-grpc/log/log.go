@@ -8,6 +8,12 @@ import (
 	"sync"
 )
 
+type Snapshot struct {
+	LastIncludedIndex int64
+	SnapshotData      []byte
+	Ballot            int64
+}
+
 func IsCommitted(instance *pb.Instance) bool {
 	return instance.GetState() == pb.InstanceState_COMMITTED
 }
@@ -277,4 +283,34 @@ func (l *Log) GetLog() map[int64]*pb.Instance {
 		logMap[index] = proto.Clone(instance).(*pb.Instance)
 	}
 	return logMap
+}
+
+func (l *Log) MakeSnapshot(ballot int64) (*Snapshot, error) {
+	storeData, err := l.kvStore.MakeSnapshot()
+	if err != nil {
+		logger.Error(err)
+		return nil, err
+	}
+	snapshot := Snapshot{
+		LastIncludedIndex: l.lastExecuted,
+		SnapshotData:      storeData,
+		Ballot:            ballot,
+	}
+	logger.Infof("snapshot last index: %v\n", snapshot.LastIncludedIndex)
+	return &snapshot, nil
+}
+
+func (l *Log) ResumeSnapshot(snapshot *Snapshot) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	if l.lastExecuted >= snapshot.LastIncludedIndex {
+		return
+	}
+
+	l.kvStore.RestoreSnapshot(snapshot.SnapshotData)
+	l.lastExecuted = snapshot.LastIncludedIndex
+	if l.lastIndex < snapshot.LastIncludedIndex {
+		l.lastIndex = snapshot.LastIncludedIndex
+	}
 }
