@@ -56,11 +56,5 @@ func (s *MemKVStore) RestoreSnapshot(data []byte) {
 	if err != nil {
 		return
 	}
-	for key, _ := range s.store {
-		if value, ok := snapshotStore[key]; !ok {
-			delete(s.store, key)
-		} else {
-			s.store[key] = value
-		}
-	}
+	s.store = snapshotStore
 }
