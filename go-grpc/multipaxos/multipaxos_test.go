@@ -24,7 +24,7 @@ var (
 )
 
 func initPeers() {
-	for i:= int64(0); i < NumPeers; i++ {
+	for i := int64(0); i < NumPeers; i++ {
 		configs[i] = config.DefaultConfig(i, NumPeers)
 		stores[i] = kvstore.NewMemKVStore()
 		logs[i] = log.NewLog(stores[i])
@@ -110,7 +110,7 @@ func Connect(multipaxos *Multipaxos, addrs []string) {
 			panic("dial error")
 		}
 		client := pb.NewMultiPaxosRPCClient(conn)
-		multipaxos.rpcPeers[i] = NewRpcPeer(int64(i), client)
+		multipaxos.rpcPeers.List[i] = NewRpcPeer(int64(i), client)
 	}
 }
 
@@ -229,8 +229,8 @@ func TestCommitCommitsAndTrims(t *testing.T) {
 	assert.True(t, log.IsCommitted(logs[0].At(index2)))
 	assert.True(t, log.IsInProgress(logs[0].At(index3)))
 
-	logs[0].Execute()
-	logs[0].Execute()
+	logs[0].ReadInstance()
+	logs[0].ReadInstance()
 
 	r2 := sendCommit(stub, ballot, index2, index2)
 	assert.EqualValues(t, pb.ResponseType_OK, r2.GetType())
@@ -270,8 +270,8 @@ func TestPrepareRespondsWithCorrectInstances(t *testing.T) {
 	r2 := sendCommit(stub, ballot, index2, 0)
 	assert.EqualValues(t, pb.ResponseType_OK, r2.GetType())
 
-	logs[0].Execute()
-	logs[0].Execute()
+	logs[0].ReadInstance()
+	logs[0].ReadInstance()
 
 	ballot = peers[0].NextBallot()
 	r3 := sendPrepare(stub, ballot)
@@ -472,8 +472,7 @@ func TestRunPreparePhase(t *testing.T) {
 	assert.EqualValues(t, 5, lastIndex)
 	for index, instance := range logMap {
 		if index == 3 || index == 4 {
-			assert.True(t, log.IsEqualCommand(expectedLog[index].GetCommand(
-				), instance.GetCommand()))
+			assert.True(t, log.IsEqualCommand(expectedLog[index].GetCommand(), instance.GetCommand()))
 		} else {
 			assert.True(t, log.IsEqualInstance(expectedLog[index], instance),
 				"index: %v", index)
@@ -530,7 +529,7 @@ func TestRunCommitPhase(t *testing.T) {
 			instance := util.MakeInstanceWithState(ballot, index,
 				pb.InstanceState_COMMITTED)
 			log.Append(instance)
-			log.Execute()
+			log.ReadInstance()
 		}
 	}
 
@@ -545,7 +544,7 @@ func TestRunCommitPhase(t *testing.T) {
 	gle = peers[0].RunCommitPhase(ballot, gle)
 	assert.EqualValues(t, 2, gle)
 
-	logs[2].Execute()
+	logs[2].ReadInstance()
 
 	gle = peers[0].RunCommitPhase(ballot, gle)
 	assert.EqualValues(t, numInstances, gle)

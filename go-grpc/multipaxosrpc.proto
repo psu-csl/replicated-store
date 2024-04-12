@@ -53,6 +53,8 @@ enum CommandType {
   GET = 0;
   PUT = 1;
   DEL = 2;
+  ADDNODE = 3;
+  DELNODE = 4;
 }
 
 enum InstanceState {

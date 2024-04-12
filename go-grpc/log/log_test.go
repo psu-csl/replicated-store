@@ -33,7 +33,7 @@ func TestConstructor(t *testing.T) {
 func TestInsert(t *testing.T) {
 	log := make(map[int64]*pb.Instance)
 	var (
-		index int64 = 1
+		index  int64 = 1
 		ballot int64 = 1
 	)
 	assert.True(t, Insert(log, util.MakeInstanceWithType(ballot, index,
@@ -52,7 +52,7 @@ func TestInsertUpdateInProgress(t *testing.T) {
 	assert.True(t, Insert(log, util.MakeInstanceWithType(ballot,
 		index, pb.CommandType_PUT)))
 	assert.Equal(t, pb.CommandType_PUT, log[index].GetCommand().GetType())
-	assert.False(t, Insert(log, util.MakeInstanceWithType(ballot+ 1,
+	assert.False(t, Insert(log, util.MakeInstanceWithType(ballot+1,
 		index, pb.CommandType_DEL)))
 	assert.Equal(t, pb.CommandType_DEL, log[index].GetCommand().GetType())
 }
@@ -60,7 +60,7 @@ func TestInsertUpdateInProgress(t *testing.T) {
 func TestInsertUpdateCommitted(t *testing.T) {
 	log := make(map[int64]*pb.Instance)
 	var (
-		index int64 = 1
+		index  int64 = 1
 		ballot int64 = 1
 	)
 	assert.True(t, Insert(log, util.MakeInstanceWithAll(ballot, index,
@@ -78,7 +78,7 @@ func TestInsertStale(t *testing.T) {
 	assert.True(t, Insert(log, util.MakeInstanceWithType(ballot,
 		index, pb.CommandType_PUT)))
 	assert.Equal(t, pb.CommandType_PUT, log[index].GetCommand().GetType())
-	assert.False(t, Insert(log, util.MakeInstanceWithType(ballot - 1,
+	assert.False(t, Insert(log, util.MakeInstanceWithType(ballot-1,
 		index, pb.CommandType_DEL)))
 	assert.Equal(t, pb.CommandType_PUT, log[index].GetCommand().GetType())
 }
@@ -86,7 +86,7 @@ func TestInsertStale(t *testing.T) {
 func TestInsertCase2Committed(t *testing.T) {
 	log := make(map[int64]*pb.Instance)
 	var (
-		index int64 = 1
+		index  int64 = 1
 		ballot int64 = 0
 	)
 	inst1 := util.MakeInstanceWithAll(ballot, index,
@@ -101,7 +101,7 @@ func TestInsertCase2Committed(t *testing.T) {
 func TestInsertCase2Executed(t *testing.T) {
 	log := make(map[int64]*pb.Instance)
 	var (
-		index int64 = 1
+		index  int64 = 1
 		ballot int64 = 0
 	)
 	inst1 := util.MakeInstanceWithAll(ballot, index,
@@ -116,7 +116,7 @@ func TestInsertCase2Executed(t *testing.T) {
 func TestInsertCase3(t *testing.T) {
 	log := make(map[int64]*pb.Instance)
 	var (
-		index int64 = 1
+		index  int64 = 1
 		ballot int64 = 0
 	)
 	inst1 := util.MakeInstanceWithAll(ballot, index,
@@ -142,7 +142,7 @@ func TestAppendWithGap(t *testing.T) {
 	var index int64 = 42
 	log.Append(util.MakeInstance(0, index))
 	assert.Equal(t, index, log.At(index).GetIndex())
-	assert.Equal(t, index + 1, log.AdvanceLastIndex())
+	assert.Equal(t, index+1, log.AdvanceLastIndex())
 }
 
 func TestAppendFillGaps(t *testing.T) {
@@ -150,15 +150,15 @@ func TestAppendFillGaps(t *testing.T) {
 
 	var index int64 = 42
 	log.Append(util.MakeInstance(0, index))
-	log.Append(util.MakeInstance(0, index - 10))
-	assert.Equal(t, index + 1, log.AdvanceLastIndex())
+	log.Append(util.MakeInstance(0, index-10))
+	assert.Equal(t, index+1, log.AdvanceLastIndex())
 }
 
 func TestAppendHighBallotOverride(t *testing.T) {
 	setup()
 
 	var (
-		index int64 = 1
+		index    int64 = 1
 		loBallot int64 = 0
 		hiBallot int64 = 1
 	)
@@ -167,11 +167,11 @@ func TestAppendHighBallotOverride(t *testing.T) {
 	assert.Equal(t, pb.CommandType_DEL, log.At(index).GetCommand().Type)
 }
 
-func TestAppendLowBallotNoEffect(t *testing.T)  {
+func TestAppendLowBallotNoEffect(t *testing.T) {
 	setup()
 
 	var (
-		index int64 = 1
+		index    int64 = 1
 		loBallot int64 = 0
 		hiBallot int64 = 1
 	)
@@ -213,7 +213,7 @@ func TestCommitBeforeAppend(t *testing.T) {
 		wg.Done()
 	}(&wg)
 	time.Sleep(50 * time.Millisecond)
-	
+
 	log.Append(util.MakeInstance(0, log.AdvanceLastIndex()))
 	wg.Wait()
 	assert.True(t, IsCommitted(log.At(index1)))
@@ -224,7 +224,7 @@ func TestAppendCommitExecute(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func(wg *sync.WaitGroup) {
-		log.Execute()
+		log.ReadInstance()
 		wg.Done()
 	}(&wg)
 
@@ -244,9 +244,9 @@ func TestAppendCommitExecuteOutOfOrder(t *testing.T) {
 
 	wg.Add(1)
 	go func() {
-		log.Execute()
-		log.Execute()
-		log.Execute()
+		log.ReadInstance()
+		log.ReadInstance()
+		log.ReadInstance()
 		wg.Done()
 	}()
 
@@ -309,7 +309,7 @@ func TestCommitUntilHigherBallot(t *testing.T) {
 	log.Append(util.MakeInstance(ballot, index2))
 	log.Append(util.MakeInstance(ballot, index3))
 
-	log.CommitUntil(index3, ballot + 1)
+	log.CommitUntil(index3, ballot+1)
 
 	assert.False(t, IsCommitted(log.At(index1)))
 	assert.False(t, IsCommitted(log.At(index2)))
@@ -331,7 +331,7 @@ func TestCommitUntilCase2(t *testing.T) {
 	log.Append(util.MakeInstance(ballot, index3))
 
 	defer expectDeath(t, "Commit until test2 - no panic")
-	log.CommitUntil(index3, ballot - 1)
+	log.CommitUntil(index3, ballot-1)
 }
 
 func TestCommitUntilWithGap(t *testing.T) {
@@ -362,9 +362,9 @@ func TestAppendCommitUntilExecute(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
-		log.Execute()
-		log.Execute()
-		log.Execute()
+		log.ReadInstance()
+		log.ReadInstance()
+		log.ReadInstance()
 		wg.Done()
 	}()
 
@@ -392,9 +392,9 @@ func TestAppendCommitUntilExecuteTrimUntil(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
-		log.Execute()
-		log.Execute()
-		log.Execute()
+		log.ReadInstance()
+		log.ReadInstance()
+		log.ReadInstance()
 		wg.Done()
 	}()
 
@@ -426,8 +426,8 @@ func TestAppendAtTrimmedIndex(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
-		log.Execute()
-		log.Execute()
+		log.ReadInstance()
+		log.ReadInstance()
 		wg.Done()
 	}()
 
@@ -461,8 +461,8 @@ func TestInstances(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
-		log.Execute()
-		log.Execute()
+		log.ReadInstance()
+		log.ReadInstance()
 		wg.Done()
 	}()
 
@@ -502,7 +502,7 @@ func TestCallingStopUnblocksExecutor(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
-		_, result := log.Execute()
+		result := log.ReadInstance()
 		assert.Nil(t, result)
 		wg.Done()
 	}()

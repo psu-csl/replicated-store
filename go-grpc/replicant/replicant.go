@@ -5,6 +5,7 @@ import (
 	"github.com/psu-csl/replicated-store/go/kvstore"
 	consensusLog "github.com/psu-csl/replicated-store/go/log"
 	"github.com/psu-csl/replicated-store/go/multipaxos"
+	pb "github.com/psu-csl/replicated-store/go/multipaxos/comm"
 	logger "github.com/sirupsen/logrus"
 	"net"
 	"strconv"
@@ -22,8 +23,8 @@ type Replicant struct {
 
 func NewReplicant(config config.Config) *Replicant {
 	r := &Replicant{
-		id:       config.Id,
-		ipPort:   config.Peers[config.Id],
+		id:     config.Id,
+		ipPort: config.Peers[config.Id],
 	}
 	r.log = consensusLog.NewLog(kvstore.CreateStore(config))
 	r.multipaxos = multipaxos.NewMultipaxos(r.log, config)
@@ -55,7 +56,7 @@ func (r *Replicant) StartServer() {
 	}
 	port += 1
 
-	acceptor, err := net.Listen("tcp", ":" + strconv.Itoa(port))
+	acceptor, err := net.Listen("tcp", ":"+strconv.Itoa(port))
 	if err != nil {
 		logger.Fatalln(err)
 	}
@@ -81,13 +82,19 @@ func (r *Replicant) StopExecutorThread() {
 
 func (r *Replicant) executorThread() {
 	for {
-		id, result := r.log.Execute()
-		if result == nil {
+		instance := r.log.ReadInstance()
+		if instance == nil {
 			break
 		}
-		client := r.clientManager.Get(id)
-		if client != nil {
-			client.Write(result.Value)
+		if instance.Command.Type == pb.CommandType_ADDNODE || instance.
+			Command.Type == pb.CommandType_DELNODE {
+			r.multipaxos.Reconfigure(instance.Command)
+		} else {
+			id, result := r.log.Execute(instance)
+			client := r.clientManager.Get(id)
+			if client != nil {
+				client.Write(result.Value)
+			}
 		}
 	}
 }

@@ -24,6 +24,11 @@ func NewRpcPeer(id int64, stub pb.MultiPaxosRPCClient) *RpcPeer {
 	return peer
 }
 
+type RpcPeerList struct {
+	sync.RWMutex
+	List []*RpcPeer
+}
+
 type ResultType int
 
 const (

@@ -10,6 +10,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"math/rand"
 	"net"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -22,7 +23,7 @@ type Multipaxos struct {
 	commitReceived int32
 	commitInterval int64
 	port           string
-	rpcPeers       []*RpcPeer
+	rpcPeers       RpcPeerList
 	mu             sync.Mutex
 
 	cvLeader   *sync.Cond
@@ -40,13 +41,15 @@ type Multipaxos struct {
 
 func NewMultipaxos(log *Log.Log, config config.Config) *Multipaxos {
 	multipaxos := Multipaxos{
-		ballot:               MaxNumPeers,
-		log:                  log,
-		id:                   config.Id,
-		commitReceived:       0,
-		commitInterval:       config.CommitInterval,
-		port:                 config.Peers[config.Id],
-		rpcPeers:             make([]*RpcPeer, len(config.Peers)),
+		ballot:         MaxNumPeers,
+		log:            log,
+		id:             config.Id,
+		commitReceived: 0,
+		commitInterval: config.CommitInterval,
+		port:           config.Peers[config.Id],
+		rpcPeers: RpcPeerList{
+			List: make([]*RpcPeer, len(config.Peers)),
+		},
 		rpcServerRunning:     false,
 		prepareThreadRunning: 0,
 		commitThreadRunning:  0,
@@ -65,7 +68,7 @@ func NewMultipaxos(log *Log.Log, config config.Config) *Multipaxos {
 			panic("dial error")
 		}
 		client := pb.NewMultiPaxosRPCClient(conn)
-		multipaxos.rpcPeers[id] = NewRpcPeer(int64(id), client)
+		multipaxos.rpcPeers.List[id] = NewRpcPeer(int64(id), client)
 	}
 
 	return &multipaxos
@@ -281,7 +284,9 @@ func (p *Multipaxos) RunPreparePhase(ballot int64) (int64,
 		return -1, nil
 	}
 
-	for _, peer := range p.rpcPeers {
+	p.rpcPeers.RLock()
+	numPeers := len(p.rpcPeers.List)
+	for _, peer := range p.rpcPeers.List {
 		if peer.Id == p.id {
 			continue
 		}
@@ -311,14 +316,15 @@ func (p *Multipaxos) RunPreparePhase(ballot int64) (int64,
 			state.Cv.Signal()
 		}(peer)
 	}
+	p.rpcPeers.RUnlock()
 
 	state.Mu.Lock()
 	defer state.Mu.Unlock()
-	for state.NumOks <= len(p.rpcPeers)/2 && state.NumRpcs != len(p.rpcPeers) {
+	for state.NumOks <= numPeers/2 && state.NumRpcs != numPeers {
 		state.Cv.Wait()
 	}
 
-	if state.NumOks > len(p.rpcPeers)/2 {
+	if state.NumOks > numPeers/2 {
 		return state.MaxLastIndex, state.Log
 	}
 	return -1, nil
@@ -356,7 +362,9 @@ func (p *Multipaxos) RunAcceptPhase(ballot int64, index int64,
 		Instance: &instance,
 	}
 
-	for _, peer := range p.rpcPeers {
+	p.rpcPeers.RLock()
+	numPeers := len(p.rpcPeers.List)
+	for _, peer := range p.rpcPeers.List {
 		if peer.Id == p.id {
 			continue
 		}
@@ -379,15 +387,16 @@ func (p *Multipaxos) RunAcceptPhase(ballot int64, index int64,
 			state.Cv.Signal()
 		}(peer)
 	}
+	p.rpcPeers.RUnlock()
 
 	state.Mu.Lock()
 	defer state.Mu.Unlock()
-	for IsLeader(p.Ballot(), p.id) && state.NumOks <= len(p.rpcPeers)/2 &&
-		state.NumRpcs != len(p.rpcPeers) {
+	for IsLeader(p.Ballot(), p.id) && state.NumOks <= numPeers/2 &&
+		state.NumRpcs != numPeers {
 		state.Cv.Wait()
 	}
 
-	if state.NumOks > len(p.rpcPeers)/2 {
+	if state.NumOks > numPeers/2 {
 		p.log.Commit(index)
 		return Result{Type: Ok, Leader: -1}
 	}
@@ -412,7 +421,9 @@ func (p *Multipaxos) RunCommitPhase(ballot int64, globalLastExecuted int64) int6
 	state.MinLastExecuted = p.log.LastExecuted()
 	p.log.TrimUntil(globalLastExecuted)
 
-	for _, peer := range p.rpcPeers {
+	p.rpcPeers.RLock()
+	numPeers := len(p.rpcPeers.List)
+	for _, peer := range p.rpcPeers.List {
 		if peer.Id == p.id {
 			continue
 		}
@@ -439,13 +450,14 @@ func (p *Multipaxos) RunCommitPhase(ballot int64, globalLastExecuted int64) int6
 			state.Cv.Signal()
 		}(peer)
 	}
+	p.rpcPeers.RUnlock()
 
 	state.Mu.Lock()
 	defer state.Mu.Unlock()
-	for IsLeader(p.Ballot(), p.id) && state.NumRpcs != len(p.rpcPeers) {
+	for IsLeader(p.Ballot(), p.id) && state.NumRpcs != numPeers {
 		state.Cv.Wait()
 	}
-	if state.NumOks == len(p.rpcPeers) {
+	if state.NumOks == numPeers {
 		return state.MinLastExecuted
 	}
 	return globalLastExecuted
@@ -519,4 +531,34 @@ func (p *Multipaxos) Commit(ctx context.Context,
 		response.Type = pb.ResponseType_REJECT
 	}
 	return response, nil
+}
+
+func (p *Multipaxos) Reconfigure(cmd *pb.Command) {
+	peerId, err := strconv.Atoi(cmd.Key)
+	if err != nil {
+		return
+	}
+
+	p.rpcPeers.Lock()
+	defer p.rpcPeers.Unlock()
+	if cmd.Type == pb.CommandType_ADDNODE {
+		var opts []grpc.DialOption
+		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		conn, err := grpc.Dial(cmd.Value, opts...)
+		if err != nil {
+			logger.Errorln("dial error")
+		} else {
+			client := pb.NewMultiPaxosRPCClient(conn)
+			p.rpcPeers.List = append(p.rpcPeers.List,
+				NewRpcPeer(int64(peerId), client))
+		}
+		// send snapshot
+	} else if cmd.Type == pb.CommandType_DELNODE {
+		for i, peer := range p.rpcPeers.List {
+			if peer.Id == int64(peerId) {
+				p.rpcPeers.List = append(p.rpcPeers.List[:i],
+					p.rpcPeers.List[i+1:]...)
+			}
+		}
+	}
 }
