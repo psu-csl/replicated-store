@@ -8,7 +8,8 @@ service MultiPaxosRPC {
   rpc Accept (AcceptRequest) returns (AcceptResponse) {}
   rpc Prepare (PrepareRequest) returns (PrepareResponse) {}
   rpc Commit (CommitRequest) returns (CommitResponse) {}
-  rpc ResumeSnapshot(stream SnapshotRequest) returns (SnapshotResponse) {}
+  rpc ResumeSnapshot (stream SnapshotRequest) returns (SnapshotResponse) {}
+  rpc InstancesGap (InstanceRequest) returns (stream Instance) {}
 }
 
 message AcceptRequest {
@@ -51,6 +52,12 @@ message SnapshotRequest {
 
 message SnapshotResponse {
   bool done = 1;
+}
+
+message InstanceRequest {
+  int64 last_index = 1;
+  int64 last_executed = 2;
+  int64 sender = 3;
 }
 
 enum ResponseType {

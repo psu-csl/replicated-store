@@ -557,8 +557,9 @@ func (p *Multipaxos) ResumeSnapshot(stream pb.MultiPaxosRPC_ResumeSnapshotServer
 				logger.Error(err)
 				return err
 			}
+			p.BecomeFollower(snapshot.Ballot)
 			p.log.ResumeSnapshot(snapshot)
-			//request missing log
+			go p.RequestInstanceGap()
 			return stream.SendAndClose(&pb.SnapshotResponse{Done: true})
 		}
 		if err != nil {
@@ -567,6 +568,21 @@ func (p *Multipaxos) ResumeSnapshot(stream pb.MultiPaxosRPC_ResumeSnapshotServer
 		}
 		buffer.Write(snapshotChunk.GetChunk())
 	}
+}
+
+func (p *Multipaxos) InstancesGap(request *pb.InstanceRequest,
+	stream pb.MultiPaxosRPC_InstancesGapServer) error {
+	logger.Infof("%v <--instances-- %v\n", p.id, request.GetSender())
+	instances := p.log.InstancesRange(request.GetLastExecuted(),
+		request.GetLastIndex())
+	for _, instance := range instances {
+		err := stream.Send(instance)
+		if err != nil {
+			logger.Error(err)
+			return err
+		}
+	}
+	return nil
 }
 
 func (p *Multipaxos) Reconfigure(cmd *pb.Command) {
@@ -620,5 +636,33 @@ func (p *Multipaxos) Reconfigure(cmd *pb.Command) {
 					p.rpcPeers.List[i+1:]...)
 			}
 		}
+	}
+}
+
+func (p *Multipaxos) RequestInstanceGap() {
+	leaderId := ExtractLeaderId(p.ballot)
+	request := pb.InstanceRequest{
+		LastIndex:    p.log.LastIndex(),
+		LastExecuted: p.log.LastExecuted(),
+		Sender:       p.id,
+	}
+	if request.LastIndex == request.LastExecuted {
+		request.LastIndex = -1
+	}
+	stream, err := p.rpcPeers.List[leaderId].Stub.InstancesGap(context.
+		Background(), &request)
+	if err != nil {
+		logger.Error(err)
+		return
+	}
+	for {
+		instance, err := stream.Recv()
+		if err == io.EOF {
+			break
+		} else if err != nil {
+			logger.Error(err)
+			break
+		}
+		p.log.Append(instance)
 	}
 }

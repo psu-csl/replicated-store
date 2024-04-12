@@ -267,6 +267,24 @@ func (l *Log) Instances() []*pb.Instance {
 	return instances
 }
 
+func (l *Log) InstancesRange(lastExecuted int64,
+	lastIndex int64) []*pb.Instance {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	instances := make([]*pb.Instance, 0, len(l.log))
+	if lastIndex == -1 {
+		lastIndex = l.lastIndex
+	}
+	for i := lastExecuted + 1; i <= lastIndex; i++ {
+		instance := proto.Clone(l.log[i]).(*pb.Instance)
+		if instance != nil {
+			instances = append(instances, instance)
+		}
+	}
+	return instances
+}
+
 func (l *Log) At(index int64) *pb.Instance {
 	l.mu.Lock()
 	defer l.mu.Unlock()
