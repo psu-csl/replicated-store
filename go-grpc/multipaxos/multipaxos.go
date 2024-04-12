@@ -63,6 +63,9 @@ func NewMultipaxos(log *Log.Log, config config.Config) *Multipaxos {
 	var opts []grpc.DialOption
 	opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	for id, addr := range config.Peers {
+		//if int64(id) == config.Id {
+		//	continue
+		//}
 		conn, err := grpc.Dial(addr, opts...)
 		if err != nil {
 			panic("dial error")
@@ -144,6 +147,11 @@ func (p *Multipaxos) Stop() {
 }
 
 func (p *Multipaxos) StartRPCServer() {
+	p.mu.Lock()
+	if p.rpcServerRunning {
+		p.mu.Unlock()
+		return
+	}
 	logger.Infof("%v starting rpc server at %v", p.id, p.port)
 	listener, err := net.Listen("tcp", p.port)
 	if err != nil {

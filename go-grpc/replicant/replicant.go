@@ -80,6 +80,10 @@ func (r *Replicant) StopExecutorThread() {
 	r.log.Stop()
 }
 
+func (r *Replicant) StartRpcServer() {
+	r.multipaxos.StartRPCServer()
+}
+
 func (r *Replicant) executorThread() {
 	for {
 		instance := r.log.ReadInstance()
@@ -89,6 +93,10 @@ func (r *Replicant) executorThread() {
 		if instance.Command.Type == pb.CommandType_ADDNODE || instance.
 			Command.Type == pb.CommandType_DELNODE {
 			r.multipaxos.Reconfigure(instance.Command)
+			client := r.clientManager.Get(instance.ClientId)
+			if client != nil {
+				client.Write("joined")
+			}
 		} else {
 			id, result := r.log.Execute(instance)
 			client := r.clientManager.Get(id)

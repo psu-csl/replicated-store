@@ -51,6 +51,12 @@ func (c *Client) Parse(request string) *pb.Command {
 		}
 		command.Type = pb.CommandType_PUT
 		command.Value = substrings[2]
+	} else if commandType == "add" {
+		if len(substrings) != 3 {
+			return nil
+		}
+		command.Type = pb.CommandType_ADDNODE
+		command.Value = substrings[2]
 	} else {
 		return nil
 	}
