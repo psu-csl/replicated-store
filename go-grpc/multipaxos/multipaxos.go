@@ -1,13 +1,16 @@
 package multipaxos
 
 import (
+	"bytes"
 	"context"
+	"encoding/gob"
 	"github.com/psu-csl/replicated-store/go/config"
 	Log "github.com/psu-csl/replicated-store/go/log"
 	pb "github.com/psu-csl/replicated-store/go/multipaxos/comm"
 	logger "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"io"
 	"math/rand"
 	"net"
 	"strconv"
@@ -541,6 +544,29 @@ func (p *Multipaxos) Commit(ctx context.Context,
 	return response, nil
 }
 
+func (p *Multipaxos) ResumeSnapshot(stream pb.MultiPaxosRPC_ResumeSnapshotServer) error {
+	logger.Infof("%v <--snapshot--\n", p.id)
+	buffer := &bytes.Buffer{}
+	for {
+		snapshotChunk, err := stream.Recv()
+		if err == io.EOF {
+			snapshot := &Log.Snapshot{}
+			err = gob.NewDecoder(buffer).Decode(snapshot)
+			if err != nil {
+				logger.Error(err)
+				return err
+			}
+			p.log.ResumeSnapshot(snapshot)
+			return stream.SendAndClose(&pb.SnapshotResponse{Done: true})
+		}
+		if err != nil {
+			logger.Error(err)
+			return err
+		}
+		buffer.Write(snapshotChunk.GetChunk())
+	}
+}
+
 func (p *Multipaxos) Reconfigure(cmd *pb.Command) {
 	peerId, err := strconv.Atoi(cmd.Key)
 	if err != nil {
@@ -559,8 +585,32 @@ func (p *Multipaxos) Reconfigure(cmd *pb.Command) {
 			client := pb.NewMultiPaxosRPCClient(conn)
 			p.rpcPeers.List = append(p.rpcPeers.List,
 				NewRpcPeer(int64(peerId), client))
+			stream, err := client.ResumeSnapshot(context.Background())
+			if err != nil {
+				return
+			}
+			buffer, err := p.log.MakeSnapshot(p.ballot)
+			if err != nil {
+				return
+			}
+			for offset := 0; offset < buffer.Len(); offset += ChunkSize {
+				var chunk []byte
+				if offset+ChunkSize > buffer.Len() {
+					chunk = buffer.Bytes()[offset:]
+				} else {
+					chunk = buffer.Bytes()[offset : offset+ChunkSize]
+				}
+				err = stream.Send(&pb.SnapshotRequest{Chunk: chunk})
+				if err != nil {
+					logger.Error(err)
+					return
+				}
+			}
+			_, err = stream.CloseAndRecv()
+			if err != nil {
+				logger.Error(err)
+			}
 		}
-		// send snapshot
 	} else if cmd.Type == pb.CommandType_DELNODE {
 		for i, peer := range p.rpcPeers.List {
 			if peer.Id == int64(peerId) {

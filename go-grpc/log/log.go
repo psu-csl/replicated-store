@@ -1,6 +1,8 @@
 package log
 
 import (
+	"bytes"
+	"encoding/gob"
 	"github.com/golang/protobuf/proto"
 	"github.com/psu-csl/replicated-store/go/kvstore"
 	pb "github.com/psu-csl/replicated-store/go/multipaxos/comm"
@@ -285,7 +287,7 @@ func (l *Log) GetLog() map[int64]*pb.Instance {
 	return logMap
 }
 
-func (l *Log) MakeSnapshot(ballot int64) (*Snapshot, error) {
+func (l *Log) MakeSnapshot(ballot int64) (*bytes.Buffer, error) {
 	storeData, err := l.kvStore.MakeSnapshot()
 	if err != nil {
 		logger.Error(err)
@@ -296,21 +298,28 @@ func (l *Log) MakeSnapshot(ballot int64) (*Snapshot, error) {
 		SnapshotData:      storeData,
 		Ballot:            ballot,
 	}
+	buffer := &bytes.Buffer{}
+	err = gob.NewEncoder(buffer).Encode(&snapshot)
+	if err != nil {
+		logger.Error(err)
+		return nil, err
+	}
 	logger.Infof("snapshot last index: %v\n", snapshot.LastIncludedIndex)
-	return &snapshot, nil
+	return buffer, nil
 }
 
 func (l *Log) ResumeSnapshot(snapshot *Snapshot) {
 	l.mu.Lock()
-	defer l.mu.Unlock()
-
 	if l.lastExecuted >= snapshot.LastIncludedIndex {
+		l.mu.Unlock()
 		return
 	}
 
-	l.kvStore.RestoreSnapshot(snapshot.SnapshotData)
 	l.lastExecuted = snapshot.LastIncludedIndex
 	if l.lastIndex < snapshot.LastIncludedIndex {
 		l.lastIndex = snapshot.LastIncludedIndex
 	}
+	l.mu.Unlock()
+
+	l.kvStore.RestoreSnapshot(snapshot.SnapshotData)
 }

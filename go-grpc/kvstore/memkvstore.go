@@ -3,6 +3,7 @@ package kvstore
 import (
 	"bytes"
 	"encoding/gob"
+	logger "github.com/sirupsen/logrus"
 )
 
 type MemKVStore struct {
@@ -51,10 +52,9 @@ func (s *MemKVStore) MakeSnapshot() ([]byte, error) {
 
 func (s *MemKVStore) RestoreSnapshot(data []byte) {
 	buffer := bytes.NewBuffer(data)
-	snapshotStore := make(map[string]string)
-	err := gob.NewDecoder(buffer).Decode(&snapshotStore)
+	err := gob.NewDecoder(buffer).Decode(&s.store)
 	if err != nil {
+		logger.Error(err)
 		return
 	}
-	s.store = snapshotStore
 }
