@@ -1,5 +1,9 @@
 package kvstore
 
+import (
+	"bytes"
+	"encoding/gob"
+)
 
 type MemKVStore struct {
 	store map[string]string
@@ -35,3 +39,28 @@ func (s *MemKVStore) Del(key string) bool {
 }
 
 func (s *MemKVStore) Close() {}
+
+func (s *MemKVStore) MakeSnapshot() ([]byte, error) {
+	buffer := &bytes.Buffer{}
+	err := gob.NewEncoder(buffer).Encode(s.store)
+	if err != nil {
+		return nil, err
+	}
+	return buffer.Bytes(), nil
+}
+
+func (s *MemKVStore) RestoreSnapshot(data []byte) {
+	buffer := bytes.NewBuffer(data)
+	snapshotStore := make(map[string]string)
+	err := gob.NewDecoder(buffer).Decode(&snapshotStore)
+	if err != nil {
+		return
+	}
+	for key, _ := range s.store {
+		if value, ok := snapshotStore[key]; !ok {
+			delete(s.store, key)
+		} else {
+			s.store[key] = value
+		}
+	}
+}

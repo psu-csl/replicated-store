@@ -21,6 +21,8 @@ type KVStore interface {
 	Put(key string, value string) bool
 	Del(key string) bool
 	Close()
+	MakeSnapshot() ([]byte, error)
+	RestoreSnapshot([]byte)
 }
 
 func CreateStore(config config.Config) KVStore {

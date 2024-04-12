@@ -1,6 +1,7 @@
 package kvstore
 
 import (
+	"bytes"
 	"github.com/linxGnu/grocksdb"
 	logger "github.com/sirupsen/logrus"
 )
@@ -55,3 +56,10 @@ func (s *RocksDBStore) Del(key string) bool {
 func (s *RocksDBStore) Close() {
 	s.db.Close()
 }
+
+func (s *RocksDBStore) MakeSnapshot() ([]byte, error) {
+	buffer := bytes.Buffer{}
+	return buffer.Bytes(), nil
+}
+
+func (s *RocksDBStore) RestoreSnapshot([]byte) {}
