@@ -316,6 +316,7 @@ func (l *Log) ResumeSnapshot(snapshot *Snapshot) {
 	}
 
 	l.lastExecuted = snapshot.LastIncludedIndex
+	l.globalLastExecuted = snapshot.LastIncludedIndex
 	if l.lastIndex < snapshot.LastIncludedIndex {
 		l.lastIndex = snapshot.LastIncludedIndex
 	}

@@ -155,6 +155,7 @@ func (p *Multipaxos) StartRPCServer() {
 		p.mu.Unlock()
 		return
 	}
+	p.mu.Unlock()
 	logger.Infof("%v starting rpc server at %v", p.id, p.port)
 	listener, err := net.Listen("tcp", p.port)
 	if err != nil {
@@ -557,6 +558,7 @@ func (p *Multipaxos) ResumeSnapshot(stream pb.MultiPaxosRPC_ResumeSnapshotServer
 				return err
 			}
 			p.log.ResumeSnapshot(snapshot)
+			//request missing log
 			return stream.SendAndClose(&pb.SnapshotResponse{Done: true})
 		}
 		if err != nil {
