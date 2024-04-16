@@ -671,8 +671,11 @@ func (p *Multipaxos) RequestInstanceGap() {
 		logger.Error(err)
 		return
 	}
+	logger.Infof("before - last_index: %v\n", request.LastIndex)
+	count := 0
 	for {
 		instance, err := stream.Recv()
+		count += 1
 		if err == io.EOF {
 			break
 		} else if err != nil {
@@ -681,6 +684,7 @@ func (p *Multipaxos) RequestInstanceGap() {
 		}
 		p.log.Append(instance)
 	}
+	logger.Infof("Recovered missing instances, recv: %v\n", count)
 }
 
 func (p *Multipaxos) Monitor() {

@@ -225,6 +225,7 @@ func (l *Log) CommitUntil(leaderLastExecuted int64, ballot int64) {
 	for i := l.lastExecuted + 1; i <= leaderLastExecuted; i++ {
 		instance, ok := l.log[i]
 		if !ok {
+			logger.Info("Instance at index %v is empty\n", i)
 			break
 		}
 		if ballot < instance.GetBallot() {
@@ -280,6 +281,7 @@ func (l *Log) InstancesRange(lastExecuted int64,
 	for i := lastExecuted + 1; i <= lastIndex; i++ {
 		instance := proto.Clone(l.log[i]).(*pb.Instance)
 		if instance != nil {
+			instance.State = pb.InstanceState_INPROGRESS
 			instances = append(instances, instance)
 		}
 	}
