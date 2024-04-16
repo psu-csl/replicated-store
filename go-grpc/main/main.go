@@ -31,7 +31,7 @@ func main() {
 		logger.Panic(err)
 	}
 
-	replicant := replicant.NewReplicant(cfg)
+	replicant := replicant.NewReplicant(cfg, *join)
 
 	if *join {
 		if *leaderAddr == "" {

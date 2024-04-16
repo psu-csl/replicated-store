@@ -38,11 +38,12 @@ type Multipaxos struct {
 
 	prepareThreadRunning int32
 	commitThreadRunning  int32
+	joinReady            bool
 
 	pb.UnimplementedMultiPaxosRPCServer
 }
 
-func NewMultipaxos(log *Log.Log, config config.Config) *Multipaxos {
+func NewMultipaxos(log *Log.Log, config config.Config, join bool) *Multipaxos {
 	multipaxos := Multipaxos{
 		ballot:         MaxNumPeers,
 		log:            log,
@@ -56,6 +57,7 @@ func NewMultipaxos(log *Log.Log, config config.Config) *Multipaxos {
 		rpcServerRunning:     false,
 		prepareThreadRunning: 0,
 		commitThreadRunning:  0,
+		joinReady:            !join,
 		rpcServer:            nil,
 	}
 	multipaxos.rpcServerRunningCv = sync.NewCond(&multipaxos.mu)
@@ -138,6 +140,11 @@ func (p *Multipaxos) receivedCommit() bool {
 }
 
 func (p *Multipaxos) Start() {
+	p.mu.Lock()
+	for !p.joinReady {
+		p.cvLeader.Wait()
+	}
+	p.mu.Unlock()
 	p.StartPrepareThread()
 	p.StartCommitThread()
 	p.StartRPCServer()
@@ -559,6 +566,10 @@ func (p *Multipaxos) ResumeSnapshot(stream pb.MultiPaxosRPC_ResumeSnapshotServer
 			}
 			p.BecomeFollower(snapshot.Ballot)
 			p.log.ResumeSnapshot(snapshot)
+			p.mu.Lock()
+			p.joinReady = true
+			p.cvLeader.Signal()
+			p.mu.Unlock()
 			go p.RequestInstanceGap()
 			return stream.SendAndClose(&pb.SnapshotResponse{Done: true})
 		}

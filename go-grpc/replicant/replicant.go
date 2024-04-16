@@ -21,13 +21,13 @@ type Replicant struct {
 	clientManager *ClientManager
 }
 
-func NewReplicant(config config.Config) *Replicant {
+func NewReplicant(config config.Config, join bool) *Replicant {
 	r := &Replicant{
 		id:     config.Id,
 		ipPort: config.Peers[config.Id],
 	}
 	r.log = consensusLog.NewLog(kvstore.CreateStore(config))
-	r.multipaxos = multipaxos.NewMultipaxos(r.log, config)
+	r.multipaxos = multipaxos.NewMultipaxos(r.log, config, join)
 	r.clientManager = NewClientManager(r.id, int64(len(config.Peers)), r.multipaxos)
 	return r
 }
