@@ -591,8 +591,6 @@ func (p *Multipaxos) Reconfigure(cmd *pb.Command) {
 		return
 	}
 
-	p.rpcPeers.Lock()
-	defer p.rpcPeers.Unlock()
 	if cmd.Type == pb.CommandType_ADDNODE {
 		var opts []grpc.DialOption
 		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -601,8 +599,13 @@ func (p *Multipaxos) Reconfigure(cmd *pb.Command) {
 			logger.Errorln("dial error")
 		} else {
 			client := pb.NewMultiPaxosRPCClient(conn)
+			p.rpcPeers.Lock()
 			p.rpcPeers.List = append(p.rpcPeers.List,
 				NewRpcPeer(int64(peerId), client))
+			p.rpcPeers.Unlock()
+			if !IsLeader(p.Ballot(), p.id) {
+				return
+			}
 			stream, err := client.ResumeSnapshot(context.Background())
 			if err != nil {
 				return
@@ -632,8 +635,10 @@ func (p *Multipaxos) Reconfigure(cmd *pb.Command) {
 	} else if cmd.Type == pb.CommandType_DELNODE {
 		for i, peer := range p.rpcPeers.List {
 			if peer.Id == int64(peerId) {
+				p.rpcPeers.Lock()
 				p.rpcPeers.List = append(p.rpcPeers.List[:i],
 					p.rpcPeers.List[i+1:]...)
+				p.rpcPeers.Unlock()
 			}
 		}
 	}
