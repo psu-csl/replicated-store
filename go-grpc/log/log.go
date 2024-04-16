@@ -247,7 +247,8 @@ func (l *Log) TrimUntil(leaderGlobalLastExecuted int64) {
 		l.globalLastExecuted += 1
 		instance, ok := l.log[l.globalLastExecuted]
 		if !ok || !IsExecuted(instance) {
-			logger.Panicln("TrimUntil case 1")
+			//logger.Panicln("TrimUntil case 1")
+			return
 		}
 		delete(l.log, l.globalLastExecuted)
 	}
