@@ -63,5 +63,13 @@ func main() {
 		<-signalChan
 		replicant.Stop()
 	}()
+	statusChan := make(chan os.Signal, 1)
+	signal.Notify(statusChan, syscall.SIGTSTP)
+	go func() {
+		for {
+			<-statusChan
+			replicant.Monitor()
+		}
+	}()
 	replicant.Start()
 }

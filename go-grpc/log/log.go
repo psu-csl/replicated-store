@@ -342,3 +342,20 @@ func (l *Log) ResumeSnapshot(snapshot *Snapshot) {
 
 	l.kvStore.RestoreSnapshot(snapshot.SnapshotData)
 }
+
+func (l *Log) GetLogStatus() (int, int64, int64, int64, []int64) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	length := len(l.log)
+	indice := make([]int64, 0)
+	if l.lastIndex-l.globalLastExecuted != int64(length) {
+		for i := l.globalLastExecuted + 1; i <= l.lastIndex; i++ {
+			if _, ok := l.log[i]; !ok {
+				indice = append(indice, i)
+			}
+		}
+	}
+
+	return len(l.log), l.lastIndex, l.lastExecuted, l.globalLastExecuted, indice
+}

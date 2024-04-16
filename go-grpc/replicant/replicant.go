@@ -117,3 +117,7 @@ func (r *Replicant) AcceptClient() {
 		r.clientManager.Start(conn)
 	}
 }
+
+func (r *Replicant) Monitor() {
+	r.multipaxos.Monitor()
+}

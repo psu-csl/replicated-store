@@ -383,7 +383,7 @@ func (p *Multipaxos) RunAcceptPhase(ballot int64, index int64,
 		go func(peer *RpcPeer) {
 			ctx := context.Background()
 			response, err := peer.Stub.Accept(ctx, &request)
-			logger.Infof("%v sent accept request to %v", p.id, peer.Id)
+			//logger.Infof("%v sent accept request to %v", p.id, peer.Id)
 
 			state.Mu.Lock()
 			defer state.Mu.Unlock()
@@ -509,7 +509,7 @@ func (p *Multipaxos) Prepare(ctx context.Context,
 
 func (p *Multipaxos) Accept(ctx context.Context,
 	request *pb.AcceptRequest) (*pb.AcceptResponse, error) {
-	logger.Infof("%v <--accept-- %v", p.id, request.GetSender())
+	//logger.Infof("%v <--accept-- %v", p.id, request.GetSender())
 	response := &pb.AcceptResponse{}
 	if request.GetInstance().GetBallot() >= p.Ballot() {
 		p.log.Append(request.GetInstance())
@@ -665,4 +665,11 @@ func (p *Multipaxos) RequestInstanceGap() {
 		}
 		p.log.Append(instance)
 	}
+}
+
+func (p *Multipaxos) Monitor() {
+	length, lastIndex, lastExecuted, gle, indice := p.log.GetLogStatus()
+	logger.Errorf("ballot: %v, log len: %v, last_index: %v, "+
+		"last_executed: %v, gle: %v, indice: %v, node_list: %v", p.Ballot(),
+		length, lastIndex, lastExecuted, gle, indice, p.rpcPeers.List)
 }
