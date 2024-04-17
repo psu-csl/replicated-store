@@ -225,7 +225,7 @@ func (l *Log) CommitUntil(leaderLastExecuted int64, ballot int64) {
 	for i := l.lastExecuted + 1; i <= leaderLastExecuted; i++ {
 		instance, ok := l.log[i]
 		if !ok {
-			logger.Info("Instance at index %v is empty\n", i)
+			logger.Infof("Instance at index %v is empty\n", i)
 			break
 		}
 		if ballot < instance.GetBallot() {
@@ -359,6 +359,16 @@ func (l *Log) GetLogStatus() (int, int64, int64, int64, []int64) {
 			}
 		}
 	}
+
+	list := make([]string, 0, 10)
+	for i := l.lastExecuted + 1; i <= l.lastExecuted+10; i++ {
+		if inst, ok := l.log[i]; !ok {
+			list = append(list, "No_Instance")
+		} else {
+			list = append(list, inst.State.String())
+		}
+	}
+	logger.Errorln(list)
 
 	return len(l.log), l.lastIndex, l.lastExecuted, l.globalLastExecuted, indice
 }
