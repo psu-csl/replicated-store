@@ -27,8 +27,9 @@ type Multipaxos struct {
 
 	initCommitInterval int64
 	lastElectedTime    time.Time
-	numElections       int
+	numElections       int64
 	electionThreshold  int64
+	frequencyThreshold int64
 
 	cvLeader   *sync.Cond
 	cvFollower *sync.Cond
@@ -56,6 +57,7 @@ func NewMultipaxos(log *Log.Log, config config.Config) *Multipaxos {
 		lastElectedTime:      time.Now(),
 		numElections:         0,
 		electionThreshold:    config.ElectionLimit,
+		frequencyThreshold:   config.Threshold,
 		rpcServerRunning:     false,
 		prepareThreadRunning: 0,
 		commitThreadRunning:  0,
@@ -119,7 +121,7 @@ func (p *Multipaxos) BecomeFollower(newBallot int64) {
 	if newLeaderId != p.id && (oldLeaderId == p.id || oldLeaderId == MaxNumPeers) {
 		logger.Infof("%v became a follower: ballot: %v -> %v\n", p.id,
 			p.Ballot(), newBallot)
-		if p.numElections > 3 {
+		if p.numElections > p.frequencyThreshold {
 			p.commitInterval *= 2
 		}
 		p.cvFollower.Signal()
