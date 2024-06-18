@@ -109,8 +109,11 @@ func (p *Multipaxos) BecomeLeader(newBallot int64, newLastIndex int64) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	logger.Infof("%v became a leader: ballot: %v -> %v\n", p.id, p.Ballot(),
-		newBallot)
+	logger.Infof("%v became a leader: ballot: %v -> %v\n", p.id, p.Ballot(), newBallot)
+	//tp := time.Now().UnixNano()
+	//logger.Errorf("time: %v, %v became a leader: ballot: %v -> %v, "+
+	//	"initialized number of elections: %v\n", tp, p.id, p.Ballot(),
+	//	newBallot, p.numElections)
 	p.log.SetLastIndex(newLastIndex)
 	atomic.StoreInt64(&p.ballot, newBallot)
 	p.cvLeader.Signal()
