@@ -13,6 +13,7 @@ type Config struct {
 	Store          string   `json:"store"`
 	DbPath         string   `json:"db_path"`
 	ElectionLimit  int64    `json:"election_limit"`
+	Threshold      int64    `json:"threshold"`
 }
 
 func DefaultConfig(id int64, n int) Config {
