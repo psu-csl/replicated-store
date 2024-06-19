@@ -30,7 +30,6 @@ message PrepareRequest {
 message PrepareResponse {
   ResponseType type = 1;
   int64 ballot = 2;
-  repeated Instance logs =3;
 }
 
 message CommitRequest {
@@ -57,7 +56,8 @@ message SnapshotResponse {
 message InstanceRequest {
   int64 last_index = 1;
   int64 last_executed = 2;
-  int64 sender = 3;
+  int64 ballot = 3;
+  int64 sender = 4;
 }
 
 enum ResponseType {

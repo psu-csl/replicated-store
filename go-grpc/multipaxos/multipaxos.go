@@ -255,10 +255,10 @@ func (p *Multipaxos) PrepareThread() {
 				continue
 			}
 			nextBallot := p.NextBallot()
-			maxLastIndex, log := p.RunPreparePhase(nextBallot)
-			if log != nil {
+			maxLastIndex, _ := p.RunPreparePhase(nextBallot)
+			if maxLastIndex != -1 {
 				p.BecomeLeader(nextBallot, maxLastIndex)
-				p.Replay(nextBallot, log)
+				p.Replay(nextBallot)
 				break
 			}
 		}
@@ -297,7 +297,7 @@ func (p *Multipaxos) RunPreparePhase(ballot int64) (int64,
 	if ballot > p.Ballot() {
 		state.NumRpcs++
 		state.NumOks++
-		state.Log = p.log.GetLog()
+		//state.Log = p.log.GetLog()
 		state.MaxLastIndex = p.log.LastIndex()
 	} else {
 		return -1, nil
@@ -321,13 +321,6 @@ func (p *Multipaxos) RunPreparePhase(ballot int64) (int64,
 			if err == nil {
 				if response.GetType() == pb.ResponseType_OK {
 					state.NumOks += 1
-					for i := 0; i < len(response.GetLogs()); i++ {
-						instance := response.GetLogs()[i]
-						if instance.Index > state.MaxLastIndex {
-							state.MaxLastIndex = instance.Index
-						}
-						Log.Insert(state.Log, instance)
-					}
 				} else {
 					p.BecomeFollower(response.GetBallot())
 				}
@@ -344,7 +337,7 @@ func (p *Multipaxos) RunPreparePhase(ballot int64) (int64,
 	}
 
 	if state.NumOks > numPeers/2 {
-		return state.MaxLastIndex, state.Log
+		return state.MaxLastIndex, nil
 	}
 	return -1, nil
 }
@@ -482,8 +475,55 @@ func (p *Multipaxos) RunCommitPhase(ballot int64, globalLastExecuted int64) int6
 	return globalLastExecuted
 }
 
-func (p *Multipaxos) Replay(ballot int64, log map[int64]*pb.Instance) {
-	for index, instance := range log {
+func (p *Multipaxos) Replay(ballot int64) {
+	state := NewReplayState()
+	state.Log = p.log.GetLog()
+
+	request := pb.InstanceRequest{
+		LastIndex:    p.log.LastIndex(),
+		LastExecuted: p.log.GlobalLastExecuted(),
+		Sender:       p.id,
+	}
+
+	p.rpcPeers.RLock()
+	numPeers := len(p.rpcPeers.List)
+	for _, peer := range p.rpcPeers.List {
+		if peer.Id == p.id {
+			continue
+		}
+		go func(peer *RpcPeer) {
+			ctx := context.Background()
+			stream, err := peer.Stub.InstancesGap(ctx, &request)
+			if err != nil {
+				logger.Error(err)
+				return
+			}
+			state.NumRpcs += 1
+			state.NumOks += 1
+			for {
+				instance, err := stream.Recv()
+				if err == io.EOF {
+					break
+				} else if err != nil {
+					logger.Error(err)
+					break
+				}
+				state.Mu.Lock()
+				Log.Insert(state.Log, instance)
+				state.Mu.Unlock()
+			}
+			state.Cv.Signal()
+		}(peer)
+	}
+	p.rpcPeers.RUnlock()
+
+	state.Mu.Lock()
+	defer state.Mu.Unlock()
+	for state.NumOks <= numPeers/2 && state.NumRpcs != numPeers {
+		state.Cv.Wait()
+	}
+
+	for index, instance := range state.Log {
 		r := p.RunAcceptPhase(ballot, index, instance.GetCommand(),
 			instance.GetClientId())
 		for r.Type == Retry {
@@ -502,10 +542,6 @@ func (p *Multipaxos) Prepare(ctx context.Context,
 	response := &pb.PrepareResponse{}
 	if request.GetBallot() > p.Ballot() {
 		p.BecomeFollower(request.GetBallot())
-		response.Logs = make([]*pb.Instance, 0, len(p.log.Instances()))
-		for _, i := range p.log.Instances() {
-			response.Logs = append(response.Logs, i)
-		}
 		response.Type = pb.ResponseType_OK
 	} else {
 		response.Ballot = p.Ballot()
@@ -586,11 +622,14 @@ func (p *Multipaxos) InstancesGap(request *pb.InstanceRequest,
 	logger.Infof("%v <--instances-- %v\n", p.id, request.GetSender())
 	instances := p.log.InstancesRange(request.GetLastExecuted(),
 		request.GetLastIndex())
+	ballot := request.GetBallot()
 	for _, instance := range instances {
 		err := stream.Send(instance)
 		if err != nil {
 			logger.Error(err)
 			return err
+		} else if p.Ballot() > ballot {
+			return nil
 		}
 	}
 	return nil

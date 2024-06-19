@@ -59,9 +59,9 @@ type PrepareState struct {
 	NumRpcs      int
 	NumOks       int
 	MaxLastIndex int64
-	Log          map[int64]*pb.Instance
-	Mu           sync.Mutex
-	Cv           *sync.Cond
+	//Log          map[int64]*pb.Instance
+	Mu sync.Mutex
+	Cv *sync.Cond
 }
 
 func NewPrepareState() *PrepareState {
@@ -69,7 +69,7 @@ func NewPrepareState() *PrepareState {
 		NumRpcs:      0,
 		NumOks:       0,
 		MaxLastIndex: 0,
-		Log:          make(map[int64]*pb.Instance),
+		//Log:          make(map[int64]*pb.Instance),
 	}
 	prepareState.Cv = sync.NewCond(&prepareState.Mu)
 	return prepareState
@@ -107,4 +107,21 @@ func NewCommitState(minLastExecuted int64) *CommitState {
 	}
 	commitState.Cv = sync.NewCond(&commitState.Mu)
 	return commitState
+}
+
+type ReplayState struct {
+	NumRpcs int
+	NumOks  int
+	Log     map[int64]*pb.Instance
+	Mu      sync.Mutex
+	Cv      *sync.Cond
+}
+
+func NewReplayState() *ReplayState {
+	replayState := &ReplayState{
+		NumRpcs: 1,
+		NumOks:  1,
+		Log:     make(map[int64]*pb.Instance),
+	}
+	return replayState
 }

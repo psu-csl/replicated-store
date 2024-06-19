@@ -269,8 +269,7 @@ func (l *Log) Instances() []*pb.Instance {
 	return instances
 }
 
-func (l *Log) InstancesRange(lastExecuted int64,
-	lastIndex int64) []*pb.Instance {
+func (l *Log) InstancesRange(lastExecuted int64, lastIndex int64) []*pb.Instance {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
