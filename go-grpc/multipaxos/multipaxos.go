@@ -109,11 +109,10 @@ func (p *Multipaxos) BecomeLeader(newBallot int64, newLastIndex int64) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	logger.Infof("%v became a leader: ballot: %v -> %v\n", p.id, p.Ballot(), newBallot)
-	//tp := time.Now().UnixNano()
-	//logger.Errorf("time: %v, %v became a leader: ballot: %v -> %v, "+
-	//	"initialized number of elections: %v\n", tp, p.id, p.Ballot(),
-	//	newBallot, p.numElections)
+	tp := time.Now().UnixNano()
+	logger.Errorf("time: %v, %v became a leader: ballot: %v -> %v, "+
+		"initialized number of elections: %v\n", tp, p.id, p.Ballot(),
+		newBallot, p.numElections)
 	p.log.SetLastIndex(newLastIndex)
 	atomic.StoreInt64(&p.ballot, newBallot)
 	p.cvLeader.Signal()
@@ -403,7 +402,7 @@ func (p *Multipaxos) RunAcceptPhase(ballot int64, index int64,
 		go func(peer *RpcPeer) {
 			ctx := context.Background()
 			response, err := peer.Stub.Accept(ctx, &request)
-			//logger.Infof("%v sent accept request to %v", p.id, peer.Id)
+			logger.Infof("%v sent accept request to %v", p.id, peer.Id)
 
 			state.Mu.Lock()
 			defer state.Mu.Unlock()
@@ -623,18 +622,9 @@ func (p *Multipaxos) countElection() {
 	}
 }
 
-func (p *Multipaxos) MonitorThread() {
-	for {
-		length, lastIndex, lastExecuted, gle, indice := p.log.GetLogStatus()
-		logger.Errorf("log len: %v, last_index: %v, last_executed: %v, "+
-			"gle: %v, indice: %v", length, lastIndex, lastExecuted, gle, indice)
-		time.Sleep(5 * time.Second)
-	}
-}
-
 func (p *Multipaxos) ResumeSnapshot(stream pb.MultiPaxosRPC_ResumeSnapshotServer) error {
-		logger.Infof("%v <--snapshot--\n", p.id)
-		buffer := &bytes.Buffer{}
+	logger.Infof("%v <--snapshot--\n", p.id)
+	buffer := &bytes.Buffer{}
 	for {
 		snapshotChunk, err := stream.Recv()
 		if err == io.EOF {
