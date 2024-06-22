@@ -123,5 +123,6 @@ func NewReplayState() *ReplayState {
 		NumOks:  1,
 		Log:     make(map[int64]*pb.Instance),
 	}
+	replayState.Cv = sync.NewCond(&replayState.Mu)
 	return replayState
 }
