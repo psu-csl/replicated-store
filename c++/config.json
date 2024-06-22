@@ -7,4 +7,5 @@
     "election_limit": 3000,
     "store": "mem",
     "db_path": "/tmp/testdb"
+    "threshold": 3
 }
