@@ -258,7 +258,7 @@ func (p *Multipaxos) PrepareThread() {
 			maxLastIndex, _ := p.RunPreparePhase(nextBallot)
 			if maxLastIndex != -1 {
 				p.BecomeLeader(nextBallot, maxLastIndex)
-				p.Replay(nextBallot)
+				p.Replay(nextBallot, maxLastIndex)
 				break
 			}
 		}
@@ -321,6 +321,9 @@ func (p *Multipaxos) RunPreparePhase(ballot int64) (int64,
 			if err == nil {
 				if response.GetType() == pb.ResponseType_OK {
 					state.NumOks += 1
+					if response.GetLastIndex() > state.MaxLastIndex {
+						state.MaxLastIndex = response.GetLastIndex()
+					}
 				} else {
 					p.BecomeFollower(response.GetBallot())
 				}
@@ -475,12 +478,12 @@ func (p *Multipaxos) RunCommitPhase(ballot int64, globalLastExecuted int64) int6
 	return globalLastExecuted
 }
 
-func (p *Multipaxos) Replay(ballot int64) {
+func (p *Multipaxos) Replay(ballot int64, lastIndex int64) {
 	state := NewReplayState()
 	state.Log = p.log.GetLog()
 
 	request := pb.InstanceRequest{
-		LastIndex:    p.log.LastIndex(),
+		LastIndex:    lastIndex,
 		LastExecuted: p.log.GlobalLastExecuted(),
 		Sender:       p.id,
 	}
