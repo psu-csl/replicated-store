@@ -563,6 +563,7 @@ func (p *Multipaxos) Prepare(ctx context.Context,
 	response := &pb.PrepareResponse{}
 	if request.GetBallot() > p.Ballot() {
 		p.BecomeFollower(request.GetBallot())
+		response.LastIndex = p.log.LastIndex()
 		response.Type = pb.ResponseType_OK
 	} else {
 		response.Ballot = p.Ballot()
