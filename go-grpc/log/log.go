@@ -171,6 +171,10 @@ func (l *Log) Commit(index int64) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
+	if index <= l.globalLastExecuted {
+		return
+	}
+
 	instance, ok := l.log[index]
 	for !ok {
 		l.cvCommittable.Wait()
