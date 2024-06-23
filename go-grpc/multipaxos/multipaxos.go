@@ -311,7 +311,6 @@ func (p *Multipaxos) RunPreparePhase(ballot int64) (int64,
 	if ballot > p.Ballot() {
 		state.NumRpcs++
 		state.NumOks++
-		//state.Log = p.log.GetLog()
 		state.MaxLastIndex = p.log.LastIndex()
 	} else {
 		return -1, nil
@@ -516,7 +515,7 @@ func (p *Multipaxos) Replay(ballot int64, lastIndex int64) {
 			ctx := context.Background()
 			stream, err := peer.Stub.InstancesGap(ctx, &request)
 			if err != nil {
-				logger.Error(err)
+				logger.Infoln(err)
 				return
 			}
 			state.NumRpcs += 1
@@ -556,118 +555,36 @@ func (p *Multipaxos) Replay(ballot int64, lastIndex int64) {
 		}
 	}
 }
-
-func (p *Multipaxos) Prepare(ctx context.Context,
-	request *pb.PrepareRequest) (*pb.PrepareResponse, error) {
-	logger.Infof("%v <--prepare-- %v", p.id, request.GetSender())
-	response := &pb.PrepareResponse{}
-	if request.GetBallot() > p.Ballot() {
-		p.BecomeFollower(request.GetBallot())
-		response.LastIndex = p.log.LastIndex()
-		response.Type = pb.ResponseType_OK
-	} else {
-		response.Ballot = p.Ballot()
-		response.Type = pb.ResponseType_REJECT
+func (p *Multipaxos) RequestInstanceGap() {
+	leaderId := ExtractLeaderId(p.ballot)
+	request := pb.InstanceRequest{
+		LastIndex:    p.log.LastIndex(),
+		LastExecuted: p.log.LastExecuted(),
+		Sender:       p.id,
 	}
-	return response, nil
-}
-
-func (p *Multipaxos) Accept(ctx context.Context,
-	request *pb.AcceptRequest) (*pb.AcceptResponse, error) {
-	logger.Infof("%v <--accept-- %v", p.id, request.GetSender())
-	response := &pb.AcceptResponse{}
-	if request.GetInstance().GetBallot() >= p.Ballot() {
-		p.log.Append(request.GetInstance())
-		response.Type = pb.ResponseType_OK
-		if request.GetInstance().GetBallot() > p.Ballot() {
-			p.BecomeFollower(request.GetInstance().GetBallot())
-		}
+	if request.LastIndex == request.LastExecuted {
+		request.LastIndex = -1
 	}
-	if request.GetInstance().GetBallot() < p.Ballot() {
-		response.Ballot = p.Ballot()
-		response.Type = pb.ResponseType_REJECT
+	stream, err := p.rpcPeers.List[leaderId].Stub.InstancesGap(context.
+		Background(), &request)
+	if err != nil {
+		logger.Error(err)
+		return
 	}
-	return response, nil
-}
-
-func (p *Multipaxos) Commit(ctx context.Context,
-	request *pb.CommitRequest) (*pb.CommitResponse, error) {
-	logger.Infof("%v <--commit-- %v", p.id, request.GetSender())
-	response := &pb.CommitResponse{}
-	if request.GetBallot() >= p.Ballot() {
-		atomic.StoreInt32(&p.commitReceived, 1)
-		p.log.CommitUntil(request.GetLastExecuted(), request.GetBallot())
-		p.log.TrimUntil(request.GetGlobalLastExecuted())
-		response.LastExecuted = p.log.LastExecuted()
-		response.Type = pb.ResponseType_OK
-		if request.GetBallot() > p.Ballot() {
-			p.BecomeFollower(request.GetBallot())
-		}
-	} else {
-		response.Ballot = p.Ballot()
-		response.Type = pb.ResponseType_REJECT
-	}
-	return response, nil
-}
-
-func (p *Multipaxos) countElection() {
-	elapse := time.Since(p.lastElectedTime)
-	p.lastElectedTime = time.Now()
-	if elapse.Milliseconds() < p.electionThreshold {
-		p.numElections += 1
-	} else {
-		p.numElections = 1
-		if p.commitInterval > p.initCommitInterval {
-			p.commitInterval = p.initCommitInterval
-		}
-	}
-}
-
-func (p *Multipaxos) ResumeSnapshot(stream pb.MultiPaxosRPC_ResumeSnapshotServer) error {
-	logger.Infof("%v <--snapshot--\n", p.id)
-	buffer := &bytes.Buffer{}
+	//logger.Infof("before - last_index: %v\n", request.LastIndex)
+	//count := 0
 	for {
-		snapshotChunk, err := stream.Recv()
+		instance, err := stream.Recv()
+		//count += 1
 		if err == io.EOF {
-			snapshot := &Log.Snapshot{}
-			err = gob.NewDecoder(buffer).Decode(snapshot)
-			if err != nil {
-				logger.Error(err)
-				return err
-			}
-			p.BecomeFollower(snapshot.Ballot)
-			p.log.ResumeSnapshot(snapshot)
-			p.mu.Lock()
-			p.joinReady = true
-			p.cvLeader.Signal()
-			p.mu.Unlock()
-			go p.RequestInstanceGap()
-			return stream.SendAndClose(&pb.SnapshotResponse{Done: true})
-		}
-		if err != nil {
+			break
+		} else if err != nil {
 			logger.Error(err)
-			return err
+			break
 		}
-		buffer.Write(snapshotChunk.GetChunk())
+		p.log.Append(instance)
 	}
-}
-
-func (p *Multipaxos) InstancesGap(request *pb.InstanceRequest,
-	stream pb.MultiPaxosRPC_InstancesGapServer) error {
-	logger.Infof("%v <--instances-- %v\n", p.id, request.GetSender())
-	instances := p.log.InstancesRange(request.GetLastExecuted(),
-		request.GetLastIndex())
-	ballot := request.GetBallot()
-	for _, instance := range instances {
-		err := stream.Send(instance)
-		if err != nil {
-			logger.Error(err)
-			return err
-		} else if p.Ballot() > ballot {
-			return nil
-		}
-	}
-	return nil
+	//logger.Infof("Recovered missing instances, recv: %v\n", count)
 }
 
 func (p *Multipaxos) Reconfigure(cmd *pb.Command) {
@@ -729,36 +646,117 @@ func (p *Multipaxos) Reconfigure(cmd *pb.Command) {
 	}
 }
 
-func (p *Multipaxos) RequestInstanceGap() {
-	leaderId := ExtractLeaderId(p.ballot)
-	request := pb.InstanceRequest{
-		LastIndex:    p.log.LastIndex(),
-		LastExecuted: p.log.LastExecuted(),
-		Sender:       p.id,
-	}
-	if request.LastIndex == request.LastExecuted {
-		request.LastIndex = -1
-	}
-	stream, err := p.rpcPeers.List[leaderId].Stub.InstancesGap(context.
-		Background(), &request)
-	if err != nil {
-		logger.Error(err)
-		return
-	}
-	logger.Infof("before - last_index: %v\n", request.LastIndex)
-	count := 0
-	for {
-		instance, err := stream.Recv()
-		count += 1
-		if err == io.EOF {
-			break
-		} else if err != nil {
-			logger.Error(err)
-			break
+func (p *Multipaxos) countElection() {
+	elapse := time.Since(p.lastElectedTime)
+	p.lastElectedTime = time.Now()
+	if elapse.Milliseconds() < p.electionThreshold {
+		p.numElections += 1
+	} else {
+		p.numElections = 1
+		if p.commitInterval > p.initCommitInterval {
+			p.commitInterval = p.initCommitInterval
 		}
-		p.log.Append(instance)
 	}
-	logger.Infof("Recovered missing instances, recv: %v\n", count)
+}
+
+func (p *Multipaxos) Prepare(ctx context.Context,
+	request *pb.PrepareRequest) (*pb.PrepareResponse, error) {
+	logger.Infof("%v <--prepare-- %v", p.id, request.GetSender())
+	response := &pb.PrepareResponse{}
+	if request.GetBallot() > p.Ballot() {
+		p.BecomeFollower(request.GetBallot())
+		response.LastIndex = p.log.LastIndex()
+		response.Type = pb.ResponseType_OK
+	} else {
+		response.Ballot = p.Ballot()
+		response.Type = pb.ResponseType_REJECT
+	}
+	return response, nil
+}
+
+func (p *Multipaxos) Accept(ctx context.Context,
+	request *pb.AcceptRequest) (*pb.AcceptResponse, error) {
+	logger.Infof("%v <--accept-- %v", p.id, request.GetSender())
+	response := &pb.AcceptResponse{}
+	if request.GetInstance().GetBallot() >= p.Ballot() {
+		p.log.Append(request.GetInstance())
+		response.Type = pb.ResponseType_OK
+		if request.GetInstance().GetBallot() > p.Ballot() {
+			p.BecomeFollower(request.GetInstance().GetBallot())
+		}
+	}
+	if request.GetInstance().GetBallot() < p.Ballot() {
+		response.Ballot = p.Ballot()
+		response.Type = pb.ResponseType_REJECT
+	}
+	return response, nil
+}
+
+func (p *Multipaxos) Commit(ctx context.Context,
+	request *pb.CommitRequest) (*pb.CommitResponse, error) {
+	logger.Infof("%v <--commit-- %v", p.id, request.GetSender())
+	response := &pb.CommitResponse{}
+	if request.GetBallot() >= p.Ballot() {
+		atomic.StoreInt32(&p.commitReceived, 1)
+		p.log.CommitUntil(request.GetLastExecuted(), request.GetBallot())
+		p.log.TrimUntil(request.GetGlobalLastExecuted())
+		response.LastExecuted = p.log.LastExecuted()
+		response.Type = pb.ResponseType_OK
+		if request.GetBallot() > p.Ballot() {
+			p.BecomeFollower(request.GetBallot())
+		}
+	} else {
+		response.Ballot = p.Ballot()
+		response.Type = pb.ResponseType_REJECT
+	}
+	return response, nil
+}
+
+func (p *Multipaxos) ResumeSnapshot(stream pb.MultiPaxosRPC_ResumeSnapshotServer) error {
+	logger.Infof("%v <--snapshot--\n", p.id)
+	buffer := &bytes.Buffer{}
+	for {
+		snapshotChunk, err := stream.Recv()
+		if err == io.EOF {
+			snapshot := &Log.Snapshot{}
+			err = gob.NewDecoder(buffer).Decode(snapshot)
+			if err != nil {
+				logger.Error(err)
+				return err
+			}
+			p.BecomeFollower(snapshot.Ballot)
+			p.log.ResumeSnapshot(snapshot)
+			p.mu.Lock()
+			p.joinReady = true
+			p.cvLeader.Signal()
+			p.mu.Unlock()
+			go p.RequestInstanceGap()
+			return stream.SendAndClose(&pb.SnapshotResponse{Done: true})
+		}
+		if err != nil {
+			logger.Error(err)
+			return err
+		}
+		buffer.Write(snapshotChunk.GetChunk())
+	}
+}
+
+func (p *Multipaxos) InstancesGap(request *pb.InstanceRequest,
+	stream pb.MultiPaxosRPC_InstancesGapServer) error {
+	logger.Infof("%v <--instances request-- %v\n", p.id, request.GetSender())
+	instances := p.log.InstancesRange(request.GetLastExecuted(),
+		request.GetLastIndex())
+	ballot := request.GetBallot()
+	for _, instance := range instances {
+		err := stream.Send(instance)
+		if err != nil {
+			logger.Error(err)
+			return err
+		} else if p.Ballot() > ballot {
+			return nil
+		}
+	}
+	return nil
 }
 
 func (p *Multipaxos) Monitor() {

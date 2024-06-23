@@ -47,9 +47,6 @@ func Insert(log map[int64]*pb.Instance, instance *pb.Instance) bool {
 	}
 
 	if IsCommitted(log[i]) || IsExecuted(log[i]) {
-		if !IsEqualCommand(log[i].GetCommand(), instance.GetCommand()) {
-			logger.Panicf("case 2 violation\n")
-		}
 		return false
 	}
 
@@ -59,9 +56,7 @@ func Insert(log map[int64]*pb.Instance, instance *pb.Instance) bool {
 	}
 
 	if instance.GetBallot() == log[i].GetBallot() {
-		if !IsEqualCommand(log[i].GetCommand(), instance.GetCommand()) {
-			logger.Panicf("case 3 violation\n")
-		}
+		return false
 	}
 	return false
 }
@@ -229,7 +224,6 @@ func (l *Log) CommitUntil(leaderLastExecuted int64, ballot int64) {
 	for i := l.lastExecuted + 1; i <= leaderLastExecuted; i++ {
 		instance, ok := l.log[i]
 		if !ok {
-			logger.Infof("Instance at index %v is empty\n", i)
 			break
 		}
 		if ballot < instance.GetBallot() {
@@ -252,7 +246,6 @@ func (l *Log) TrimUntil(leaderGlobalLastExecuted int64) {
 		l.globalLastExecuted += 1
 		instance, ok := l.log[l.globalLastExecuted]
 		if !ok || !IsExecuted(instance) {
-			//logger.Panicln("TrimUntil case 1")
 			return
 		}
 		delete(l.log, l.globalLastExecuted)
@@ -373,5 +366,5 @@ func (l *Log) GetLogStatus() (int, int64, int64, int64, []int64) {
 	}
 	logger.Errorln(list)
 
-	return len(l.log), l.lastIndex, l.lastExecuted, l.globalLastExecuted, indice
+	return length, l.lastIndex, l.lastExecuted, l.globalLastExecuted, indice
 }

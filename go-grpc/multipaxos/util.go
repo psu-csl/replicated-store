@@ -59,9 +59,8 @@ type PrepareState struct {
 	NumRpcs      int
 	NumOks       int
 	MaxLastIndex int64
-	//Log          map[int64]*pb.Instance
-	Mu sync.Mutex
-	Cv *sync.Cond
+	Mu           sync.Mutex
+	Cv           *sync.Cond
 }
 
 func NewPrepareState() *PrepareState {
@@ -69,7 +68,6 @@ func NewPrepareState() *PrepareState {
 		NumRpcs:      0,
 		NumOks:       0,
 		MaxLastIndex: 0,
-		//Log:          make(map[int64]*pb.Instance),
 	}
 	prepareState.Cv = sync.NewCond(&prepareState.Mu)
 	return prepareState
