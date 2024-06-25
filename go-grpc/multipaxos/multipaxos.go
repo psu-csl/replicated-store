@@ -501,7 +501,7 @@ func (p *Multipaxos) Replay(ballot int64, lastIndex int64) {
 
 	request := pb.InstanceRequest{
 		LastIndex:    lastIndex,
-		LastExecuted: p.log.GlobalLastExecuted(),
+		LastExecuted: p.log.GlobalLastExecuted() + 1,
 		Sender:       p.id,
 	}
 
@@ -543,9 +543,19 @@ func (p *Multipaxos) Replay(ballot int64, lastIndex int64) {
 		state.Cv.Wait()
 	}
 
-	for index, instance := range state.Log {
-		r := p.RunAcceptPhase(ballot, index, instance.GetCommand(),
-			instance.GetClientId())
+	for index := request.LastExecuted; index <= request.LastExecuted; index++ {
+		instance, ok := state.Log[index]
+		var r Result
+		if ok {
+			r = p.RunAcceptPhase(ballot, index, instance.GetCommand(),
+				instance.GetClientId())
+		} else {
+			r = p.RunAcceptPhase(ballot, index, &pb.Command{
+				Type: pb.CommandType_GET,
+				Key:  "1",
+			}, -1)
+		}
+
 		for r.Type == Retry {
 			r = p.RunAcceptPhase(ballot, index, instance.GetCommand(),
 				instance.GetClientId())
@@ -555,6 +565,7 @@ func (p *Multipaxos) Replay(ballot int64, lastIndex int64) {
 		}
 	}
 }
+
 func (p *Multipaxos) RequestInstanceGap() {
 	leaderId := ExtractLeaderId(p.ballot)
 	request := pb.InstanceRequest{
