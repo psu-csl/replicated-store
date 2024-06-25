@@ -501,7 +501,7 @@ func (p *Multipaxos) Replay(ballot int64, lastIndex int64) {
 
 	request := pb.InstanceRequest{
 		LastIndex:    lastIndex,
-		LastExecuted: p.log.GlobalLastExecuted() + 1,
+		LastExecuted: p.log.GlobalLastExecuted(),
 		Sender:       p.id,
 	}
 
@@ -543,7 +543,7 @@ func (p *Multipaxos) Replay(ballot int64, lastIndex int64) {
 		state.Cv.Wait()
 	}
 
-	for index := request.LastExecuted; index <= request.LastExecuted; index++ {
+	for index := request.LastExecuted + 1; index <= request.LastIndex; index++ {
 		instance, ok := state.Log[index]
 		var r Result
 		if ok {
