@@ -545,24 +545,28 @@ func (p *Multipaxos) Replay(ballot int64, lastIndex int64) {
 
 	for index := request.LastExecuted + 1; index <= request.LastIndex; index++ {
 		instance, ok := state.Log[index]
-		var r Result
+		var cmd *pb.Command
+		var clientId int64
 		if ok {
-			r = p.RunAcceptPhase(ballot, index, instance.GetCommand(),
-				instance.GetClientId())
+			cmd = instance.GetCommand()
+			clientId = instance.GetClientId()
 		} else {
-			r = p.RunAcceptPhase(ballot, index, &pb.Command{
+			cmd = &pb.Command{
 				Type: pb.CommandType_GET,
 				Key:  "1",
-			}, -1)
+			}
+			clientId = -1
 		}
+		go func(index int64, cmd *pb.Command, clientId int64) {
+			r := p.RunAcceptPhase(ballot, index, cmd, clientId)
 
-		for r.Type == Retry {
-			r = p.RunAcceptPhase(ballot, index, instance.GetCommand(),
-				instance.GetClientId())
-		}
-		if r.Type == SomeElseLeader {
-			return
-		}
+			for r.Type == Retry {
+				r = p.RunAcceptPhase(ballot, index, cmd, clientId)
+			}
+			if r.Type == SomeElseLeader {
+				return
+			}
+		}(index, cmd, clientId)
 	}
 }
 
