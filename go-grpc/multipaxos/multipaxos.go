@@ -116,7 +116,6 @@ func (p *Multipaxos) BecomeLeader(newBallot int64, newLastIndex int64) {
 	p.log.SetLastIndex(newLastIndex)
 	atomic.StoreInt64(&p.ballot, newBallot)
 	p.cvLeader.Signal()
-	p.countElection()
 }
 
 func (p *Multipaxos) BecomeFollower(newBallot int64) {
@@ -270,6 +269,7 @@ func (p *Multipaxos) PrepareThread() {
 			}
 			nextBallot := p.NextBallot()
 			maxLastIndex, _ := p.RunPreparePhase(nextBallot)
+			p.countElection()
 			if maxLastIndex != -1 {
 				p.BecomeLeader(nextBallot, maxLastIndex)
 				p.Replay(nextBallot, maxLastIndex)
