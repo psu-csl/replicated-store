@@ -112,12 +112,12 @@ func (r *Replicant) executorThread() {
 		} else {
 			id, result := r.log.Execute(instance)
 			client := r.clientManager.Get(id)
-			rId := instance.GetCommand().GetReqId()
-			if rId%r.sampleRate == 0 {
-				tp := time.Now().UnixNano()
-				client.AddTimePoint(rId, tp)
-			}
 			if client != nil {
+				rId := instance.GetCommand().GetReqId()
+				if rId%r.sampleRate == 0 {
+					tp := time.Now().UnixNano()
+					client.AddTimePoint(rId, tp)
+				}
 				client.Write(result.Value)
 			}
 		}
