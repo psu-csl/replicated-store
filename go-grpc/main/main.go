@@ -15,9 +15,10 @@ import (
 func main() {
 	id := flag.Int64("id", 0, "peer id")
 	debug := flag.Bool("d", false, "enable debug logging")
-	configPath := flag.String("c", "../c++/config.json", "config path")
+	configPath := flag.String("c", "config/config.json", "config path")
 	join := flag.Bool("j", false, "join peer")
 	leaderAddr := flag.String("l", "", "peer address")
+	outputPath := flag.String("o", "", "output path")
 	flag.Parse()
 
 	if *debug {
@@ -61,7 +62,7 @@ func main() {
 	signal.Notify(signalChan, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		<-signalChan
-		replicant.Stop()
+		replicant.Stop(*outputPath)
 	}()
 	statusChan := make(chan os.Signal, 1)
 	signal.Notify(statusChan, syscall.SIGTSTP)
