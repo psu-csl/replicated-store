@@ -69,7 +69,8 @@ func main() {
 	go func() {
 		for {
 			<-statusChan
-			replicant.Monitor()
+			//replicant.Monitor()
+			replicant.TriggerElection()
 		}
 	}()
 	replicant.Start()

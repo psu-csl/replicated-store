@@ -138,3 +138,7 @@ func (r *Replicant) AcceptClient() {
 func (r *Replicant) Monitor() {
 	r.multipaxos.Monitor()
 }
+
+func (r *Replicant) TriggerElection() {
+	r.multipaxos.TriggerElection()
+}
