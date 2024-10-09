@@ -19,6 +19,7 @@ func main() {
 	join := flag.Bool("j", false, "join peer")
 	leaderAddr := flag.String("l", "", "peer address")
 	outputPath := flag.String("o", "", "output path")
+	client_count := flag.Int64("n", 64, "client count")
 	flag.Parse()
 
 	if *debug {
@@ -31,6 +32,7 @@ func main() {
 	if err != nil {
 		logger.Panic(err)
 	}
+	cfg.ClientCount = *client_count
 
 	replicant := replicant.NewReplicant(cfg, *join)
 
