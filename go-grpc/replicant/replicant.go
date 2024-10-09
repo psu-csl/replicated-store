@@ -13,6 +13,11 @@ import (
 	"time"
 )
 
+var (
+	CLIENT_COUNT int64
+	INSERT_COUNT int64
+)
+
 type Replicant struct {
 	id            int64
 	log           *consensusLog.Log
@@ -33,6 +38,8 @@ func NewReplicant(config config.Config, join bool) *Replicant {
 	r.multipaxos = multipaxos.NewMultipaxos(r.log, config, join)
 	r.clientManager = NewClientManager(r.id, int64(len(config.Peers)),
 		r.multipaxos, r.sampleRate)
+	CLIENT_COUNT = config.ClientCount
+	INSERT_COUNT = config.InsertCount
 	return r
 }
 
@@ -107,7 +114,7 @@ func (r *Replicant) executorThread() {
 			client := r.clientManager.Get(id)
 			rId := instance.GetCommand().GetReqId()
 			if rId%r.sampleRate == 0 {
-				tp := time.Now().UnixMicro()
+				tp := time.Now().UnixNano()
 				client.AddTimePoint(rId, tp)
 			}
 			if client != nil {

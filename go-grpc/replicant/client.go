@@ -93,7 +93,7 @@ func (c *Client) Read() {
 		command := c.Parse(request)
 		command.ReqId = c.NextRequestId()
 		if command.ReqId%c.sampleRate == 0 {
-			tp := time.Now().UnixMicro()
+			tp := time.Now().UnixNano()
 			c.latencyMap.AddTimeFromClient(command.ReqId, tp)
 		}
 		if command != nil {
@@ -124,7 +124,7 @@ func (c *Client) Write(response string) {
 
 func (c *Client) NextRequestId() int64 {
 	id := c.nextReqId
-	c.nextReqId += c.numPeers
+	c.nextReqId += CLIENT_COUNT
 	return id
 }
 

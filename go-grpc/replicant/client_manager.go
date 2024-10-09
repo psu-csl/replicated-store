@@ -70,7 +70,7 @@ func (cm *ClientManager) Stop(id int64) {
 		panic("no client to stop")
 	}
 	client.Stop()
-	delete(cm.clients, id)
+	//delete(cm.clients, id)
 }
 
 func (cm *ClientManager) StopAll() {
@@ -100,7 +100,7 @@ func (cm *ClientManager) OutputMap(path string) {
 		for id, tp := range lm {
 			if _, ok := latenciesMap[id]; ok {
 				logger.Errorf("duplicated rId: %v\n", id)
-			} else {
+			} else if id > INSERT_COUNT {
 				latenciesMap[id] = tp
 				keys = append(keys, id)
 			}

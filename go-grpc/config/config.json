@@ -10,5 +10,7 @@
   "db_path": "/tmp/testdb",
   "election_limit": 3000,
   "threshold": 10,
-  "sample_interval": 10000
+  "sample_interval": 10000,
+  "client_count": 64,
+  "insert_count": 1000000
 }

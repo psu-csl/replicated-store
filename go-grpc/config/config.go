@@ -15,6 +15,8 @@ type Config struct {
 	ElectionLimit  int64    `json:"election_limit"`
 	Threshold      int64    `json:"threshold"`
 	SampleInterval int64    `json:"sample_interval"`
+	ClientCount    int64    `json:"client_count"`
+	InsertCount    int64    `json:"insert_count"`
 }
 
 func DefaultConfig(id int64, n int) Config {
