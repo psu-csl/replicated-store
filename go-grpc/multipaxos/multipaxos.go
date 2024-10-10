@@ -780,7 +780,3 @@ func (p *Multipaxos) Monitor() {
 		"last_executed: %v, gle: %v, indice: %v, node_list: %v", p.Ballot(),
 		length, lastIndex, lastExecuted, gle, indice, p.rpcPeers.List)
 }
-
-func (p *Multipaxos) TriggerElection() {
-	p.commitReceived = 0
-}

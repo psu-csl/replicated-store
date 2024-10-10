@@ -10,12 +10,6 @@ import (
 	"net"
 	"strconv"
 	"strings"
-	"time"
-)
-
-var (
-	CLIENT_COUNT int64
-	INSERT_COUNT int64
 )
 
 type Replicant struct {
@@ -25,21 +19,16 @@ type Replicant struct {
 	ipPort        string
 	acceptor      net.Listener
 	clientManager *ClientManager
-	sampleRate    int64
 }
 
 func NewReplicant(config config.Config, join bool) *Replicant {
 	r := &Replicant{
-		id:         config.Id,
-		ipPort:     config.Peers[config.Id],
-		sampleRate: config.SampleInterval,
+		id:     config.Id,
+		ipPort: config.Peers[config.Id],
 	}
 	r.log = consensusLog.NewLog(kvstore.CreateStore(config))
 	r.multipaxos = multipaxos.NewMultipaxos(r.log, config, join)
-	r.clientManager = NewClientManager(r.id, int64(len(config.Peers)),
-		r.multipaxos, r.sampleRate)
-	CLIENT_COUNT = config.ClientCount
-	INSERT_COUNT = config.InsertCount
+	r.clientManager = NewClientManager(r.id, int64(len(config.Peers)), r.multipaxos)
 	return r
 }
 
@@ -49,8 +38,7 @@ func (r *Replicant) Start() {
 	r.StartServer()
 }
 
-func (r *Replicant) Stop(outputPath string) {
-	r.clientManager.OutputMap(outputPath)
+func (r *Replicant) Stop() {
 	r.StopServer()
 	r.StopExecutorThread()
 	r.multipaxos.Stop()
@@ -112,11 +100,6 @@ func (r *Replicant) executorThread() {
 		} else {
 			id, result := r.log.Execute(instance)
 			client := r.clientManager.Get(id)
-			rId := instance.GetCommand().GetReqId()
-			if rId%r.sampleRate == 0 {
-				tp := time.Now().UnixNano()
-				client.AddTimePoint(rId, tp)
-			}
 			if client != nil {
 				client.Write(result.Value)
 			}
@@ -137,8 +120,4 @@ func (r *Replicant) AcceptClient() {
 
 func (r *Replicant) Monitor() {
 	r.multipaxos.Monitor()
-}
-
-func (r *Replicant) TriggerElection() {
-	r.multipaxos.TriggerElection()
 }

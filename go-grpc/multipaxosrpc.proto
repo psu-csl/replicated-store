@@ -84,7 +84,6 @@ message Command {
   CommandType type = 1;
   string key = 2;
   string value = 3;
-  int64 reqId = 4;
 }
 
 message Instance {
