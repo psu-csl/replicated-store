@@ -782,5 +782,5 @@ func (p *Multipaxos) Monitor() {
 }
 
 func (p *Multipaxos) TriggerElection() {
-	p.commitReceived = 0
+	p.commitReceived = 2
 }
