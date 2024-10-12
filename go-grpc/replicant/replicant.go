@@ -50,7 +50,9 @@ func (r *Replicant) Start() {
 }
 
 func (r *Replicant) Stop(outputPath string) {
-	r.clientManager.OutputMap(outputPath)
+	if outputPath != "" {
+		r.clientManager.OutputMap(outputPath)
+	}
 	r.StopServer()
 	r.StopExecutorThread()
 	r.multipaxos.Stop()
