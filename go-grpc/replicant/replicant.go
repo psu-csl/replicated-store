@@ -137,6 +137,9 @@ func (r *Replicant) executorThread() {
 					r.sampleQueue.Append(latency)
 				}
 				client.Write(result.Value)
+			} else if instance.Command.Type == pb.CommandType_OVERLOADED {
+				tp, _ := strconv.ParseInt(instance.Command.Value, 10, 64)
+				r.multipaxos.TriggerElection(instance.GetBallot(), tp)
 			}
 		}
 	}
@@ -187,7 +190,7 @@ func (r *Replicant) Monitor() {
 }
 
 func (r *Replicant) TriggerElection() {
-	r.multipaxos.TriggerElection()
+	r.multipaxos.TriggerElection(1000, 2)
 }
 
 func (r *Replicant) OutputMap(path string) {

@@ -23,7 +23,7 @@ type Multipaxos struct {
 	ballot         int64
 	log            *Log.Log
 	id             int64
-	commitReceived int32
+	commitReceived int64
 	commitInterval int64
 	port           string
 	rpcPeers       RpcPeerList
@@ -152,7 +152,7 @@ func (p *Multipaxos) sleepForRandomInterval() {
 }
 
 func (p *Multipaxos) receivedCommit() bool {
-	return atomic.CompareAndSwapInt32(&p.commitReceived, 1, 0)
+	return atomic.CompareAndSwapInt64(&p.commitReceived, 1, 0)
 }
 
 func (p *Multipaxos) Start() {
@@ -715,7 +715,7 @@ func (p *Multipaxos) Commit(ctx context.Context,
 	logger.Infof("%v <--commit-- %v", p.id, request.GetSender())
 	response := &pb.CommitResponse{}
 	if request.GetBallot() >= p.Ballot() {
-		atomic.StoreInt32(&p.commitReceived, 1)
+		atomic.StoreInt64(&p.commitReceived, 1)
 		p.log.CommitUntil(request.GetLastExecuted(), request.GetBallot())
 		p.log.TrimUntil(request.GetGlobalLastExecuted())
 		response.LastExecuted = p.log.LastExecuted()
@@ -801,6 +801,8 @@ func (p *Multipaxos) Monitor() {
 		length, lastIndex, lastExecuted, gle, indice, p.rpcPeers.List)
 }
 
-func (p *Multipaxos) TriggerElection() {
-	p.commitReceived = 2
+func (p *Multipaxos) TriggerElection(ballot int64, tp int64) {
+	if !IsLeader(p.Ballot(), p.id) && ballot >= p.Ballot() {
+		atomic.StoreInt64(&p.commitReceived, tp)
+	}
 }
