@@ -31,6 +31,9 @@ type Replicant struct {
 	sampleRate    int64
 	sampleQueue   *Queue
 	config        config.Config
+
+	overloadedCount int
+	normalCount     int
 }
 
 func NewReplicant(config config.Config, join bool) *Replicant {
@@ -51,6 +54,7 @@ func NewReplicant(config config.Config, join bool) *Replicant {
 }
 
 func (r *Replicant) Start() {
+	r.StartMonitorThread()
 	r.multipaxos.Start()
 	r.StartExecutorThread()
 	r.StartServer()
@@ -101,6 +105,10 @@ func (r *Replicant) StopExecutorThread() {
 	r.log.Stop()
 }
 
+func (r *Replicant) StartMonitorThread() {
+	go r.MonitorThread()
+}
+
 func (r *Replicant) StartRpcServer() {
 	r.multipaxos.StartRPCServer()
 }
@@ -145,6 +153,34 @@ func (r *Replicant) AcceptClient() {
 	}
 }
 
+func (r *Replicant) MonitorThread() {
+	var (
+		median = 0
+		p99    = 1
+		//p999   = 2
+	)
+	for {
+		stats := r.sampleQueue.Stats(50, 99, 99.9)
+		ratio := stats[p99] / stats[median]
+		if ratio >= r.config.SlowThreshold {
+			if r.overloadedCount == 0 {
+				r.overloadedCount = 1
+				r.normalCount = 0
+			} else if r.overloadedCount == 1 {
+				//Replicate a new command
+			}
+		} else if r.overloadedCount > 0 && ratio < r.config.SlowThreshold {
+			if r.normalCount == 0 {
+				r.normalCount = 1
+			} else if r.normalCount == 1 {
+				r.overloadedCount = 0
+				// reset and see if enough time elapses
+			}
+		}
+		time.Sleep(5 * time.Second)
+	}
+}
+
 func (r *Replicant) Monitor() {
 	r.multipaxos.Monitor()
 }
@@ -161,13 +197,5 @@ func (r *Replicant) OutputMap(path string) {
 		return
 	}
 	writer := bufio.NewWriter(file)
-	//for _, rId := range keys {
-	//	_, err = writer.WriteString(strconv.FormatInt(rId, 10) +
-	//		" " + strconv.FormatInt(latenciesMap[rId], 10) + "\n")
-	//	if err != nil {
-	//		logger.Error(err)
-	//		return
-	//	}
-	//}
 	writer.Flush()
 }
