@@ -1,6 +1,7 @@
 package replicant
 
 import (
+	"bufio"
 	"github.com/psu-csl/replicated-store/go/config"
 	"github.com/psu-csl/replicated-store/go/kvstore"
 	consensusLog "github.com/psu-csl/replicated-store/go/log"
@@ -8,6 +9,7 @@ import (
 	pb "github.com/psu-csl/replicated-store/go/multipaxos/comm"
 	logger "github.com/sirupsen/logrus"
 	"net"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -16,6 +18,7 @@ import (
 var (
 	CLIENT_COUNT int64
 	INSERT_COUNT int64
+	QUEUE_SIZE   int = 100
 )
 
 type Replicant struct {
@@ -26,13 +29,15 @@ type Replicant struct {
 	acceptor      net.Listener
 	clientManager *ClientManager
 	sampleRate    int64
+	sampleQueue   *Queue
 }
 
 func NewReplicant(config config.Config, join bool) *Replicant {
 	r := &Replicant{
-		id:         config.Id,
-		ipPort:     config.Peers[config.Id],
-		sampleRate: config.SampleInterval,
+		id:          config.Id,
+		ipPort:      config.Peers[config.Id],
+		sampleRate:  config.SampleInterval,
+		sampleQueue: NewQueue(QUEUE_SIZE),
 	}
 	r.log = consensusLog.NewLog(kvstore.CreateStore(config))
 	r.multipaxos = multipaxos.NewMultipaxos(r.log, config, join)
@@ -51,7 +56,7 @@ func (r *Replicant) Start() {
 
 func (r *Replicant) Stop(outputPath string) {
 	if outputPath != "" {
-		r.clientManager.OutputMap(outputPath)
+		r.OutputMap(outputPath)
 	}
 	r.StopServer()
 	r.StopExecutorThread()
@@ -118,7 +123,8 @@ func (r *Replicant) executorThread() {
 				rId := instance.GetCommand().GetReqId()
 				if rId%r.sampleRate == 0 {
 					tp := time.Now().UnixNano()
-					client.AddTimePoint(rId, tp)
+					latency := client.ComputeLatency(tp)
+					r.sampleQueue.Append(latency)
 				}
 				client.Write(result.Value)
 			}
@@ -143,4 +149,23 @@ func (r *Replicant) Monitor() {
 
 func (r *Replicant) TriggerElection() {
 	r.multipaxos.TriggerElection()
+}
+
+func (r *Replicant) OutputMap(path string) {
+	file, err := os.Create(path + ".dat")
+	defer file.Close()
+	if err != nil {
+		logger.Error(err)
+		return
+	}
+	writer := bufio.NewWriter(file)
+	//for _, rId := range keys {
+	//	_, err = writer.WriteString(strconv.FormatInt(rId, 10) +
+	//		" " + strconv.FormatInt(latenciesMap[rId], 10) + "\n")
+	//	if err != nil {
+	//		logger.Error(err)
+	//		return
+	//	}
+	//}
+	writer.Flush()
 }

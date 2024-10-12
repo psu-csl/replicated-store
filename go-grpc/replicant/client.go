@@ -2,7 +2,6 @@ package replicant
 
 import (
 	"bufio"
-	"github.com/psu-csl/replicated-store/go/latencymap"
 	"github.com/psu-csl/replicated-store/go/multipaxos"
 	pb "github.com/psu-csl/replicated-store/go/multipaxos/comm"
 	"net"
@@ -22,7 +21,7 @@ type Client struct {
 	numPeers   int64
 	nextReqId  int64
 	sampleRate int64
-	latencyMap *latencymap.LatencyMap
+	latencyMap *Queue
 }
 
 func NewClient(id int64, conn net.Conn, mp *multipaxos.Multipaxos,
@@ -37,7 +36,7 @@ func NewClient(id int64, conn net.Conn, mp *multipaxos.Multipaxos,
 		numPeers:   manger.NumPeers(),
 		nextReqId:  id,
 		sampleRate: manger.SampleRate(),
-		latencyMap: latencymap.NewLatencyMap(),
+		latencyMap: NewQueue(QUEUE_SIZE),
 	}
 	return client
 }
@@ -94,7 +93,7 @@ func (c *Client) Read() {
 		command.ReqId = c.NextRequestId()
 		if command.ReqId%c.sampleRate == 0 {
 			tp := time.Now().UnixNano()
-			c.latencyMap.AddTimeFromClient(command.ReqId, tp)
+			c.latencyMap.Append(tp)
 		}
 		if command != nil {
 			result := c.multipaxos.Replicate(command, c.id)
@@ -128,6 +127,7 @@ func (c *Client) NextRequestId() int64 {
 	return id
 }
 
-func (c *Client) AddTimePoint(rId int64, tp int64) {
-	c.latencyMap.AddTimeFromExecutor(rId, tp)
+func (c *Client) ComputeLatency(tp int64) int64 {
+	startTP := c.latencyMap.Pop()
+	return tp - startTP
 }
