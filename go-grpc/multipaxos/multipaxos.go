@@ -792,12 +792,14 @@ func (p *Multipaxos) HandoverLeadership() {
 			ReqId: 1,
 		}
 		p.Replicate(&cmd, -1)
+		logger.Errorln("handover leadership due to overloaded")
 	}
 }
 
 func (p *Multipaxos) ResetLeadershipStatus() {
 	if time.Now().Unix()-atomic.LoadInt64(&p.OverloadedTP) > 30 {
 		atomic.StoreInt64(&p.OverloadedTP, 0)
+		logger.Errorln("reset overloaded status")
 	}
 }
 
