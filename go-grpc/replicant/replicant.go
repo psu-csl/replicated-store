@@ -167,7 +167,7 @@ func (r *Replicant) MonitorThread() {
 				r.overloadedCount = 1
 				r.normalCount = 0
 			} else if r.overloadedCount == 1 {
-				//Replicate a new command
+				r.multipaxos.HandoverLeadership()
 			}
 		} else if r.overloadedCount > 0 && ratio < r.config.SlowThreshold {
 			if r.normalCount == 0 {
@@ -175,6 +175,7 @@ func (r *Replicant) MonitorThread() {
 			} else if r.normalCount == 1 {
 				r.overloadedCount = 0
 				// reset and see if enough time elapses
+				r.multipaxos.ResetLeadershipStatus()
 			}
 		}
 		time.Sleep(5 * time.Second)
