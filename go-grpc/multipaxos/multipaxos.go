@@ -786,7 +786,7 @@ func (p *Multipaxos) HandoverLeadership() {
 	if atomic.LoadInt64(&p.OverloadedTP) == 0 {
 		tp := time.Now().Unix()
 		cmd := pb.Command{
-			Type:  pb.CommandType_OVERLOADED,
+			Type:  pb.CommandType_PUT,
 			Key:   "overloaded",
 			Value: strconv.FormatInt(tp, 10),
 			ReqId: 1,
