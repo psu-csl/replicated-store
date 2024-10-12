@@ -46,7 +46,7 @@ type Multipaxos struct {
 	commitThreadRunning  int32
 	joinReady            bool
 
-	isFromOverloaded bool
+	OverloadedTP int64
 
 	pb.UnimplementedMultiPaxosRPCServer
 }
@@ -71,7 +71,7 @@ func NewMultipaxos(log *Log.Log, config config.Config, join bool) *Multipaxos {
 		prepareThreadRunning: 0,
 		commitThreadRunning:  0,
 		joinReady:            !join,
-		isFromOverloaded:     false,
+		OverloadedTP:         0,
 		rpcServer:            nil,
 	}
 	multipaxos.rpcServerRunningCv = sync.NewCond(&multipaxos.mu)
@@ -118,6 +118,10 @@ func (p *Multipaxos) BecomeLeader(newBallot int64, newLastIndex int64) {
 		newBallot, p.numElections)
 	p.log.SetLastIndex(newLastIndex)
 	atomic.StoreInt64(&p.ballot, newBallot)
+	if p.commitReceived > 1 {
+		atomic.StoreInt64(&p.OverloadedTP, p.commitReceived)
+		p.commitReceived = 0
+	}
 	p.cvLeader.Signal()
 }
 
@@ -139,6 +143,7 @@ func (p *Multipaxos) BecomeFollower(newBallot int64) {
 		p.cvFollower.Signal()
 	}
 	atomic.StoreInt64(&p.ballot, newBallot)
+	atomic.StoreInt64(&p.commitReceived, 1)
 }
 
 func (p *Multipaxos) sleepForCommitInterval() {
@@ -778,8 +783,8 @@ func (p *Multipaxos) InstancesGap(request *pb.InstanceRequest,
 }
 
 func (p *Multipaxos) HandoverLeadership() {
-	if !p.isFromOverloaded {
-		tp := time.Now().UnixMilli()
+	if atomic.LoadInt64(&p.OverloadedTP) == 0 {
+		tp := time.Now().Unix()
 		cmd := pb.Command{
 			Type:  pb.CommandType_OVERLOADED,
 			Key:   "overloaded",
@@ -791,7 +796,9 @@ func (p *Multipaxos) HandoverLeadership() {
 }
 
 func (p *Multipaxos) ResetLeadershipStatus() {
-	p.isFromOverloaded = false
+	if time.Now().Unix()-atomic.LoadInt64(&p.OverloadedTP) > 30 {
+		atomic.StoreInt64(&p.OverloadedTP, 0)
+	}
 }
 
 func (p *Multipaxos) Monitor() {

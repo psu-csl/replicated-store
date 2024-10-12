@@ -171,13 +171,13 @@ func (r *Replicant) MonitorThread() {
 				r.normalCount = 0
 			} else if r.overloadedCount == 1 {
 				r.multipaxos.HandoverLeadership()
+				r.overloadedCount = 2
 			}
 		} else if r.overloadedCount > 0 && ratio < r.config.SlowThreshold {
 			if r.normalCount == 0 {
 				r.normalCount = 1
 			} else if r.normalCount == 1 {
 				r.overloadedCount = 0
-				// reset and see if enough time elapses
 				r.multipaxos.ResetLeadershipStatus()
 			}
 		}
