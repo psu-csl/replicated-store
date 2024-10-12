@@ -720,7 +720,9 @@ func (p *Multipaxos) Commit(ctx context.Context,
 	logger.Infof("%v <--commit-- %v", p.id, request.GetSender())
 	response := &pb.CommitResponse{}
 	if request.GetBallot() >= p.Ballot() {
-		atomic.StoreInt64(&p.commitReceived, 1)
+		if atomic.LoadInt64(&p.commitReceived) <= 1 {
+			atomic.StoreInt64(&p.commitReceived, 1)
+		}
 		p.log.CommitUntil(request.GetLastExecuted(), request.GetBallot())
 		p.log.TrimUntil(request.GetGlobalLastExecuted())
 		response.LastExecuted = p.log.LastExecuted()
