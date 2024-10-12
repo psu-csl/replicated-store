@@ -46,6 +46,8 @@ type Multipaxos struct {
 	commitThreadRunning  int32
 	joinReady            bool
 
+	isFromOverloaded bool
+
 	pb.UnimplementedMultiPaxosRPCServer
 }
 
@@ -69,6 +71,7 @@ func NewMultipaxos(log *Log.Log, config config.Config, join bool) *Multipaxos {
 		prepareThreadRunning: 0,
 		commitThreadRunning:  0,
 		joinReady:            !join,
+		isFromOverloaded:     false,
 		rpcServer:            nil,
 	}
 	multipaxos.rpcServerRunningCv = sync.NewCond(&multipaxos.mu)
@@ -772,6 +775,23 @@ func (p *Multipaxos) InstancesGap(request *pb.InstanceRequest,
 		}
 	}
 	return nil
+}
+
+func (p *Multipaxos) HandoverLeadership() {
+	if !p.isFromOverloaded {
+		tp := time.Now().UnixMilli()
+		cmd := pb.Command{
+			Type:  pb.CommandType_OVERLOADED,
+			Key:   "overloaded",
+			Value: strconv.FormatInt(tp, 10),
+			ReqId: 1,
+		}
+		p.Replicate(&cmd, -1)
+	}
+}
+
+func (p *Multipaxos) ResetLeadershipStatus() {
+	p.isFromOverloaded = false
 }
 
 func (p *Multipaxos) Monitor() {
