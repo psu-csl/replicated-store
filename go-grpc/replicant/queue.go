@@ -41,9 +41,16 @@ func (q *Queue) GetData() []int64 {
 	return q.data
 }
 
+func (q *Queue) Len() int {
+	q.mu.RLock()
+	defer q.mu.RUnlock()
+	return len(q.data)
+}
+
 func (q *Queue) Stats(percentiles ...float32) []int64 {
 	q.mu.RLock()
-	data := make([]int64, len(q.data), len(q.data))
+	dataSize := len(q.data)
+	data := make([]int64, dataSize, dataSize)
 	copy(data, q.data)
 	q.mu.RUnlock()
 
@@ -54,9 +61,9 @@ func (q *Queue) Stats(percentiles ...float32) []int64 {
 	length := len(percentiles)
 	results := make([]int64, length, length)
 	for i, p := range percentiles {
-		index := int((p / 100) * float32(length))
-		if index >= length {
-			results[i] = data[length-1]
+		index := int((p / 100) * float32(dataSize))
+		if index >= dataSize-1 {
+			results[i] = data[dataSize-1]
 		} else {
 			results[i] = data[index]
 		}

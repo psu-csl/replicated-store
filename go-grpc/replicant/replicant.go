@@ -163,22 +163,24 @@ func (r *Replicant) MonitorThread() {
 		//p999   = 2
 	)
 	for {
-		stats := r.sampleQueue.Stats(50, 99, 99.9)
-		ratio := stats[p99] / stats[median]
-		if ratio >= r.config.SlowThreshold {
-			if r.overloadedCount == 0 {
-				r.overloadedCount = 1
-				r.normalCount = 0
-			} else if r.overloadedCount == 1 {
-				r.multipaxos.HandoverLeadership()
-				r.overloadedCount = 2
-			}
-		} else if r.overloadedCount > 0 && ratio < r.config.SlowThreshold {
-			if r.normalCount == 0 {
-				r.normalCount = 1
-			} else if r.normalCount == 1 {
-				r.overloadedCount = 0
-				r.multipaxos.ResetLeadershipStatus()
+		if r.sampleQueue.Len() != 0 {
+			stats := r.sampleQueue.Stats(50, 99, 99.9)
+			ratio := stats[p99] / stats[median]
+			if ratio >= r.config.SlowThreshold {
+				if r.overloadedCount == 0 {
+					r.overloadedCount = 1
+					r.normalCount = 0
+				} else if r.overloadedCount == 1 {
+					r.multipaxos.HandoverLeadership()
+					r.overloadedCount = 2
+				}
+			} else if r.overloadedCount > 0 && ratio < r.config.SlowThreshold {
+				if r.normalCount == 0 {
+					r.normalCount = 1
+				} else if r.normalCount == 1 {
+					r.overloadedCount = 0
+					r.multipaxos.ResetLeadershipStatus()
+				}
 			}
 		}
 		time.Sleep(5 * time.Second)
