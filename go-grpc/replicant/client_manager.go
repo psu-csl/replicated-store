@@ -66,7 +66,7 @@ func (cm *ClientManager) Stop(id int64) {
 		panic("no client to stop")
 	}
 	client.Stop()
-	//delete(cm.clients, id)
+	delete(cm.clients, id)
 }
 
 func (cm *ClientManager) StopAll() {
@@ -77,6 +77,12 @@ func (cm *ClientManager) StopAll() {
 		client.Stop()
 		delete(cm.clients, id)
 	}
+}
+
+func (cm *ClientManager) NumClients() int {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+	return len(cm.clients)
 }
 
 func (cm *ClientManager) SampleRate() int64 {

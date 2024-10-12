@@ -182,6 +182,8 @@ func (r *Replicant) MonitorThread() {
 					r.multipaxos.ResetLeadershipStatus()
 				}
 			}
+		} else if r.clientManager.NumClients() == 0 {
+			r.sampleQueue.Clear()
 		}
 		time.Sleep(5 * time.Second)
 	}

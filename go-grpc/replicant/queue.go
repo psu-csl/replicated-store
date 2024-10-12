@@ -47,6 +47,12 @@ func (q *Queue) Len() int {
 	return len(q.data)
 }
 
+func (q *Queue) Clear() {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.data = q.data[:0]
+}
+
 func (q *Queue) Stats(percentiles ...float32) []int64 {
 	q.mu.RLock()
 	dataSize := len(q.data)
