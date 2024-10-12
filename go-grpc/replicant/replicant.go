@@ -30,6 +30,7 @@ type Replicant struct {
 	clientManager *ClientManager
 	sampleRate    int64
 	sampleQueue   *Queue
+	config        config.Config
 }
 
 func NewReplicant(config config.Config, join bool) *Replicant {
@@ -38,6 +39,7 @@ func NewReplicant(config config.Config, join bool) *Replicant {
 		ipPort:      config.Peers[config.Id],
 		sampleRate:  config.SampleInterval,
 		sampleQueue: NewQueue(QUEUE_SIZE),
+		config:      config,
 	}
 	r.log = consensusLog.NewLog(kvstore.CreateStore(config))
 	r.multipaxos = multipaxos.NewMultipaxos(r.log, config, join)

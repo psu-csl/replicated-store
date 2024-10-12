@@ -17,6 +17,7 @@ type Config struct {
 	SampleInterval int64    `json:"sample_interval"`
 	ClientCount    int64    `json:"client_count"`
 	InsertCount    int64    `json:"insert_count"`
+	SlowThreshold  int64    `json:"slow_threshold"`
 }
 
 func DefaultConfig(id int64, n int) Config {
