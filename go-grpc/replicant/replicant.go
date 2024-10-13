@@ -28,9 +28,10 @@ type Replicant struct {
 	ipPort        string
 	acceptor      net.Listener
 	clientManager *ClientManager
-	sampleRate    int64
-	sampleQueue   *Queue
-	config        config.Config
+
+	sampleRate  int64
+	sampleQueue *Queue
+	config      config.Config
 
 	overloadedCount int
 	normalCount     int
@@ -40,11 +41,15 @@ type Replicant struct {
 
 func NewReplicant(config config.Config, join bool) *Replicant {
 	r := &Replicant{
-		id:          config.Id,
-		ipPort:      config.Peers[config.Id],
-		sampleRate:  config.SampleInterval,
-		sampleQueue: NewQueue(QUEUE_SIZE),
-		config:      config,
+		id:              config.Id,
+		ipPort:          config.Peers[config.Id],
+		sampleRate:      config.SampleInterval,
+		sampleQueue:     NewQueue(QUEUE_SIZE),
+		config:          config,
+		overloadedCount: 0,
+		normalCount:     0,
+		prevMedian:      0,
+		prevTail:        0,
 	}
 	r.log = consensusLog.NewLog(kvstore.CreateStore(config))
 	r.multipaxos = multipaxos.NewMultipaxos(r.log, config, join)
@@ -205,6 +210,8 @@ func (r *Replicant) MonitorThread() {
 		}
 		if r.clientManager.NumClients() == 0 {
 			r.sampleQueue.Clear()
+			r.prevMedian = 0
+			r.prevTail = 0
 		}
 		time.Sleep(5 * time.Second)
 	}
