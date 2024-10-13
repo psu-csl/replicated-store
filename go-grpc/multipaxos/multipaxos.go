@@ -798,11 +798,13 @@ func (p *Multipaxos) HandoverLeadership() {
 	}
 }
 
-func (p *Multipaxos) ResetLeadershipStatus() {
+func (p *Multipaxos) ResetLeadershipStatus() bool {
 	if time.Now().Unix()-atomic.LoadInt64(&p.OverloadedTP) > 30 {
 		atomic.StoreInt64(&p.OverloadedTP, 0)
 		logger.Errorln("reset overloaded status")
+		return true
 	}
+	return false
 }
 
 func (p *Multipaxos) Monitor() {

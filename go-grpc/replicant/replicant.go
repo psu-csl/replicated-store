@@ -34,6 +34,8 @@ type Replicant struct {
 
 	overloadedCount int
 	normalCount     int
+	prevMedian      int64
+	prevTail        int64
 }
 
 func NewReplicant(config config.Config, join bool) *Replicant {
@@ -165,24 +167,43 @@ func (r *Replicant) MonitorThread() {
 	for {
 		if r.sampleQueue.Len() != 0 {
 			stats := r.sampleQueue.Stats(50, 99, 99.9)
-			ratio := stats[p99] / stats[median]
-			if ratio >= r.config.SlowThreshold {
+			if r.prevMedian == 0 || r.prevTail == 0 {
+				r.prevMedian = stats[median]
+				r.prevTail = stats[p99]
+				continue
+			}
+			medianRatio := stats[median] / r.prevMedian
+			tailRatio := stats[p99] / r.prevTail
+			overloadedFlag := tailRatio >= r.config.TailThreshold &&
+				medianRatio <= r.config.MedianThreshold
+			resumeFlag := tailRatio <= (1/r.config.TailThreshold) &&
+				medianRatio < 1
+			if overloadedFlag {
 				if r.overloadedCount == 0 {
 					r.overloadedCount = 1
 					r.normalCount = 0
 				} else if r.overloadedCount == 1 {
 					r.multipaxos.HandoverLeadership()
 					r.overloadedCount = 2
+					r.prevMedian = stats[median]
+					r.prevTail = stats[p99]
 				}
-			} else if r.overloadedCount > 0 && ratio < r.config.SlowThreshold {
+			} else if r.overloadedCount > 0 && resumeFlag {
 				if r.normalCount == 0 {
 					r.normalCount = 1
 				} else if r.normalCount == 1 {
 					r.overloadedCount = 0
-					r.multipaxos.ResetLeadershipStatus()
+					if r.multipaxos.ResetLeadershipStatus() {
+						r.prevMedian = stats[median]
+						r.prevTail = stats[p99]
+					}
 				}
+			} else {
+				r.prevMedian = stats[median]
+				r.prevTail = stats[p99]
 			}
-		} else if r.clientManager.NumClients() == 0 {
+		}
+		if r.clientManager.NumClients() == 0 {
 			r.sampleQueue.Clear()
 		}
 		time.Sleep(5 * time.Second)
