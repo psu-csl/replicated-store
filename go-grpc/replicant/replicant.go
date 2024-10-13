@@ -178,7 +178,7 @@ func (r *Replicant) MonitorThread() {
 				continue
 			}
 			medianRatio := stats[median] / r.prevMedian
-			tailRatio := stats[p99] / r.prevTail
+			tailRatio := float64(stats[p99]) / float64(r.prevTail)
 			overloadedFlag := tailRatio >= r.config.TailThreshold &&
 				medianRatio <= r.config.MedianThreshold
 			resumeFlag := tailRatio <= (1/r.config.TailThreshold) &&

@@ -18,7 +18,7 @@ type Config struct {
 	ClientCount     int64    `json:"client_count"`
 	InsertCount     int64    `json:"insert_count"`
 	MedianThreshold int64    `json:"median_threshold"`
-	TailThreshold   int64    `json:"tail_threshold"`
+	TailThreshold   float64  `json:"tail_threshold"`
 }
 
 func DefaultConfig(id int64, n int) Config {
