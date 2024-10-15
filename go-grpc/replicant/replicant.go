@@ -10,6 +10,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 type Replicant struct {
@@ -19,12 +20,14 @@ type Replicant struct {
 	ipPort        string
 	acceptor      net.Listener
 	clientManager *ClientManager
+	wg            *sync.WaitGroup
 }
 
 func NewReplicant(config config.Config, join bool) *Replicant {
 	r := &Replicant{
 		id:     config.Id,
 		ipPort: config.Peers[config.Id],
+		wg:     &sync.WaitGroup{},
 	}
 	r.log = consensusLog.NewLog(kvstore.CreateStore(config))
 	r.multipaxos = multipaxos.NewMultipaxos(r.log, config, join)
@@ -36,12 +39,13 @@ func (r *Replicant) Start() {
 	r.multipaxos.Start()
 	r.StartExecutorThread()
 	r.StartServer()
+	r.wg.Wait()
 }
 
 func (r *Replicant) Stop() {
 	r.StopServer()
-	r.StopExecutorThread()
 	r.multipaxos.Stop()
+	r.StopExecutorThread()
 }
 
 func (r *Replicant) StartServer() {
@@ -72,6 +76,7 @@ func (r *Replicant) StopServer() {
 
 func (r *Replicant) StartExecutorThread() {
 	logger.Infof("%v starting executor thread\n", r.id)
+	r.wg.Add(1)
 	go r.executorThread()
 }
 
@@ -105,13 +110,14 @@ func (r *Replicant) executorThread() {
 			}
 		}
 	}
+	r.wg.Done()
 }
 
 func (r *Replicant) AcceptClient() {
 	for {
 		conn, err := r.acceptor.Accept()
 		if err != nil {
-			logger.Error(err)
+			logger.Info(err)
 			break
 		}
 		r.clientManager.Start(conn)

@@ -73,4 +73,5 @@ func main() {
 		}
 	}()
 	replicant.Start()
+	logger.Infoln("graceful shutdown")
 }
