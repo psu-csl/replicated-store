@@ -17,7 +17,6 @@ type Client struct {
 	socket     net.Conn
 	multipaxos *multipaxos.Multipaxos
 	manager    *ClientManager
-
 	numPeers   int64
 	nextReqId  int64
 	sampleRate int64

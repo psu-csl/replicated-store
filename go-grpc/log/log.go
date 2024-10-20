@@ -1,13 +1,17 @@
 package log
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/gob"
 	"github.com/golang/protobuf/proto"
 	"github.com/psu-csl/replicated-store/go/kvstore"
 	pb "github.com/psu-csl/replicated-store/go/multipaxos/comm"
 	logger "github.com/sirupsen/logrus"
+	"os"
+	"strconv"
 	"sync"
+	"time"
 )
 
 type Snapshot struct {
@@ -71,6 +75,7 @@ type Log struct {
 	mu                 sync.Mutex
 	cvExecutable       *sync.Cond
 	cvCommittable      *sync.Cond
+	wg                 *sync.WaitGroup
 }
 
 func NewLog(s kvstore.KVStore) *Log {
@@ -82,9 +87,12 @@ func NewLog(s kvstore.KVStore) *Log {
 		lastExecuted:       0,
 		globalLastExecuted: 0,
 		mu:                 sync.Mutex{},
+		wg:                 &sync.WaitGroup{},
 	}
 	l.cvExecutable = sync.NewCond(&l.mu)
 	l.cvCommittable = sync.NewCond(&l.mu)
+	go l.MonitorThread()
+	l.wg.Add(1)
 	return &l
 }
 
@@ -131,6 +139,7 @@ func (l *Log) Stop() {
 	l.running = false
 	l.kvStore.Close()
 	l.cvExecutable.Signal()
+	l.wg.Wait()
 }
 
 func (l *Log) IsExecutable() bool {
@@ -340,6 +349,52 @@ func (l *Log) ResumeSnapshot(snapshot *Snapshot) {
 	l.mu.Unlock()
 
 	l.kvStore.RestoreSnapshot(snapshot.SnapshotData)
+}
+
+func (l *Log) MonitorThread() {
+	var (
+		numLog                 = 0
+		curLastExecuted  int64 = 0
+		curGLE           int64 = 0
+		prevLastExecuted int64 = 0
+		numInflight      int64 = 0
+		numExecuted      int64 = 0
+		inflightStats          = make([]int64, 0)
+		executedStats          = make([]int64, 0)
+	)
+	for l.running {
+		l.mu.Lock()
+		curLastExecuted = l.lastExecuted
+		curGLE = l.globalLastExecuted
+		numLog = len(l.log)
+		l.mu.Unlock()
+
+		numInflight = int64(numLog) - (curLastExecuted - curGLE)
+		numExecuted = curLastExecuted - prevLastExecuted
+		prevLastExecuted = curLastExecuted
+
+		if numInflight > 0 || prevLastExecuted > 0 {
+			inflightStats = append(inflightStats, numInflight)
+			executedStats = append(executedStats, numExecuted)
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	path := time.Now().Format("15:04:05")
+	logger.Infof(path)
+	file, err := os.Create(path + ".dat")
+	defer file.Close()
+	if err != nil {
+		logger.Error(err)
+		return
+	}
+	writer := bufio.NewWriter(file)
+	for i, stat := range inflightStats {
+		writer.WriteString(strconv.Itoa(i) + " " +
+			strconv.FormatInt(stat, 10) + " " +
+			strconv.FormatInt(executedStats[i], 10) + "\n")
+	}
+	writer.Flush()
+	l.wg.Done()
 }
 
 func (l *Log) GetLogStatus() (int, int64, int64, int64, []int64) {

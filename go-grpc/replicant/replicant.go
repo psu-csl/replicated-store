@@ -12,6 +12,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -37,6 +38,7 @@ type Replicant struct {
 	normalCount     int
 	prevMedian      int64
 	prevTail        int64
+	wg              *sync.WaitGroup
 }
 
 func NewReplicant(config config.Config, join bool) *Replicant {
@@ -50,13 +52,11 @@ func NewReplicant(config config.Config, join bool) *Replicant {
 		normalCount:     0,
 		prevMedian:      0,
 		prevTail:        0,
+		wg:              &sync.WaitGroup{},
 	}
 	r.log = consensusLog.NewLog(kvstore.CreateStore(config))
 	r.multipaxos = multipaxos.NewMultipaxos(r.log, config, join)
-	r.clientManager = NewClientManager(r.id, int64(len(config.Peers)),
-		r.multipaxos, r.sampleRate)
-	CLIENT_COUNT = config.ClientCount
-	INSERT_COUNT = config.InsertCount
+	r.clientManager = NewClientManager(r.id, int64(len(config.Peers)), r.multipaxos)
 	return r
 }
 
@@ -65,15 +65,13 @@ func (r *Replicant) Start() {
 	r.multipaxos.Start()
 	r.StartExecutorThread()
 	r.StartServer()
+	r.wg.Wait()
 }
 
-func (r *Replicant) Stop(outputPath string) {
-	if outputPath != "" {
-		r.OutputMap(outputPath)
-	}
+func (r *Replicant) Stop() {
 	r.StopServer()
-	r.StopExecutorThread()
 	r.multipaxos.Stop()
+	r.StopExecutorThread()
 }
 
 func (r *Replicant) StartServer() {
@@ -104,6 +102,7 @@ func (r *Replicant) StopServer() {
 
 func (r *Replicant) StartExecutorThread() {
 	logger.Infof("%v starting executor thread\n", r.id)
+	r.wg.Add(1)
 	go r.executorThread()
 }
 
@@ -150,13 +149,14 @@ func (r *Replicant) executorThread() {
 			}
 		}
 	}
+	r.wg.Done()
 }
 
 func (r *Replicant) AcceptClient() {
 	for {
 		conn, err := r.acceptor.Accept()
 		if err != nil {
-			logger.Error(err)
+			logger.Info(err)
 			break
 		}
 		r.clientManager.Start(conn)

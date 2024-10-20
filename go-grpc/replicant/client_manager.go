@@ -18,14 +18,12 @@ type ClientManager struct {
 
 func NewClientManager(id int64,
 	numPeers int64,
-	mp *multipaxos.Multipaxos,
-	sampleRate int64) *ClientManager {
+	mp *multipaxos.Multipaxos) *ClientManager {
 	cm := &ClientManager{
 		nextId:     id,
 		numPeers:   numPeers,
 		multipaxos: mp,
 		clients:    make(map[int64]*Client),
-		sampleRate: sampleRate,
 	}
 	return cm
 }

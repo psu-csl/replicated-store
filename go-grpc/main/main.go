@@ -18,7 +18,6 @@ func main() {
 	configPath := flag.String("c", "config/config.json", "config path")
 	join := flag.Bool("j", false, "join peer")
 	leaderAddr := flag.String("l", "", "peer address")
-	outputPath := flag.String("o", "", "output path")
 	client_count := flag.Int64("n", 64, "client count")
 	flag.Parse()
 
@@ -64,7 +63,7 @@ func main() {
 	signal.Notify(signalChan, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		<-signalChan
-		replicant.Stop(*outputPath)
+		replicant.Stop()
 	}()
 	statusChan := make(chan os.Signal, 1)
 	signal.Notify(statusChan, syscall.SIGTSTP)
@@ -76,4 +75,5 @@ func main() {
 		}
 	}()
 	replicant.Start()
+	logger.Infoln("graceful shutdown")
 }
