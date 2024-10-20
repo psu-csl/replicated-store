@@ -72,7 +72,6 @@ enum CommandType {
   DEL = 2;
   ADDNODE = 3;
   DELNODE = 4;
-  OVERLOADED = 5;
 }
 
 enum InstanceState {

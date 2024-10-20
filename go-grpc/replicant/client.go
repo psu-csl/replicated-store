@@ -7,7 +7,6 @@ import (
 	"net"
 	"strconv"
 	"strings"
-	"time"
 )
 
 type Client struct {
@@ -17,10 +16,6 @@ type Client struct {
 	socket     net.Conn
 	multipaxos *multipaxos.Multipaxos
 	manager    *ClientManager
-	numPeers   int64
-	nextReqId  int64
-	sampleRate int64
-	latencyMap *Queue
 }
 
 func NewClient(id int64, conn net.Conn, mp *multipaxos.Multipaxos,
@@ -32,10 +27,6 @@ func NewClient(id int64, conn net.Conn, mp *multipaxos.Multipaxos,
 		socket:     conn,
 		multipaxos: mp,
 		manager:    manger,
-		numPeers:   manger.NumPeers(),
-		nextReqId:  id,
-		sampleRate: manger.SampleRate(),
-		latencyMap: NewQueue(QUEUE_SIZE),
 	}
 	return client
 }
@@ -89,11 +80,6 @@ func (c *Client) Read() {
 		}
 
 		command := c.Parse(request)
-		command.ReqId = c.NextRequestId()
-		if command.ReqId%c.sampleRate == 0 {
-			tp := time.Now().UnixNano()
-			c.latencyMap.Append(tp)
-		}
 		if command != nil {
 			result := c.multipaxos.Replicate(command, c.id)
 			if result.Type == multipaxos.Ok {
@@ -118,15 +104,4 @@ func (c *Client) Write(response string) {
 	if err == nil {
 		c.writer.Flush()
 	}
-}
-
-func (c *Client) NextRequestId() int64 {
-	id := c.nextReqId
-	c.nextReqId += CLIENT_COUNT
-	return id
-}
-
-func (c *Client) ComputeLatency(tp int64) int64 {
-	startTP := c.latencyMap.Pop()
-	return tp - startTP
 }

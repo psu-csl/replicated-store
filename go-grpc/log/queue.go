@@ -1,4 +1,4 @@
-package replicant
+package log
 
 import (
 	"sort"

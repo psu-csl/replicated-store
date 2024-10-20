@@ -791,7 +791,6 @@ func (p *Multipaxos) HandoverLeadership() {
 			Type:  pb.CommandType_PUT,
 			Key:   "overloaded",
 			Value: strconv.FormatInt(tp, 10),
-			ReqId: 1,
 		}
 		p.Replicate(&cmd, -1)
 		logger.Errorln("handover leadership due to overloaded")

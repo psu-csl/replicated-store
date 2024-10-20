@@ -1,15 +1,12 @@
 package log
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/gob"
 	"github.com/golang/protobuf/proto"
 	"github.com/psu-csl/replicated-store/go/kvstore"
 	pb "github.com/psu-csl/replicated-store/go/multipaxos/comm"
 	logger "github.com/sirupsen/logrus"
-	"os"
-	"strconv"
 	"sync"
 	"time"
 )
@@ -379,21 +376,6 @@ func (l *Log) MonitorThread() {
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
-	path := time.Now().Format("15:04:05")
-	logger.Infof(path)
-	file, err := os.Create(path + ".dat")
-	defer file.Close()
-	if err != nil {
-		logger.Error(err)
-		return
-	}
-	writer := bufio.NewWriter(file)
-	for i, stat := range inflightStats {
-		writer.WriteString(strconv.Itoa(i) + " " +
-			strconv.FormatInt(stat, 10) + " " +
-			strconv.FormatInt(executedStats[i], 10) + "\n")
-	}
-	writer.Flush()
 	l.wg.Done()
 }
 

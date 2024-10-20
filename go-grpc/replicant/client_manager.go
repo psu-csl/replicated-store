@@ -13,7 +13,6 @@ type ClientManager struct {
 	multipaxos *multipaxos.Multipaxos
 	mu         sync.Mutex
 	clients    map[int64]*Client
-	sampleRate int64
 }
 
 func NewClientManager(id int64,
@@ -81,12 +80,4 @@ func (cm *ClientManager) NumClients() int {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 	return len(cm.clients)
-}
-
-func (cm *ClientManager) SampleRate() int64 {
-	return cm.sampleRate
-}
-
-func (cm *ClientManager) NumPeers() int64 {
-	return cm.numPeers
 }
