@@ -1,4 +1,4 @@
-package log
+package multipaxos
 
 import (
 	"gonum.org/v1/gonum/stat"
@@ -10,7 +10,6 @@ type Queue struct {
 	mu        sync.RWMutex
 	data      []float64
 	capacity  int64
-	nextIndex int64
 	mean      float64
 	threshold float64
 	drift     float64
@@ -22,7 +21,6 @@ func NewQueue(capacity int64, threshold float64, drift float64) *Queue {
 	return &Queue{
 		data:      make([]float64, 0, capacity),
 		capacity:  capacity,
-		nextIndex: 0,
 		mean:      0,
 		threshold: threshold,
 		drift:     drift,
@@ -31,18 +29,17 @@ func NewQueue(capacity int64, threshold float64, drift float64) *Queue {
 	}
 }
 
-func (q *Queue) Add(val int64) float64 {
-	if q.nextIndex < q.capacity {
-		q.data[q.nextIndex] = float64(val)
-		q.nextIndex++
-		if q.nextIndex == q.capacity {
-			stat.Variance(q.data, nil)
-		}
+func (q *Queue) AppendAndCalculate(val int64) float64 {
+	q.data = append(q.data, float64(val))
+	if int64(len(q.data)) == q.capacity {
+		variance := stat.Variance(q.data, nil)
+		q.Clear()
+		return variance
 	}
 	return -1.0
 }
 
-func (q *Queue) Push(val float64) bool {
+func (q *Queue) PushAndUpdate(val float64) int {
 	if int64(len(q.data)) == q.capacity {
 		q.data = q.data[1:]
 	}
@@ -66,10 +63,12 @@ func (q *Queue) Len() int {
 
 func (q *Queue) Clear() {
 	q.data = q.data[:0]
-	q.nextIndex = 0
 }
 
-func (q *Queue) Update(value float64) bool {
+func (q *Queue) Update(value float64) int {
+	if len(q.data) < 4 {
+		return 0
+	}
 	mean := stat.Mean(q.data, nil)
 	deviation := value - mean
 
@@ -78,7 +77,11 @@ func (q *Queue) Update(value float64) bool {
 
 	if q.posVarSum > q.threshold || q.negVarSum > q.threshold {
 		q.posVarSum, q.negVarSum = 0, 0
-		return true
+		if q.posVarSum > q.threshold {
+			return 1
+		} else {
+			return -1
+		}
 	}
-	return false
+	return 0
 }

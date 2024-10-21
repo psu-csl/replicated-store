@@ -46,7 +46,10 @@ type Multipaxos struct {
 	commitThreadRunning  int32
 	joinReady            bool
 
-	OverloadedTP int64
+	OverloadedTime int64
+	singleWindow   *Queue
+	variances      *Queue
+	overloadedFlag int64
 
 	pb.UnimplementedMultiPaxosRPCServer
 }
@@ -71,8 +74,11 @@ func NewMultipaxos(log *Log.Log, config config.Config, join bool) *Multipaxos {
 		prepareThreadRunning: 0,
 		commitThreadRunning:  0,
 		joinReady:            !join,
-		OverloadedTP:         0,
+		OverloadedTime:       0,
 		rpcServer:            nil,
+		singleWindow:         NewQueue(WINDOWSIZE, THRESHOLD, DRIFT),
+		variances:            NewQueue(QUEUESIZE, THRESHOLD, DRIFT),
+		overloadedFlag:       0,
 	}
 	multipaxos.rpcServerRunningCv = sync.NewCond(&multipaxos.mu)
 	multipaxos.cvFollower = sync.NewCond(&multipaxos.mu)
@@ -119,10 +125,10 @@ func (p *Multipaxos) BecomeLeader(newBallot int64, newLastIndex int64) {
 	p.log.SetLastIndex(newLastIndex)
 	atomic.StoreInt64(&p.ballot, newBallot)
 	if p.commitReceived > 1 {
-		atomic.StoreInt64(&p.OverloadedTP, p.commitReceived)
+		atomic.StoreInt64(&p.OverloadedTime, p.commitReceived)
 		p.commitReceived = 0
 	}
-	p.cvLeader.Signal()
+	p.cvLeader.Broadcast()
 }
 
 func (p *Multipaxos) BecomeFollower(newBallot int64) {
@@ -140,6 +146,7 @@ func (p *Multipaxos) BecomeFollower(newBallot int64) {
 		if p.numElections > p.frequencyThreshold {
 			p.commitInterval *= 2
 		}
+		p.overloadedFlag = 0
 		p.cvFollower.Signal()
 	}
 	atomic.StoreInt64(&p.ballot, newBallot)
@@ -169,6 +176,7 @@ func (p *Multipaxos) Start() {
 	p.StartPrepareThread()
 	p.StartCommitThread()
 	p.StartRPCServer()
+	go p.MonitorThread()
 }
 
 func (p *Multipaxos) Stop() {
@@ -247,7 +255,7 @@ func (p *Multipaxos) StopCommitThread() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	atomic.StoreInt32(&p.commitThreadRunning, 0)
-	p.cvLeader.Signal()
+	p.cvLeader.Broadcast()
 }
 
 func (p *Multipaxos) Replicate(command *pb.Command, clientId int64) Result {
@@ -753,7 +761,7 @@ func (p *Multipaxos) ResumeSnapshot(stream pb.MultiPaxosRPC_ResumeSnapshotServer
 			p.log.ResumeSnapshot(snapshot)
 			p.mu.Lock()
 			p.joinReady = true
-			p.cvLeader.Signal()
+			p.cvLeader.Broadcast()
 			p.mu.Unlock()
 			go p.RequestInstanceGap()
 			return stream.SendAndClose(&pb.SnapshotResponse{Done: true})
@@ -784,22 +792,70 @@ func (p *Multipaxos) InstancesGap(request *pb.InstanceRequest,
 	return nil
 }
 
+func (p *Multipaxos) MonitorThread() {
+	var (
+		numLog                 = 0
+		curLastExecuted  int64 = 0
+		curGLE           int64 = 0
+		prevLastExecuted int64 = 0
+		numInflight      int64 = 0
+		//numExecuted      int64 = 0
+	)
+	for atomic.LoadInt32(&p.commitThreadRunning) == 1 {
+		p.mu.Lock()
+		for atomic.LoadInt32(&p.commitThreadRunning) == 1 && !IsLeader(p.Ballot(), p.id) {
+			p.cvLeader.Wait()
+		}
+		p.mu.Unlock()
+		for IsLeader(p.Ballot(), p.id) {
+			curLastExecuted, curGLE, numLog = p.log.GetIndexes()
+			numInflight = int64(numLog) - (curLastExecuted - curGLE)
+			//numExecuted = curLastExecuted - prevLastExecuted
+			prevLastExecuted = curLastExecuted
+
+			if numInflight > 0 || prevLastExecuted > 0 {
+				variance := p.singleWindow.AppendAndCalculate(numInflight)
+				if variance > 0.0 {
+					isChangePoint := p.variances.PushAndUpdate(variance)
+					if isChangePoint == 1 && p.overloadedFlag == 0 {
+						logger.Errorln("change point signals")
+						p.overloadedFlag = 1
+					} else if isChangePoint == -1 {
+						if p.ResetLeadershipStatus() {
+							p.overloadedFlag = 0
+						}
+					} else if p.overloadedFlag == 1 {
+						p.HandoverLeadership()
+						p.overloadedFlag = 2
+					}
+				}
+			}
+			time.Sleep(500 * time.Millisecond)
+		}
+		p.singleWindow.Clear()
+		p.variances.Clear()
+	}
+}
+
 func (p *Multipaxos) HandoverLeadership() {
-	if atomic.LoadInt64(&p.OverloadedTP) == 0 {
+	if atomic.LoadInt64(&p.OverloadedTime) == 0 {
 		tp := time.Now().Unix()
 		cmd := pb.Command{
 			Type:  pb.CommandType_PUT,
 			Key:   "overloaded",
 			Value: strconv.FormatInt(tp, 10),
 		}
-		p.Replicate(&cmd, -1)
+		result := Result{Type: Retry}
+		for result.Type == Retry {
+			result = p.Replicate(&cmd, -1)
+		}
 		logger.Errorln("handover leadership due to overloaded")
 	}
 }
 
 func (p *Multipaxos) ResetLeadershipStatus() bool {
-	if time.Now().Unix()-atomic.LoadInt64(&p.OverloadedTP) > 30 {
-		atomic.StoreInt64(&p.OverloadedTP, 0)
+	if time.Now().Unix()-atomic.LoadInt64(&p.OverloadedTime) > 30 {
+		atomic.StoreInt64(&p.OverloadedTime, 0)
 		logger.Errorln("reset overloaded status")
 		return true
 	}

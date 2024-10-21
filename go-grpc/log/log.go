@@ -8,14 +8,6 @@ import (
 	pb "github.com/psu-csl/replicated-store/go/multipaxos/comm"
 	logger "github.com/sirupsen/logrus"
 	"sync"
-	"time"
-)
-
-var (
-	WINDOWSIZE int64 = 50
-	QUEUESIZE  int64 = 60
-	THRESHOLD        = 5000.0
-	DRIFT            = 100.0
 )
 
 type Snapshot struct {
@@ -79,10 +71,6 @@ type Log struct {
 	mu                 sync.Mutex
 	cvExecutable       *sync.Cond
 	cvCommittable      *sync.Cond
-	wg                 *sync.WaitGroup
-
-	singleWindow *Queue
-	variances    *Queue
 }
 
 func NewLog(s kvstore.KVStore) *Log {
@@ -94,14 +82,9 @@ func NewLog(s kvstore.KVStore) *Log {
 		lastExecuted:       0,
 		globalLastExecuted: 0,
 		mu:                 sync.Mutex{},
-		wg:                 &sync.WaitGroup{},
-		singleWindow:       NewQueue(WINDOWSIZE, THRESHOLD, DRIFT),
-		variances:          NewQueue(QUEUESIZE, THRESHOLD, DRIFT),
 	}
 	l.cvExecutable = sync.NewCond(&l.mu)
 	l.cvCommittable = sync.NewCond(&l.mu)
-	go l.MonitorThread()
-	l.wg.Add(1)
 	return &l
 }
 
@@ -148,7 +131,6 @@ func (l *Log) Stop() {
 	l.running = false
 	l.kvStore.Close()
 	l.cvExecutable.Signal()
-	l.wg.Wait()
 }
 
 func (l *Log) IsExecutable() bool {
@@ -360,38 +342,10 @@ func (l *Log) ResumeSnapshot(snapshot *Snapshot) {
 	l.kvStore.RestoreSnapshot(snapshot.SnapshotData)
 }
 
-func (l *Log) MonitorThread() {
-	var (
-		numLog                 = 0
-		curLastExecuted  int64 = 0
-		curGLE           int64 = 0
-		prevLastExecuted int64 = 0
-		numInflight      int64 = 0
-		//numExecuted      int64 = 0
-	)
-	for l.running {
-		l.mu.Lock()
-		curLastExecuted = l.lastExecuted
-		curGLE = l.globalLastExecuted
-		numLog = len(l.log)
-		l.mu.Unlock()
-
-		numInflight = int64(numLog) - (curLastExecuted - curGLE)
-		//numExecuted = curLastExecuted - prevLastExecuted
-		prevLastExecuted = curLastExecuted
-
-		if numInflight > 0 || prevLastExecuted > 0 {
-			variance := l.singleWindow.Add(numInflight)
-			if variance > 0.0 {
-				if l.variances.Push(variance) {
-					logger.Errorln("change point signals")
-					//change point signal
-				}
-			}
-		}
-		time.Sleep(500 * time.Millisecond)
-	}
-	l.wg.Done()
+func (l *Log) GetIndexes() (int64, int64, int) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.lastIndex, l.globalLastExecuted, len(l.log)
 }
 
 func (l *Log) GetLogStatus() (int, int64, int64, int64, []int64) {

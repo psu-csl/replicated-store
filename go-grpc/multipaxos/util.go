@@ -12,6 +12,13 @@ const (
 	ChunkSize            = 64 * 1024
 )
 
+var (
+	WINDOWSIZE int64 = 20
+	QUEUESIZE  int64 = 36
+	THRESHOLD        = 5000.0
+	DRIFT            = 100.0
+)
+
 type RpcPeer struct {
 	Id   int64
 	Stub pb.MultiPaxosRPCClient
