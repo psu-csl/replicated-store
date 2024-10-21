@@ -1,78 +1,84 @@
 package log
 
 import (
-	"sort"
+	"gonum.org/v1/gonum/stat"
+	"math"
 	"sync"
 )
 
 type Queue struct {
-	mu       sync.RWMutex
-	data     []int64
-	capacity int
+	mu        sync.RWMutex
+	data      []float64
+	capacity  int64
+	nextIndex int64
+	mean      float64
+	threshold float64
+	drift     float64
+	posVarSum float64
+	negVarSum float64
 }
 
-func NewQueue(capacity int) *Queue {
+func NewQueue(capacity int64, threshold float64, drift float64) *Queue {
 	return &Queue{
-		data:     make([]int64, 0, capacity),
-		capacity: capacity,
+		data:      make([]float64, 0, capacity),
+		capacity:  capacity,
+		nextIndex: 0,
+		mean:      0,
+		threshold: threshold,
+		drift:     drift,
+		posVarSum: 0,
+		negVarSum: 0,
 	}
 }
 
-func (q *Queue) Append(val int64) {
-	q.mu.Lock()
-	defer q.mu.Unlock()
+func (q *Queue) Add(val int64) float64 {
+	if q.nextIndex < q.capacity {
+		q.data[q.nextIndex] = float64(val)
+		q.nextIndex++
+		if q.nextIndex == q.capacity {
+			stat.Variance(q.data, nil)
+		}
+	}
+	return -1.0
+}
 
-	if len(q.data) == q.capacity {
+func (q *Queue) Push(val float64) bool {
+	if int64(len(q.data)) == q.capacity {
 		q.data = q.data[1:]
 	}
 	q.data = append(q.data, val)
+	return q.Update(val)
 }
 
-func (q *Queue) Pop() int64 {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-
+func (q *Queue) Pop() float64 {
 	val := q.data[0]
 	q.data = q.data[1:]
 	return val
 }
 
-func (q *Queue) GetData() []int64 {
+func (q *Queue) GetData() []float64 {
 	return q.data
 }
 
 func (q *Queue) Len() int {
-	q.mu.RLock()
-	defer q.mu.RUnlock()
 	return len(q.data)
 }
 
 func (q *Queue) Clear() {
-	q.mu.Lock()
-	defer q.mu.Unlock()
 	q.data = q.data[:0]
+	q.nextIndex = 0
 }
 
-func (q *Queue) Stats(percentiles ...float32) []int64 {
-	q.mu.RLock()
-	dataSize := len(q.data)
-	data := make([]int64, dataSize, dataSize)
-	copy(data, q.data)
-	q.mu.RUnlock()
+func (q *Queue) Update(value float64) bool {
+	mean := stat.Mean(q.data, nil)
+	deviation := value - mean
 
-	sort.Slice(data, func(i, j int) bool {
-		return data[i] < data[j]
-	})
+	q.posVarSum = math.Max(0, q.posVarSum+deviation-q.drift)
+	q.negVarSum = math.Max(0, q.negVarSum-deviation-q.drift)
 
-	length := len(percentiles)
-	results := make([]int64, length, length)
-	for i, p := range percentiles {
-		index := int((p / 100) * float32(dataSize))
-		if index >= dataSize-1 {
-			results[i] = data[dataSize-1]
-		} else {
-			results[i] = data[index]
-		}
+	if q.posVarSum > q.threshold || q.negVarSum > q.threshold {
+		q.posVarSum, q.negVarSum = 0, 0
+		return true
 	}
-	return results
+	return false
 }

@@ -11,6 +11,13 @@ import (
 	"time"
 )
 
+var (
+	WINDOWSIZE int64 = 50
+	QUEUESIZE  int64 = 60
+	THRESHOLD        = 5000.0
+	DRIFT            = 100.0
+)
+
 type Snapshot struct {
 	LastIncludedIndex int64
 	SnapshotData      []byte
@@ -73,6 +80,9 @@ type Log struct {
 	cvExecutable       *sync.Cond
 	cvCommittable      *sync.Cond
 	wg                 *sync.WaitGroup
+
+	singleWindow *Queue
+	variances    *Queue
 }
 
 func NewLog(s kvstore.KVStore) *Log {
@@ -85,6 +95,8 @@ func NewLog(s kvstore.KVStore) *Log {
 		globalLastExecuted: 0,
 		mu:                 sync.Mutex{},
 		wg:                 &sync.WaitGroup{},
+		singleWindow:       NewQueue(WINDOWSIZE, THRESHOLD, DRIFT),
+		variances:          NewQueue(QUEUESIZE, THRESHOLD, DRIFT),
 	}
 	l.cvExecutable = sync.NewCond(&l.mu)
 	l.cvCommittable = sync.NewCond(&l.mu)
@@ -355,9 +367,7 @@ func (l *Log) MonitorThread() {
 		curGLE           int64 = 0
 		prevLastExecuted int64 = 0
 		numInflight      int64 = 0
-		numExecuted      int64 = 0
-		inflightStats          = make([]int64, 0)
-		executedStats          = make([]int64, 0)
+		//numExecuted      int64 = 0
 	)
 	for l.running {
 		l.mu.Lock()
@@ -367,12 +377,17 @@ func (l *Log) MonitorThread() {
 		l.mu.Unlock()
 
 		numInflight = int64(numLog) - (curLastExecuted - curGLE)
-		numExecuted = curLastExecuted - prevLastExecuted
+		//numExecuted = curLastExecuted - prevLastExecuted
 		prevLastExecuted = curLastExecuted
 
 		if numInflight > 0 || prevLastExecuted > 0 {
-			inflightStats = append(inflightStats, numInflight)
-			executedStats = append(executedStats, numExecuted)
+			variance := l.singleWindow.Add(numInflight)
+			if variance > 0.0 {
+				if l.variances.Push(variance) {
+					logger.Errorln("change point signals")
+					//change point signal
+				}
+			}
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
