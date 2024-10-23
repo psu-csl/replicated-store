@@ -345,7 +345,7 @@ func (l *Log) ResumeSnapshot(snapshot *Snapshot) {
 func (l *Log) GetIndexes() (int64, int64, int) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	return l.lastIndex, l.globalLastExecuted, len(l.log)
+	return l.lastExecuted, l.globalLastExecuted, len(l.log)
 }
 
 func (l *Log) GetLogStatus() (int, int64, int64, int64, []int64) {
