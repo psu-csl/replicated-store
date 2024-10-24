@@ -2,37 +2,17 @@ package multipaxos
 
 import (
 	"gonum.org/v1/gonum/stat"
-	"math"
-	"sync"
 )
 
 type Queue struct {
-	mu            sync.RWMutex
-	data          []float64
-	capacity      int64
-	mean          float64
-	upThreshold   float64
-	downThreshold float64
-	drift         float64
-	posVarSum     float64
-	negVarSum     float64
+	data     []float64
+	capacity int64
 }
 
-func NewQueue(
-	capacity int64,
-	upThreshold float64,
-	downThreshold float64,
-	drift float64,
-) *Queue {
+func NewQueue(capacity int64) *Queue {
 	return &Queue{
-		data:          make([]float64, 0, capacity),
-		capacity:      capacity,
-		mean:          0,
-		upThreshold:   upThreshold,
-		downThreshold: downThreshold,
-		drift:         drift,
-		posVarSum:     0,
-		negVarSum:     0,
+		data:     make([]float64, 0, capacity),
+		capacity: capacity,
 	}
 }
 
@@ -46,12 +26,11 @@ func (q *Queue) AppendAndCalculate(val int64) float64 {
 	return -1.0
 }
 
-func (q *Queue) PushAndUpdate(val float64) int {
+func (q *Queue) Push(val float64) {
 	if int64(len(q.data)) == q.capacity {
 		q.data = q.data[1:]
 	}
 	q.data = append(q.data, val)
-	return q.Update(val)
 }
 
 func (q *Queue) Pop() float64 {
@@ -70,27 +49,4 @@ func (q *Queue) Len() int {
 
 func (q *Queue) Clear() {
 	q.data = q.data[:0]
-}
-
-func (q *Queue) Update(value float64) int {
-	if len(q.data) < 4 {
-		return 0
-	}
-	mean := stat.Mean(q.data, nil)
-	deviation := value - mean
-
-	q.posVarSum = math.Max(0, q.posVarSum+deviation-q.drift)
-	q.negVarSum = math.Max(0, q.negVarSum-deviation-q.drift)
-
-	if q.posVarSum > q.upThreshold || q.negVarSum > q.downThreshold {
-		flag := 0
-		if q.posVarSum > q.upThreshold {
-			flag = 1
-		} else {
-			flag = -1
-		}
-		q.posVarSum, q.negVarSum = 0, 0
-		return flag
-	}
-	return 0
 }

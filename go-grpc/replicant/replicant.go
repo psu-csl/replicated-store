@@ -108,8 +108,11 @@ func (r *Replicant) executorThread() {
 			if client != nil {
 				client.Write(result.Value)
 			} else if instance.ClientId == -1 {
-				tp, _ := strconv.ParseInt(instance.Command.Value, 10, 64)
-				r.multipaxos.TriggerElection(instance.GetBallot(), tp)
+				values := strings.Split(instance.Command.Value, " ")
+				posVarSum, _ := strconv.ParseFloat(values[0], 64)
+				negVarSum, _ := strconv.ParseFloat(values[1], 64)
+				r.multipaxos.TriggerElection(instance.GetBallot(), posVarSum,
+					negVarSum)
 			}
 		}
 	}
@@ -132,5 +135,5 @@ func (r *Replicant) Monitor() {
 }
 
 func (r *Replicant) TriggerElection() {
-	r.multipaxos.TriggerElection(1000, 2)
+	r.multipaxos.TriggerElection(1000, 0, 0)
 }

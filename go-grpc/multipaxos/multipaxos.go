@@ -46,10 +46,11 @@ type Multipaxos struct {
 	commitThreadRunning  int32
 	joinReady            bool
 
-	OverloadedTime int64
-	singleWindow   *Queue
-	variances      *Queue
-	overloadedFlag int64
+	OverloadedTime     int64
+	singleWindow       *Queue
+	detector           *OverloadedDetector
+	overloadedWorkload float64
+	overloadedFlag     int64
 
 	pb.UnimplementedMultiPaxosRPCServer
 }
@@ -76,11 +77,11 @@ func NewMultipaxos(log *Log.Log, config config.Config, join bool) *Multipaxos {
 		joinReady:            !join,
 		OverloadedTime:       0,
 		rpcServer:            nil,
-		singleWindow: NewQueue(config.WindowSize, config.UpThreshold,
+		singleWindow:         NewQueue(config.WindowSize),
+		detector: NewOverloadedDetector(config.QueueSize, config.UpThreshold,
 			config.DownThreshold, DRIFT),
-		variances: NewQueue(config.QueueSize, config.UpThreshold,
-			config.DownThreshold, DRIFT),
-		overloadedFlag: 0,
+		overloadedWorkload: 0,
+		overloadedFlag:     0,
 	}
 	multipaxos.rpcServerRunningCv = sync.NewCond(&multipaxos.mu)
 	multipaxos.cvFollower = sync.NewCond(&multipaxos.mu)
@@ -801,7 +802,7 @@ func (p *Multipaxos) MonitorThread() {
 		curGLE           int64 = 0
 		prevLastExecuted int64 = 0
 		numInflight      int64 = 0
-		//numExecuted      int64 = 0
+		numExecuted      int64 = 0
 	)
 	for atomic.LoadInt32(&p.commitThreadRunning) == 1 {
 		p.mu.Lock()
@@ -812,13 +813,15 @@ func (p *Multipaxos) MonitorThread() {
 		for IsLeader(p.Ballot(), p.id) {
 			curLastExecuted, curGLE, numLog = p.log.GetIndexes()
 			numInflight = int64(numLog) - (curLastExecuted - curGLE)
-			//numExecuted = curLastExecuted - prevLastExecuted
+			numExecuted = curLastExecuted - prevLastExecuted
 			prevLastExecuted = curLastExecuted
 
 			if numInflight > 0 || prevLastExecuted > 0 {
 				variance := p.singleWindow.AppendAndCalculate(numInflight)
 				if variance > 0.0 {
-					isChangePoint := p.variances.PushAndUpdate(variance)
+					logger.Errorln(variance, numInflight, numExecuted)
+					isChangePoint, posVar, negVar := p.detector.Push(variance,
+						float64(numInflight), float64(numExecuted))
 					if isChangePoint == 1 && p.overloadedFlag == 0 {
 						logger.Errorln("change point signals")
 						p.overloadedFlag = 1
@@ -827,7 +830,7 @@ func (p *Multipaxos) MonitorThread() {
 							p.overloadedFlag = 0
 						}
 					} else if p.overloadedFlag == 1 {
-						p.HandoverLeadership()
+						p.HandoverLeadership(posVar, negVar)
 						p.overloadedFlag = 2
 					}
 				}
@@ -835,17 +838,18 @@ func (p *Multipaxos) MonitorThread() {
 			time.Sleep(500 * time.Millisecond)
 		}
 		p.singleWindow.Clear()
-		p.variances.Clear()
+		p.detector.Clear()
 	}
 }
 
-func (p *Multipaxos) HandoverLeadership() {
+func (p *Multipaxos) HandoverLeadership(posVarSum, negVarSum float64) {
 	if atomic.LoadInt64(&p.OverloadedTime) == 0 {
-		tp := time.Now().Unix()
+		value := strconv.FormatFloat(posVarSum, 'f', 3, 64) +
+			" " + strconv.FormatFloat(negVarSum, 'f', 3, 64)
 		cmd := pb.Command{
 			Type:  pb.CommandType_PUT,
 			Key:   "overloaded",
-			Value: strconv.FormatInt(tp, 10),
+			Value: value,
 		}
 		result := Result{Type: Retry}
 		for result.Type == Retry {
@@ -857,7 +861,7 @@ func (p *Multipaxos) HandoverLeadership() {
 
 func (p *Multipaxos) ResetOverloadedStatus() bool {
 	overloadedTime := atomic.LoadInt64(&p.OverloadedTime)
-	if overloadedTime != 0 && time.Now().Unix()-overloadedTime > 20 {
+	if overloadedTime != 0 && time.Now().Unix()-overloadedTime > 10 {
 		atomic.StoreInt64(&p.OverloadedTime, 0)
 		logger.Errorln("reset overloaded status")
 		return true
@@ -872,8 +876,14 @@ func (p *Multipaxos) Monitor() {
 		length, lastIndex, lastExecuted, gle, indice, p.rpcPeers.List)
 }
 
-func (p *Multipaxos) TriggerElection(ballot int64, tp int64) {
+func (p *Multipaxos) TriggerElection(
+	ballot int64,
+	posVarSum float64,
+	negVarSum float64,
+) {
 	if !IsLeader(p.Ballot(), p.id) && ballot >= p.Ballot() {
-		atomic.StoreInt64(&p.commitReceived, tp)
+		timestamp := time.Now().Unix()
+		atomic.StoreInt64(&p.commitReceived, timestamp)
+		p.detector.SetVarSum(posVarSum, negVarSum)
 	}
 }
