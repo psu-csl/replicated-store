@@ -76,9 +76,11 @@ func NewMultipaxos(log *Log.Log, config config.Config, join bool) *Multipaxos {
 		joinReady:            !join,
 		OverloadedTime:       0,
 		rpcServer:            nil,
-		singleWindow:         NewQueue(WINDOWSIZE, THRESHOLD, DRIFT),
-		variances:            NewQueue(QUEUESIZE, THRESHOLD, DRIFT),
-		overloadedFlag:       0,
+		singleWindow: NewQueue(config.WindowSize, config.UpThreshold,
+			config.DownThreshold, DRIFT),
+		variances: NewQueue(config.QueueSize, config.UpThreshold,
+			config.DownThreshold, DRIFT),
+		overloadedFlag: 0,
 	}
 	multipaxos.rpcServerRunningCv = sync.NewCond(&multipaxos.mu)
 	multipaxos.cvFollower = sync.NewCond(&multipaxos.mu)

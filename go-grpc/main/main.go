@@ -18,7 +18,6 @@ func main() {
 	configPath := flag.String("c", "config/config.json", "config path")
 	join := flag.Bool("j", false, "join peer")
 	leaderAddr := flag.String("l", "", "peer address")
-	clientCount := flag.Int64("n", 64, "client count")
 	flag.Parse()
 
 	if *debug {
@@ -31,7 +30,6 @@ func main() {
 	if err != nil {
 		logger.Panic(err)
 	}
-	cfg.ClientCount = *clientCount
 
 	replicant := replicant.NewReplicant(cfg, *join)
 

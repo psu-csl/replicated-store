@@ -7,18 +7,17 @@ import (
 )
 
 type Config struct {
-	Id              int64
-	Peers           []string `json:"peers"`
-	CommitInterval  int64    `json:"commit_interval"`
-	Store           string   `json:"store"`
-	DbPath          string   `json:"db_path"`
-	ElectionLimit   int64    `json:"election_limit"`
-	Threshold       int64    `json:"threshold"`
-	SampleInterval  int64    `json:"sample_interval"`
-	ClientCount     int64    `json:"client_count"`
-	InsertCount     int64    `json:"insert_count"`
-	MedianThreshold int64    `json:"median_threshold"`
-	TailThreshold   float64  `json:"tail_threshold"`
+	Id             int64
+	Peers          []string `json:"peers"`
+	CommitInterval int64    `json:"commit_interval"`
+	Store          string   `json:"store"`
+	DbPath         string   `json:"db_path"`
+	ElectionLimit  int64    `json:"election_limit"`
+	Threshold      int64    `json:"threshold"`
+	WindowSize     int64    `json:"window_size"`
+	QueueSize      int64    `json:"queue_size"`
+	UpThreshold    float64  `json:"up_threshold"`
+	DownThreshold  float64  `json:"down_threshold"`
 }
 
 func DefaultConfig(id int64, n int) Config {

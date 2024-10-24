@@ -10,9 +10,8 @@
   "db_path": "/tmp/testdb",
   "election_limit": 3000,
   "threshold": 10,
-  "sample_interval": 10000,
-  "client_count": 64,
-  "insert_count": 1000000,
-  "median_threshold": 10,
-  "tail_threshold": 1.5
+  "window_size": 15,
+  "queue_size": 8,
+  "up_threshold": 3000.0,
+  "down_threshold": 30000.0
 }

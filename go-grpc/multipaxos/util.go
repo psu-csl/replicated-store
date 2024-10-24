@@ -13,10 +13,7 @@ const (
 )
 
 var (
-	WINDOWSIZE int64 = 10
-	QUEUESIZE  int64 = 36
-	THRESHOLD        = 5000.0
-	DRIFT            = 100.0
+	DRIFT = 100.0
 )
 
 type RpcPeer struct {

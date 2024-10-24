@@ -7,25 +7,32 @@ import (
 )
 
 type Queue struct {
-	mu        sync.RWMutex
-	data      []float64
-	capacity  int64
-	mean      float64
-	threshold float64
-	drift     float64
-	posVarSum float64
-	negVarSum float64
+	mu            sync.RWMutex
+	data          []float64
+	capacity      int64
+	mean          float64
+	upThreshold   float64
+	downThreshold float64
+	drift         float64
+	posVarSum     float64
+	negVarSum     float64
 }
 
-func NewQueue(capacity int64, threshold float64, drift float64) *Queue {
+func NewQueue(
+	capacity int64,
+	upThreshold float64,
+	downThreshold float64,
+	drift float64,
+) *Queue {
 	return &Queue{
-		data:      make([]float64, 0, capacity),
-		capacity:  capacity,
-		mean:      0,
-		threshold: threshold,
-		drift:     drift,
-		posVarSum: 0,
-		negVarSum: 0,
+		data:          make([]float64, 0, capacity),
+		capacity:      capacity,
+		mean:          0,
+		upThreshold:   upThreshold,
+		downThreshold: downThreshold,
+		drift:         drift,
+		posVarSum:     0,
+		negVarSum:     0,
 	}
 }
 
@@ -75,13 +82,15 @@ func (q *Queue) Update(value float64) int {
 	q.posVarSum = math.Max(0, q.posVarSum+deviation-q.drift)
 	q.negVarSum = math.Max(0, q.negVarSum-deviation-q.drift)
 
-	if q.posVarSum > q.threshold || q.negVarSum > q.threshold {
-		q.posVarSum, q.negVarSum = 0, 0
-		if q.posVarSum > q.threshold {
-			return 1
+	if q.posVarSum > q.upThreshold || q.negVarSum > q.downThreshold {
+		flag := 0
+		if q.posVarSum > q.upThreshold {
+			flag = 1
 		} else {
-			return -1
+			flag = -1
 		}
+		q.posVarSum, q.negVarSum = 0, 0
+		return flag
 	}
 	return 0
 }
