@@ -821,7 +821,7 @@ func (p *Multipaxos) MonitorThread() {
 						logger.Errorln("change point signals")
 						p.overloadedFlag = 1
 					} else if isChangePoint == -1 {
-						if p.ResetLeadershipStatus() {
+						if p.ResetOverloadedStatus() {
 							p.overloadedFlag = 0
 						}
 					} else if p.overloadedFlag == 1 {
@@ -853,8 +853,9 @@ func (p *Multipaxos) HandoverLeadership() {
 	}
 }
 
-func (p *Multipaxos) ResetLeadershipStatus() bool {
-	if time.Now().Unix()-atomic.LoadInt64(&p.OverloadedTime) > 30 {
+func (p *Multipaxos) ResetOverloadedStatus() bool {
+	overloadedTime := atomic.LoadInt64(&p.OverloadedTime)
+	if overloadedTime != 0 && time.Now().Unix()-overloadedTime > 20 {
 		atomic.StoreInt64(&p.OverloadedTime, 0)
 		logger.Errorln("reset overloaded status")
 		return true
