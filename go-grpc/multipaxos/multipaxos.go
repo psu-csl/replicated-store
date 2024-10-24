@@ -520,7 +520,7 @@ func (p *Multipaxos) Replay(ballot int64, lastIndex int64) {
 
 	request := pb.InstanceRequest{
 		LastIndex:    lastIndex,
-		LastExecuted: p.log.GlobalLastExecuted(),
+		LastExecuted: p.log.LastExecuted(),
 		Sender:       p.id,
 	}
 
@@ -574,7 +574,7 @@ func (p *Multipaxos) Replay(ballot int64, lastIndex int64) {
 				Type: pb.CommandType_GET,
 				Key:  "1",
 			}
-			clientId = -1
+			clientId = -2
 		}
 		go func(index int64, cmd *pb.Command, clientId int64) {
 			r := p.RunAcceptPhase(ballot, index, cmd, clientId)
@@ -819,7 +819,6 @@ func (p *Multipaxos) MonitorThread() {
 			if numInflight > 0 || prevLastExecuted > 0 {
 				variance := p.singleWindow.AppendAndCalculate(numInflight)
 				if variance > 0.0 {
-					logger.Errorln(variance, numInflight, numExecuted)
 					isChangePoint, posVar, negVar := p.detector.Push(variance,
 						float64(numInflight), float64(numExecuted))
 					if isChangePoint == 1 && p.overloadedFlag == 0 {
