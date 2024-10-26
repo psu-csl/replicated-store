@@ -112,18 +112,20 @@ func NewCommitState(minLastExecuted int64) *CommitState {
 }
 
 type ReplayState struct {
-	NumRpcs int
-	NumOks  int
-	Log     map[int64]*pb.Instance
-	Mu      sync.Mutex
-	Cv      *sync.Cond
+	NumRpcs      int
+	NumOks       int
+	Log          map[int64]*pb.Instance
+	MaxLastIndex int64
+	Mu           sync.Mutex
+	Cv           *sync.Cond
 }
 
 func NewReplayState() *ReplayState {
 	replayState := &ReplayState{
-		NumRpcs: 1,
-		NumOks:  1,
-		Log:     make(map[int64]*pb.Instance),
+		NumRpcs:      1,
+		NumOks:       1,
+		Log:          make(map[int64]*pb.Instance),
+		MaxLastIndex: 0,
 	}
 	replayState.Cv = sync.NewCond(&replayState.Mu)
 	return replayState

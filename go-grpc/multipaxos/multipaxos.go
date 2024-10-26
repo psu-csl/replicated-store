@@ -517,10 +517,12 @@ func (p *Multipaxos) RunCommitPhase(ballot int64, globalLastExecuted int64) int6
 func (p *Multipaxos) Replay(ballot int64, lastIndex int64) {
 	state := NewReplayState()
 	state.Log = p.log.GetLog()
+	state.MaxLastIndex = lastIndex
 
 	request := pb.InstanceRequest{
-		LastIndex:    lastIndex,
+		LastIndex:    -1,
 		LastExecuted: p.log.LastExecuted(),
+		Ballot:       ballot,
 		Sender:       p.id,
 	}
 
@@ -533,24 +535,28 @@ func (p *Multipaxos) Replay(ballot int64, lastIndex int64) {
 		go func(peer *RpcPeer) {
 			ctx := context.Background()
 			stream, err := peer.Stub.InstancesGap(ctx, &request)
+			state.NumRpcs += 1
 			if err != nil {
 				logger.Infoln(err)
+				state.Cv.Signal()
 				return
 			}
-			state.NumRpcs += 1
-			state.NumOks += 1
 			for {
 				instance, err := stream.Recv()
 				if err == io.EOF {
 					break
-				} else if err != nil {
+				} else if err != nil || !IsLeader(p.Ballot(), p.id) {
 					logger.Error(err)
 					break
+				}
+				if instance.GetIndex() > state.MaxLastIndex {
+					state.MaxLastIndex = instance.GetIndex()
 				}
 				state.Mu.Lock()
 				Log.Insert(state.Log, instance)
 				state.Mu.Unlock()
 			}
+			state.NumOks += 1
 			state.Cv.Signal()
 		}(peer)
 	}
@@ -558,11 +564,11 @@ func (p *Multipaxos) Replay(ballot int64, lastIndex int64) {
 
 	state.Mu.Lock()
 	defer state.Mu.Unlock()
-	for state.NumOks <= numPeers/2 && state.NumRpcs != numPeers {
+	for state.NumOks < numPeers {
 		state.Cv.Wait()
 	}
 
-	for index := request.LastExecuted + 1; index <= request.LastIndex; index++ {
+	for index := request.LastExecuted + 1; index <= state.MaxLastIndex; index++ {
 		instance, ok := state.Log[index]
 		var cmd *pb.Command
 		var clientId int64
@@ -582,9 +588,6 @@ func (p *Multipaxos) Replay(ballot int64, lastIndex int64) {
 			for r.Type == Retry {
 				r = p.RunAcceptPhase(ballot, index, cmd, clientId)
 			}
-			if r.Type == SomeElseLeader {
-				return
-			}
 		}(index, cmd, clientId)
 	}
 }
@@ -594,6 +597,7 @@ func (p *Multipaxos) RequestInstanceGap() {
 	request := pb.InstanceRequest{
 		LastIndex:    p.log.LastIndex(),
 		LastExecuted: p.log.LastExecuted(),
+		Ballot:       p.Ballot(),
 		Sender:       p.id,
 	}
 	if request.LastIndex == request.LastExecuted {
