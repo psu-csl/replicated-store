@@ -32,6 +32,6 @@ http_archive(
 
 new_local_repository(
     name = "librocksdb",
-    path = "/home/ubuntu/rocksdb-7.7.3",
+    path = "/home/ubuntu/rocksdb",
     build_file = "dependency/BUILD",
 )

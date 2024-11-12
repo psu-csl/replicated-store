@@ -31,8 +31,9 @@ using multipaxos::PrepareResponse;
 using multipaxos::AcceptRequest;
 using multipaxos::AcceptResponse;
 
-MultiPaxos::MultiPaxos(Log* log, json const& config)
+MultiPaxos::MultiPaxos(Log* log, json const& config, asio::io_context* io_context)
     : ballot_(kMaxNumPeers),
+      io_context_(io_context),
       log_(log),
       id_(config["id"]),
       commit_received_(false),
@@ -198,7 +199,7 @@ MultiPaxos::RunPreparePhase(int64_t ballot) {
     if (peer.id_ == id_) {
       continue;
     }
-    asio::post(thread_pool_, [this, state, &peer, request] {
+    asio::co_spawn(*io_context_, [this, state, &peer, request]() -> asio::awaitable<void> {
       ClientContext context;
       PrepareResponse response;
       Status s = peer.stub_->Prepare(&context, std::move(request), &response);
@@ -220,7 +221,7 @@ MultiPaxos::RunPreparePhase(int64_t ballot) {
         }
       }
       state->cv_.notify_one();
-    });
+    }, asio::detached);
   }
   {
     std::unique_lock lock(state->mu_);

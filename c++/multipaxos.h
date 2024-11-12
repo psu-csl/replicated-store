@@ -1,6 +1,11 @@
 #ifndef MULTI_PAXOS_H_
 #define MULTI_PAXOS_H_
 
+#include <asio.hpp>
+#include <asio/awaitable.hpp>
+#include <asio/co_spawn.hpp>
+#include <asio/detached.hpp>
+#include <asio/use_awaitable.hpp>
 #include <glog/logging.h>
 #include <grpcpp/grpcpp.h>
 #include <asio.hpp>
@@ -59,7 +64,7 @@ inline bool IsSomeoneElseLeader(int64_t ballot, int64_t id) {
 
 class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
  public:
-  MultiPaxos(Log* log, nlohmann::json const& config);
+  MultiPaxos(Log* log, nlohmann::json const& config, asio::io_context* io_context);
   MultiPaxos(MultiPaxos const& mp) = delete;
   MultiPaxos& operator=(MultiPaxos const& mp) = delete;
   MultiPaxos(MultiPaxos&& mp) = delete;
@@ -156,6 +161,7 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
                       multipaxos::CommitResponse*) override;
 
   std::atomic<int64_t> ballot_;
+  asio::io_context* io_context_;
   Log* log_;
   int64_t id_;
   std::atomic<bool> commit_received_;

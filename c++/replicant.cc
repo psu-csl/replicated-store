@@ -15,7 +15,7 @@ using nlohmann::json;
 Replicant::Replicant(asio::io_context* io_context, json const& config)
     : id_(config["id"]),
       log_(kvstore::CreateStore(config)),
-      multi_paxos_(&log_, config),
+      multi_paxos_(&log_, config, io_context),
       ip_port_(config["peers"][id_]),
       io_context_(io_context),
       acceptor_(asio::make_strand(*io_context_)),
