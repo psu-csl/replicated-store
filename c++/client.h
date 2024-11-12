@@ -23,11 +23,11 @@ class Client : public std::enable_shared_from_this<Client> {
   Client(Client const&&) = delete;
   Client& operator=(Client const&&) = delete;
 
-  void Start();
+  asio::awaitable<void> Start();
   void Stop();
 
-  void Read();
-  void Write(std::string const& response);
+  asio::awaitable<void> Read();
+  asio::awaitable<void> Write(std::string const& response);
 
  private:
   int64_t id_;

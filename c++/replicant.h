@@ -29,9 +29,9 @@ class Replicant : public std::enable_shared_from_this<Replicant> {
   void StartExecutorThread();
   void StopExecutorThread();
 
-  void ExecutorThread();
+  asio::awaitable<void> ExecutorThread();
 
-  void AcceptClient();
+  asio::awaitable<void> AcceptClient();
 
   int64_t id_;
   Log log_;

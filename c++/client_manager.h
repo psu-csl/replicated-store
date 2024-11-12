@@ -17,7 +17,7 @@ class ClientManager {
   ClientManager(ClientManager const&&) = delete;
   ClientManager& operator=(ClientManager const&&) = delete;
 
-  void Start(asio::ip::tcp::socket socket);
+  asio::awaitable<void> Start(asio::ip::tcp::socket socket);
   void Stop(int64_t id);
   void StopAll();
 

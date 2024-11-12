@@ -41,7 +41,6 @@ MultiPaxos::MultiPaxos(Log* log, json const& config, asio::io_context* io_contex
       engine_(id_),
       port_(config["peers"][id_]),
       num_peers_(config["peers"].size()),
-      thread_pool_(config["threadpool_size"]),
       rpc_server_running_(false),
       prepare_thread_running_(false),
       commit_thread_running_(false) {
@@ -62,7 +61,6 @@ void MultiPaxos::Stop() {
   StopRPCServer();
   StopPrepareThread();
   StopCommitThread();
-  thread_pool_.join();
 }
 
 void MultiPaxos::StartRPCServer() {
@@ -94,7 +92,9 @@ void MultiPaxos::StartPrepareThread() {
   DLOG(INFO) << id_ << " starting prepare thread";
   CHECK(!prepare_thread_running_);
   prepare_thread_running_ = true;
-  prepare_thread_ = std::thread(&MultiPaxos::PrepareThread, this);
+  asio::co_spawn(*io_context_, [this]() -> asio::awaitable<void> {
+    return this->PrepareThread();
+  }, asio::detached);
 }
 
 void MultiPaxos::StopPrepareThread() {
@@ -105,14 +105,15 @@ void MultiPaxos::StopPrepareThread() {
     prepare_thread_running_ = false;
   }
   cv_follower_.notify_one();
-  prepare_thread_.join();
 }
 
 void MultiPaxos::StartCommitThread() {
   DLOG(INFO) << id_ << " starting commit thread";
   CHECK(!commit_thread_running_);
   commit_thread_running_ = true;
-  commit_thread_ = std::thread(&MultiPaxos::CommitThread, this);
+  asio::co_spawn(*io_context_, [this]() -> asio::awaitable<void> {
+    return this->CommitThread();
+  }, asio::detached);
 }
 
 void MultiPaxos::StopCommitThread() {
@@ -123,20 +124,21 @@ void MultiPaxos::StopCommitThread() {
     commit_thread_running_ = false;
   }
   cv_leader_.notify_one();
-  commit_thread_.join();
 }
 
-Result MultiPaxos::Replicate(Command command, int64_t client_id) {
+asio::awaitable<Result> MultiPaxos::Replicate(Command command, int64_t client_id) {
   auto ballot = Ballot();
-  if (IsLeader(ballot, id_))
-    return RunAcceptPhase(ballot, log_->AdvanceLastIndex(), std::move(command),
+  if (IsLeader(ballot, id_)) {
+    auto r = co_await RunAcceptPhase(ballot, log_->AdvanceLastIndex(), std::move(command),
                           client_id);
+    co_return r;
+  }
   if (IsSomeoneElseLeader(ballot, id_))
-    return Result{ResultType::kSomeoneElseLeader, ExtractLeaderId(ballot)};
-  return Result{ResultType::kRetry, std::nullopt};
+    co_return Result{ResultType::kSomeoneElseLeader, ExtractLeaderId(ballot)};
+  co_return Result{ResultType::kRetry, std::nullopt};
 }
 
-void MultiPaxos::PrepareThread() {
+asio::awaitable<void> MultiPaxos::PrepareThread() {
   while (prepare_thread_running_) {
     {
       std::unique_lock lock(mu_);
@@ -148,7 +150,7 @@ void MultiPaxos::PrepareThread() {
       if (ReceivedCommit())
         continue;
       auto next_ballot = NextBallot();
-      auto r = RunPreparePhase(next_ballot);
+      auto r = co_await RunPreparePhase(next_ballot);
       if (r) {
         auto [max_last_index, log] = *r;
         BecomeLeader(next_ballot, max_last_index);
@@ -159,7 +161,7 @@ void MultiPaxos::PrepareThread() {
   }
 }
 
-void MultiPaxos::CommitThread() {
+asio::awaitable<void> MultiPaxos::CommitThread() {
   while (commit_thread_running_) {
     {
       std::unique_lock lock(mu_);
@@ -171,14 +173,14 @@ void MultiPaxos::CommitThread() {
       auto ballot = Ballot();
       if (!IsLeader(ballot, id_))
         break;
-      gle = RunCommitPhase(ballot, gle);
+      gle = co_await RunCommitPhase(ballot, gle);
       SleepForCommitInterval();
     }
   }
 }
 
-std::optional<
-    std::pair<int64_t, std::unordered_map<int64_t, multipaxos::Instance>>>
+asio::awaitable<std::optional<
+    std::pair<int64_t, std::unordered_map<int64_t, multipaxos::Instance>>>>
 MultiPaxos::RunPreparePhase(int64_t ballot) {
   auto state = std::make_shared<prepare_state_t>();
 
@@ -192,14 +194,16 @@ MultiPaxos::RunPreparePhase(int64_t ballot) {
     state->log_ = log_->GetLog();
     state->max_last_index_ = log_->LastIndex();
   } else {
-    return std::nullopt;
+    co_return std::nullopt;
   }
 
   for (auto& peer : rpc_peers_) {
     if (peer.id_ == id_) {
       continue;
     }
-    asio::co_spawn(*io_context_, [this, state, &peer, request]() -> asio::awaitable<void> {
+    asio::co_spawn(*io_context_, 
+                   [this, state, &peer, request]() -> asio::awaitable<void> {
+      co_await asio::post(*io_context_, asio::use_awaitable);
       ClientContext context;
       PrepareResponse response;
       Status s = peer.stub_->Prepare(&context, std::move(request), &response);
@@ -221,6 +225,7 @@ MultiPaxos::RunPreparePhase(int64_t ballot) {
         }
       }
       state->cv_.notify_one();
+      co_return;
     }, asio::detached);
   }
   {
@@ -228,12 +233,12 @@ MultiPaxos::RunPreparePhase(int64_t ballot) {
     while (state->num_oks_ <= num_peers_ / 2 && state->num_rpcs_ != num_peers_)
       state->cv_.wait(lock);
     if (state->num_oks_ > num_peers_ / 2)
-      return std::make_pair(state->max_last_index_, std::move(state->log_));
+      co_return std::make_pair(state->max_last_index_, std::move(state->log_));
   }
-  return std::nullopt;
+  co_return std::nullopt;
 }
 
-Result MultiPaxos::RunAcceptPhase(int64_t ballot,
+asio::awaitable<Result> MultiPaxos::RunAcceptPhase(int64_t ballot,
                                   int64_t index,
                                   Command command,
                                   int64_t client_id) {
@@ -252,7 +257,7 @@ Result MultiPaxos::RunAcceptPhase(int64_t ballot,
     log_->Append(instance);
   } else {
     auto leader = ExtractLeaderId(ballot_);
-    return Result{ResultType::kSomeoneElseLeader, leader};
+    co_return Result{ResultType::kSomeoneElseLeader, leader};
   }
 
   AcceptRequest request;
@@ -263,7 +268,9 @@ Result MultiPaxos::RunAcceptPhase(int64_t ballot,
     if (peer.id_ == id_) {
       continue;
     }
-    asio::post(thread_pool_, [this, state, &peer, request] {
+    asio::co_spawn(*io_context_, 
+                   [this, state, &peer, request]() -> asio::awaitable<void> {
+      // co_await asio::post(*io_context_, asio::use_awaitable);
       ClientContext context;
       AcceptResponse response;
       Status s = peer.stub_->Accept(&context, std::move(request), &response);
@@ -279,7 +286,8 @@ Result MultiPaxos::RunAcceptPhase(int64_t ballot,
         }
       }
       state->cv_.notify_one();
-    });
+      co_return;
+    }, asio::detached);
   }
   {
     std::unique_lock lock(state->mu_);
@@ -288,15 +296,15 @@ Result MultiPaxos::RunAcceptPhase(int64_t ballot,
       state->cv_.wait(lock);
     if (state->num_oks_ > num_peers_ / 2) {
       log_->Commit(index);
-      return Result{ResultType::kOk, std::nullopt};
+      co_return Result{ResultType::kOk, std::nullopt};
     }
     if (!IsLeader(ballot_, id_))
-      return Result{ResultType::kSomeoneElseLeader, ExtractLeaderId(ballot_)};
+      co_return Result{ResultType::kSomeoneElseLeader, ExtractLeaderId(ballot_)};
   }
-  return Result{ResultType::kRetry, std::nullopt};
+  co_return Result{ResultType::kRetry, std::nullopt};
 }
 
-int64_t MultiPaxos::RunCommitPhase(int64_t ballot,
+asio::awaitable<int64_t> MultiPaxos::RunCommitPhase(int64_t ballot,
                                    int64_t global_last_executed) {
   auto state = std::make_shared<commit_state_t>(log_->LastExecuted());
 
@@ -315,7 +323,9 @@ int64_t MultiPaxos::RunCommitPhase(int64_t ballot,
     if (peer.id_ == id_) {
       continue;
     }
-    asio::post(thread_pool_, [this, state, &peer, request] {
+    asio::co_spawn(*io_context_, 
+                   [this, state, &peer, request]() -> asio::awaitable<void> {
+      co_await asio::post(*io_context_, asio::use_awaitable);
       ClientContext context;
       CommitResponse response;
       Status s = peer.stub_->Commit(&context, std::move(request), &response);
@@ -334,27 +344,29 @@ int64_t MultiPaxos::RunCommitPhase(int64_t ballot,
         }
       }
       state->cv_.notify_one();
-    });
+      co_return;
+    }, asio::detached);
   }
   {
     std::unique_lock lock(state->mu_);
     while (IsLeader(ballot_, id_) && state->num_rpcs_ != num_peers_)
       state->cv_.wait(lock);
     if (state->num_oks_ == num_peers_)
-      return state->min_last_executed_;
+      co_return state->min_last_executed_;
   }
-  return global_last_executed;
+  co_return global_last_executed;
 }
 
 void MultiPaxos::Replay(
     int64_t ballot,
     std::unordered_map<int64_t, multipaxos::Instance> const& log) {
   for (auto const& [index, instance] : log) {
-    Result r = RunAcceptPhase(ballot, instance.index(), instance.command(),
-                              instance.client_id());
+    // Result r = RunAcceptPhase(ballot, instance.index(), instance.command(),
+                              // instance.client_id());
+    Result r;
     while (r.type_ == ResultType::kRetry)
-      r = RunAcceptPhase(ballot, instance.index(), instance.command(),
-                         instance.client_id());
+      // r = RunAcceptPhase(ballot, instance.index(), instance.command(),
+                        //  instance.client_id());
     if (r.type_ == ResultType::kSomeoneElseLeader)
       return;
   }

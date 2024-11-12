@@ -42,51 +42,43 @@ std::optional<Command> Parse(asio::streambuf* request) {
   return c;
 }
 
-void Client::Start() {
-  auto self(shared_from_this());
-  asio::dispatch(socket_.get_executor(), [this, self] { Read(); });
+asio::awaitable<void> Client::Start() {
+  co_await Read();
 }
 
 void Client::Stop() {
-  auto self(shared_from_this());
-  asio::dispatch(socket_.get_executor(), [this, self] { socket_.close(); });
+  socket_.close();
 }
 
-void Client::Read() {
-  auto self(shared_from_this());
-  asio::async_read_until(
-      socket_, request_, '\n', [this, self](std::error_code ec, size_t) {
-        if (!ec) {
-          auto command = Parse(&request_);
-          if (command) {
-            auto r = multi_paxos_->Replicate(std::move(*command), id_);
-            if (r.type_ == ResultType::kOk)
-              return;
-            if (r.type_ == ResultType::kRetry) {
-              Write("retry");
-            } else {
-              CHECK(r.type_ == ResultType::kSomeoneElseLeader);
-              Write("leader is " + std::to_string(*r.leader_));
-            }
-          } else {
-            Write("bad command");
-          }
-        } else if (ec != asio::error::operation_aborted) {
-          manager_->Stop(id_);
+asio::awaitable<void> Client::Read() {
+  try {
+    while (socket_.is_open()) {
+      auto n = co_await asio::async_read_until(
+        socket_, request_, '\n', asio::use_awaitable);
+      auto command = Parse(&request_);
+      if (command) {
+        auto r = co_await multi_paxos_->Replicate(std::move(*command), id_);
+        if (r.type_ == ResultType::kOk)
+          continue;
+        if (r.type_ == ResultType::kRetry) {
+          Write("retry");
+        } else {
+          CHECK(r.type_ == ResultType::kSomeoneElseLeader);
+          Write("leader is " + std::to_string(*r.leader_));
         }
-      });
+      } else {
+        Write("bad command");
+      }
+    }
+  } catch (std::exception& e) {
+    manager_->Stop(id_);
+  }
 }
 
-void Client::Write(std::string const& response) {
+asio::awaitable<void> Client::Write(std::string const& response) {
   std::ostream response_stream(&response_);
   response_stream << response << '\n';
-
-  auto self(shared_from_this());
-  asio::async_write(socket_, response_,
-                    [this, self, response](std::error_code ec, size_t) {
-                      if (ec) {
-                        manager_->Stop(id_);
-                      }
-                      Read();
-                    });
+  DLOG(INFO) << "ready to write";
+  auto n = co_await asio::async_write(socket_, response_, asio::use_awaitable);
+  DLOG(INFO) << "write: " << n;
 }

@@ -47,7 +47,8 @@ void Replicant::StartServer() {
   DLOG(INFO) << id_ << " starting server at port " << port;
 
   auto self(shared_from_this());
-  asio::dispatch(acceptor_.get_executor(), [this, self] { AcceptClient(); });
+  // asio::dispatch(acceptor_.get_executor(), [this, self] { AcceptClient(); });
+  asio::co_spawn(*io_context_, AcceptClient(), asio::detached);
 }
 
 void Replicant::StopServer() {
@@ -58,36 +59,47 @@ void Replicant::StopServer() {
 
 void Replicant::StartExecutorThread() {
   DLOG(INFO) << id_ << " starting executor thread";
-  executor_thread_ = std::thread(&Replicant::ExecutorThread, this);
+  asio::co_spawn(*io_context_, [this]() -> asio::awaitable<void> {
+    return this->ExecutorThread();
+  }, asio::detached);
 }
 
 void Replicant::StopExecutorThread() {
   DLOG(INFO) << id_ << " stopping executor thread";
   log_.Stop();
-  executor_thread_.join();
 }
 
-void Replicant::ExecutorThread() {
+asio::awaitable<void> Replicant::ExecutorThread() {
   for (;;) {
     auto r = log_.Execute();
     if (!r)
       break;
     auto [id, result] = std::move(*r);
     auto client = client_manager_.Get(id);
-    if (client)
-      client->Write(result.value_);
+    if (client) 
+      co_await client->Write(result.value_);
   }
 }
 
-void Replicant::AcceptClient() {
-  auto self(shared_from_this());
-  acceptor_.async_accept(asio::make_strand(*io_context_),
-                         [this, self](std::error_code ec, tcp::socket socket) {
-                           if (!acceptor_.is_open())
-                             return;
-                           if (!ec) {
-                             client_manager_.Start(std::move(socket));
-                             AcceptClient();
-                           }
-                         });
+asio::awaitable<void> Replicant::AcceptClient() {
+  while (true) {
+    tcp::socket socket = co_await acceptor_.async_accept(asio::use_awaitable);
+    if (!acceptor_.is_open()) {
+      break;
+    }
+    asio::co_spawn(acceptor_.get_executor(), 
+                   client_manager_.Start(std::move(socket)), 
+                   asio::detached);
+  }
+
+  // auto self(shared_from_this());
+  // acceptor_.async_accept(asio::make_strand(*io_context_),
+  //                        [this, self](std::error_code ec, tcp::socket socket) {
+  //                          if (!acceptor_.is_open())
+  //                            return;
+  //                          if (!ec) {
+  //                            client_manager_.Start(std::move(socket));
+  //                            AcceptClient();
+  //                          }
+  //                        });
 }

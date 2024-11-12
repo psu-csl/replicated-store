@@ -130,19 +130,19 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
   void StartCommitThread();
   void StopCommitThread();
 
-  Result Replicate(multipaxos::Command command, int64_t client_id);
+  asio::awaitable<Result> Replicate(multipaxos::Command command, int64_t client_id);
 
-  void PrepareThread();
-  void CommitThread();
+  asio::awaitable<void> PrepareThread();
+  asio::awaitable<void> CommitThread();
 
-  std::optional<
-      std::pair<int64_t, std::unordered_map<int64_t, multipaxos::Instance>>>
+  asio::awaitable<std::optional<
+      std::pair<int64_t, std::unordered_map<int64_t, multipaxos::Instance>>>>
   RunPreparePhase(int64_t ballot);
-  Result RunAcceptPhase(int64_t ballot,
+  asio::awaitable<Result> RunAcceptPhase(int64_t ballot,
                         int64_t index,
                         multipaxos::Command command,
                         int64_t client_id);
-  int64_t RunCommitPhase(int64_t ballot, int64_t global_last_executed);
+  asio::awaitable<int64_t> RunCommitPhase(int64_t ballot, int64_t global_last_executed);
 
   void Replay(int64_t ballot,
               std::unordered_map<int64_t, multipaxos::Instance> const& log);
@@ -171,7 +171,6 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
   size_t num_peers_;
   std::vector<rpc_peer_t> rpc_peers_;
   mutable std::mutex mu_;
-  asio::thread_pool thread_pool_;
 
   std::condition_variable cv_leader_;
   std::condition_variable cv_follower_;
@@ -182,10 +181,8 @@ class MultiPaxos : public multipaxos::MultiPaxosRPC::Service {
   std::thread rpc_server_thread_;
 
   std::atomic<bool> prepare_thread_running_;
-  std::thread prepare_thread_;
 
   std::atomic<bool> commit_thread_running_;
-  std::thread commit_thread_;
 };
 
 struct prepare_state_t {

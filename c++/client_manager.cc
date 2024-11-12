@@ -3,7 +3,7 @@
 
 using asio::ip::tcp;
 
-void ClientManager::Start(tcp::socket socket) {
+asio::awaitable<void> ClientManager::Start(tcp::socket socket) {
   auto id = NextClientId();
   auto client =
       std::make_shared<Client>(id, std::move(socket), multi_paxos_, this);
@@ -13,7 +13,7 @@ void ClientManager::Start(tcp::socket socket) {
     CHECK(ok);
   }
   DLOG(INFO) << " client_manager started client " << id;
-  client->Start();
+  co_await client->Start();
 }
 
 client_ptr ClientManager::Get(int64_t id) {
