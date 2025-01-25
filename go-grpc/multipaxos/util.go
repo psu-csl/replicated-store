@@ -62,6 +62,7 @@ func IsSomeoneElseLeader(ballot int64, id int64) bool {
 type PrepareState struct {
 	NumRpcs      int
 	NumOks       int
+	NumFails     int
 	MaxLastIndex int64
 	Mu           sync.Mutex
 	Cv           *sync.Cond
@@ -71,6 +72,7 @@ func NewPrepareState() *PrepareState {
 	prepareState := &PrepareState{
 		NumRpcs:      0,
 		NumOks:       0,
+		NumFails:     0,
 		MaxLastIndex: 0,
 	}
 	prepareState.Cv = sync.NewCond(&prepareState.Mu)

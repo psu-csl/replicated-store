@@ -34,6 +34,7 @@ type Multipaxos struct {
 	numElections       int64
 	electionThreshold  int64
 	frequencyThreshold int64
+	isPassive          bool
 
 	cvLeader   *sync.Cond
 	cvFollower *sync.Cond
@@ -71,6 +72,7 @@ func NewMultipaxos(log *Log.Log, config config.Config, join bool) *Multipaxos {
 		numElections:         0,
 		electionThreshold:    config.ElectionLimit,
 		frequencyThreshold:   config.Threshold,
+		isPassive:            false,
 		rpcServerRunning:     false,
 		prepareThreadRunning: 0,
 		commitThreadRunning:  0,
@@ -111,6 +113,9 @@ func (p *Multipaxos) Ballot() int64 {
 }
 
 func (p *Multipaxos) NextBallot() int64 {
+	if p.isPassive {
+		return 0
+	}
 	nextBallot := p.Ballot()
 	nextBallot += RoundIncrement
 	nextBallot = (nextBallot & ^IdBits) | p.id
@@ -360,6 +365,8 @@ func (p *Multipaxos) RunPreparePhase(ballot int64) (int64,
 				} else {
 					p.BecomeFollower(response.GetBallot())
 				}
+			} else {
+				state.NumFails += 1
 			}
 			state.Cv.Signal()
 			cancel()
@@ -371,6 +378,13 @@ func (p *Multipaxos) RunPreparePhase(ballot int64) (int64,
 	defer state.Mu.Unlock()
 	for state.NumOks <= numPeers/2 && state.NumRpcs != numPeers {
 		state.Cv.Wait()
+	}
+
+	if state.NumFails > (numPeers-1)/2 {
+		p.isPassive = true
+		return -1, nil
+	} else if p.isPassive {
+		p.isPassive = false
 	}
 
 	if state.NumOks > numPeers/2 {
