@@ -13,7 +13,9 @@ type Config struct {
 	Store          string   `json:"store"`
 	DbPath         string   `json:"db_path"`
 	ElectionLimit  int64    `json:"election_limit"`
+	CommonLimit    int64    `json:"common_limit"`
 	Threshold      int64    `json:"threshold"`
+	PenaltyFactor  int64    `json:"churn_penalty_factor"`
 	WindowSize     int64    `json:"window_size"`
 	QueueSize      int64    `json:"queue_size"`
 	UpThreshold    float64  `json:"up_threshold"`

@@ -34,7 +34,12 @@ type Multipaxos struct {
 	numElections       int64
 	electionThreshold  int64
 	frequencyThreshold int64
+	churnPenaltyFactor int64
 	isPassive          bool
+	lastSeenElection   time.Time
+	seenElectionWindow int64
+	numSeenElections   int64
+	isCommonBlock      bool
 
 	cvLeader   *sync.Cond
 	cvFollower *sync.Cond
@@ -72,7 +77,11 @@ func NewMultipaxos(log *Log.Log, config config.Config, join bool) *Multipaxos {
 		numElections:         0,
 		electionThreshold:    config.ElectionLimit,
 		frequencyThreshold:   config.Threshold,
+		churnPenaltyFactor:   config.PenaltyFactor,
 		isPassive:            false,
+		seenElectionWindow:   config.CommonLimit,
+		numSeenElections:     0,
+		isCommonBlock:        false,
 		rpcServerRunning:     false,
 		prepareThreadRunning: 0,
 		commitThreadRunning:  0,
@@ -85,6 +94,7 @@ func NewMultipaxos(log *Log.Log, config config.Config, join bool) *Multipaxos {
 		overloadedWorkload: 0,
 		overloadedFlag:     0,
 	}
+	multipaxos.lastSeenElection = multipaxos.lastElectedTime
 	multipaxos.rpcServerRunningCv = sync.NewCond(&multipaxos.mu)
 	multipaxos.cvFollower = sync.NewCond(&multipaxos.mu)
 	multipaxos.cvLeader = sync.NewCond(&multipaxos.mu)
@@ -152,7 +162,7 @@ func (p *Multipaxos) BecomeFollower(newBallot int64) {
 		logger.Infof("%v became a follower: ballot: %v -> %v\n", p.id,
 			p.Ballot(), newBallot)
 		if p.numElections > p.frequencyThreshold {
-			p.commitInterval *= 2
+			p.commitInterval *= p.churnPenaltyFactor
 		}
 		p.overloadedFlag = 0
 		p.cvFollower.Signal()
@@ -711,6 +721,20 @@ func (p *Multipaxos) countElection() {
 	}
 }
 
+func (p *Multipaxos) countSeenElection() {
+	elapse := time.Since(p.lastSeenElection)
+	p.lastSeenElection = time.Now()
+	if elapse.Milliseconds() < p.seenElectionWindow {
+		p.numSeenElections += 1
+		if p.numSeenElections > p.frequencyThreshold {
+			p.isCommonBlock = true
+		}
+	} else {
+		p.numSeenElections = 1
+		p.isCommonBlock = false
+	}
+}
+
 func (p *Multipaxos) Prepare(ctx context.Context,
 	request *pb.PrepareRequest) (*pb.PrepareResponse, error) {
 	logger.Infof("%v <--prepare-- %v", p.id, request.GetSender())
@@ -720,7 +744,11 @@ func (p *Multipaxos) Prepare(ctx context.Context,
 		response.LastIndex = p.log.LastIndex()
 		response.Type = pb.ResponseType_OK
 	} else {
-		response.Ballot = p.Ballot()
+		if p.isCommonBlock {
+			response.Ballot = -1
+		} else {
+			response.Ballot = p.Ballot()
+		}
 		response.Type = pb.ResponseType_REJECT
 	}
 	return response, nil
@@ -738,7 +766,11 @@ func (p *Multipaxos) Accept(ctx context.Context,
 		}
 	}
 	if request.GetInstance().GetBallot() < p.Ballot() {
-		response.Ballot = p.Ballot()
+		if p.isCommonBlock {
+			response.Ballot = -1
+		} else {
+			response.Ballot = p.Ballot()
+		}
 		response.Type = pb.ResponseType_REJECT
 	}
 	return response, nil
@@ -760,7 +792,11 @@ func (p *Multipaxos) Commit(ctx context.Context,
 			p.BecomeFollower(request.GetBallot())
 		}
 	} else {
-		response.Ballot = p.Ballot()
+		if p.isCommonBlock {
+			response.Ballot = -1
+		} else {
+			response.Ballot = p.Ballot()
+		}
 		response.Type = pb.ResponseType_REJECT
 	}
 	return response, nil
